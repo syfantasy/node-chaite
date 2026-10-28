@@ -175,6 +175,15 @@ async function handleSaveCode() {
   }
 }
 
+function hasPluginConfig(plugin: PluginMeta): boolean {
+  if (plugin.configSchema && plugin.configSchema.length > 0) return true
+  const cfg = plugin.config
+  if (cfg && typeof cfg === 'object') {
+    return Object.keys(cfg).length > 0
+  }
+  return false
+}
+
 function openConfigModal(plugin: PluginMeta) {
   configPlugin.value = plugin
   let currentCfg = plugin.config || {}
@@ -189,7 +198,14 @@ function openConfigModal(plugin: PluginMeta) {
   }
   configFormData.value = { ...currentCfg }
   configRawJson.value = JSON.stringify(currentCfg, null, 2)
-  configMode.value = (plugin.configSchema && plugin.configSchema.length > 0) ? 'form' : 'json'
+
+  if (plugin.configSchema && plugin.configSchema.length > 0) {
+    configMode.value = 'form'
+  } else if (hasPluginConfig(plugin)) {
+    configMode.value = 'json'
+  } else {
+    configMode.value = 'none'
+  }
   configModalVisible.value = true
 }
 
@@ -347,9 +363,19 @@ onMounted(() => {
                 <NSpace justify="space-between" align="center">
                   <span class="plugin-id-tag">scripts/{{ plugin.id }}/</span>
                   <NSpace size="small">
-                    <NButton size="small" type="info" secondary @click="openConfigModal(plugin)">
-                      配置
-                    </NButton>
+                    <NTooltip trigger="hover">
+                      <template #trigger>
+                        <NButton
+                          size="small"
+                          :type="hasPluginConfig(plugin) ? 'info' : 'default'"
+                          secondary
+                          @click="openConfigModal(plugin)"
+                        >
+                          {{ hasPluginConfig(plugin) ? '配置' : '免配置' }}
+                        </NButton>
+                      </template>
+                      {{ hasPluginConfig(plugin) ? '修改运行参数与个性化配置' : '该插件无需额外配置，启用后开箱即用' }}
+                    </NTooltip>
                     <NButton size="small" type="primary" secondary @click="openCodeEditor(plugin)">
                       代码
                     </NButton>
@@ -391,9 +417,19 @@ onMounted(() => {
                 <NSpace justify="space-between" align="center">
                   <span class="plugin-id-tag">apps/{{ plugin.id }}/</span>
                   <NSpace size="small">
-                    <NButton size="small" type="info" secondary @click="openConfigModal(plugin)">
-                      配置
-                    </NButton>
+                    <NTooltip trigger="hover">
+                      <template #trigger>
+                        <NButton
+                          size="small"
+                          :type="hasPluginConfig(plugin) ? 'info' : 'default'"
+                          secondary
+                          @click="openConfigModal(plugin)"
+                        >
+                          {{ hasPluginConfig(plugin) ? '配置' : '免配置' }}
+                        </NButton>
+                      </template>
+                      {{ hasPluginConfig(plugin) ? '修改运行参数与个性化配置' : '该插件无需额外配置，启用后开箱即用' }}
+                    </NTooltip>
                     <NButton size="small" secondary @click="openExportModal(plugin)">
                       导出
                     </NButton>
@@ -419,16 +455,35 @@ onMounted(() => {
       <div v-if="configPlugin">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <span style="font-size: 13px; color: #888;">
-            配置保存在 <code>{{ configPlugin.type === 'directory' ? 'apps' : 'scripts' }}/{{ configPlugin.id }}/config.json</code>
+            配置文件：<code>{{ configPlugin.type === 'directory' ? 'apps' : 'scripts' }}/{{ configPlugin.id }}/config.json</code>
           </span>
           <NRadioGroup v-if="configPlugin.configSchema && configPlugin.configSchema.length > 0" v-model:value="configMode" size="small">
             <NRadio value="form">表单视图</NRadio>
             <NRadio value="json">JSON 视图</NRadio>
           </NRadioGroup>
+          <NButton
+            v-else-if="configMode === 'json' && !hasPluginConfig(configPlugin)"
+            size="tiny"
+            secondary
+            @click="configMode = 'none'"
+          >
+            返回提示
+          </NButton>
+        </div>
+
+        <!-- 视图 0: 无需配置的友好空状态 -->
+        <div v-if="configMode === 'none'" style="text-align: center; padding: 36px 16px;">
+          <NEmpty description="本插件开箱即用，无需任何额外配置！">
+            <template #extra>
+              <NButton size="small" secondary @click="configMode = 'json'">
+                🛠️ 高级开发者设置 (自定义 JSON)
+              </NButton>
+            </template>
+          </NEmpty>
         </div>
 
         <!-- 视图 1: Schema 可视化表单 -->
-        <NForm v-if="configMode === 'form'" label-placement="left" label-width="120">
+        <NForm v-else-if="configMode === 'form'" label-placement="left" label-width="120">
           <NFormItem
             v-for="field in configPlugin.configSchema"
             :key="field.key"
@@ -473,8 +528,13 @@ onMounted(() => {
       </div>
       <template #footer>
         <NSpace justify="end">
-          <NButton @click="configModalVisible = false">取消</NButton>
-          <NButton type="primary" :loading="savingConfig" @click="handleSaveConfig">保存配置</NButton>
+          <template v-if="configMode === 'none'">
+            <NButton type="primary" @click="configModalVisible = false">我知道了</NButton>
+          </template>
+          <template v-else>
+            <NButton @click="configModalVisible = false">取消</NButton>
+            <NButton type="primary" :loading="savingConfig" @click="handleSaveConfig">保存配置</NButton>
+          </template>
         </NSpace>
       </template>
     </NModal>
