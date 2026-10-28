@@ -240,7 +240,7 @@ export default function setup(ctx) {
         <tr>
           <td><code>await e.reply(content)</code></td>
           <td><code>Promise&lt;any&gt;</code></td>
-          <td>统一回复方法（支持文本或 <code>{ text, images }</code>）</td>
+          <td>统一回复方法（支持文本、<code>{ text, at: true, images }</code> 或 CQ 码自动转换）</td>
         </tr>
         <tr>
           <td><code>await e.queryAI(prompt, [opt])</code></td>
@@ -254,6 +254,28 @@ export default function setup(ctx) {
         </tr>
       </tbody>
     </table>
+
+    <div class="card" style="margin-top: 16px;">
+      <h3>跨协议回复范例 (e.reply)</h3>
+      <p>为避免将插件死绑定在 QQ 专有的 CQ 码上，推荐使用跨协议的结构化调用方式（框架会自动向 OneBot / 飞书转换对应原生消息段）：</p>
+      <pre><code class="language-javascript">// 1. 最简文本回复（自动带引用）
+await e.reply('处理成功喵！')
+
+// 2. 结构化艾特回复（跨平台通用，无需手拼 CQ 码）
+await e.reply({
+  text: '这是你的查询结果',
+  at: true, // 自动 @ 发送者；亦可传入指定 QQ 号如 at: 123456
+})
+
+// 3. 图文混合回复
+await e.reply({
+  text: '图表已生成：',
+  images: ['https://example.com/chart.png'],
+})
+
+// 4. CQ 码兼容说明
+// 框架底层已内置 CQ 码解析器，手写的 [CQ:at,qq=123] 或 [CQ:image,file=...] 也会自动转为原生 Segment。</code></pre>
+    </div>
 
     <!-- 4. 配置与 Schema -->
     <h2 id="config-schema">4. 插件配置与 Schema 声明</h2>
