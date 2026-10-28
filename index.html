@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chaite 插件开发手册 - Sy-Bot / Chaite Plugin Docs</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --accent: #a855f7;
+      --code-bg: #090d16;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      display: flex;
+    }
+    /* Sidebar */
+    .sidebar {
+      width: 280px;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      background: #090d16;
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .logo {
+      font-size: 20px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bdf8, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .logo-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+    .nav-list { list-style: none; }
+    .nav-item { margin-bottom: 6px; }
+    .nav-link {
+      display: block;
+      padding: 8px 12px;
+      font-size: 14px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--text);
+      background: rgba(56, 189, 248, 0.12);
+      border-left: 3px solid var(--primary);
+    }
+    /* Main Content */
+    .main {
+      flex: 1;
+      max-width: 960px;
+      padding: 40px 48px 80px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 32px; font-weight: 800; margin-bottom: 12px; color: #fff; }
+    h2 { font-size: 22px; font-weight: 700; margin: 40px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: var(--primary); }
+    h3 { font-size: 17px; font-weight: 600; margin: 24px 0 12px; color: #e2e8f0; }
+    p { margin-bottom: 16px; color: #cbd5e1; font-size: 15px; }
+    ul, ol { margin: 0 0 16px 24px; color: #cbd5e1; font-size: 14px; }
+    li { margin-bottom: 6px; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 12px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--primary);
+      margin-right: 6px;
+    }
+    pre {
+      border-radius: 8px;
+      margin: 14px 0;
+      background: var(--code-bg) !important;
+      border: 1px solid var(--border);
+      font-size: 13px;
+    }
+    code { font-family: "Fira Code", Monaco, Menlo, Consolas, monospace; }
+    p code, li code, td code {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #38bdf8;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+    th { background: #131d2e; color: #e2e8f0; font-weight: 600; }
+    td { background: rgba(30, 41, 59, 0.6); }
+    @media (max-width: 800px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; height: auto; position: static; }
+      .main { padding: 24px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="logo">Chaite Plugin Dev</div>
+    <div class="logo-desc">智能体插件开发手册 · v1.1</div>
+    <ul class="nav-list">
+      <li class="nav-item"><a href="#intro" class="nav-link active">1. 设计理念</a></li>
+      <li class="nav-item"><a href="#types" class="nav-link">2. 两种插件规格</a></li>
+      <li class="nav-item"><a href="#quickstart" class="nav-link">3. 快速起步</a></li>
+      <li class="nav-item"><a href="#event-api" class="nav-link">4. ChaiteEvent 规范</a></li>
+      <li class="nav-item"><a href="#ai-capabilities" class="nav-link">5. 直调 AI & 上下文</a></li>
+      <li class="nav-item"><a href="#storage" class="nav-link">6. 轻量持久化 KV</a></li>
+      <li class="nav-item"><a href="#tools" class="nav-link">7. 工具与定时任务</a></li>
+    </ul>
+  </aside>
+
+  <main class="main">
+    <h1>Chaite 插件开发手册</h1>
+    <p>为 Sy-Bot / Chaite 智能体打造的轻量化、高扩展插件标准。无论是单文件 JS 极速热重载，还是目录工程模块，都能轻松编写。</p>
+
+    <!-- 1. 设计理念 -->
+    <h2 id="intro">1. 设计理念与解耦</h2>
+    <div class="card">
+      <p><strong>痛点告别：</strong> 旧式 Bot 框架往往要求插件直接面向底层协议实现（如面对复杂的 icqq 嵌套段落、CQ 码拆包），只要更换底层实现（如转向 OneBot v11、SnowLuma 或飞书），所有插件就会崩溃。</p>
+      <p>Chaite 彻底移除了原先简陋的旧触发器（Triggers），构建了统一事件对象 <code>ChaiteEvent</code>。插件只关心通用的逻辑：<strong>监听指令、收发消息、调用模型、持久化存储</strong>。底层适配器保证事件的无缝对齐。</p>
+    </div>
+
+    <!-- 2. 插件规格 -->
+    <h2 id="types">2. 两种插件规格</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+      <div class="card" style="margin-bottom: 0;">
+        <h3><span class="badge">单文件</span> Single-File JS</h3>
+        <ul>
+          <li>路径：<code>runner/plugins/&lt;name&gt;.js</code></li>
+          <li>无需构建，即存即用</li>
+          <li>支持 Web 后台在线编辑并<strong>即时热重载</strong></li>
+          <li>适合：小游戏、趣味互动、单指令工具</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-bottom: 0;">
+        <h3><span class="badge">工程包</span> Directory Package</h3>
+        <ul>
+          <li>路径：<code>runner/plugins/&lt;name&gt;/</code></li>
+          <li>含 <code>package.json</code> 与入口 <code>index.js</code></li>
+          <li>自带 <code>config.json</code>，配置随插件走，方便拷贝分享</li>
+          <li>适合：多文件业务、企业接口、复杂集成</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 3. 快速起步 -->
+    <h2 id="quickstart">3. 快速起步：最小实例</h2>
+    <p>创建一个文件 <code>runner/plugins/hello.js</code> 即可自动加载运行：</p>
+    <pre><code class="language-javascript">// runner/plugins/hello.js
+export const name = '打招呼插件'
+export const version = '1.0.0'
+
+export default function setup(ctx) {
+  ctx.logger.info('问候插件启动成功！')
+
+  // 注册指令：#打招呼
+  ctx.registerCommand('#打招呼', async (e) => {
+    await e.reply(`你好呀，${e.sender.nickname || e.userId}！`)
+    return true // 返回 true 表示拦截并完成处理
+  })
+}
+</code></pre>
+
+    <!-- 4. ChaiteEvent 规范 -->
+    <h2 id="event-api">4. 统一事件对象 (ChaiteEvent) API 规范</h2>
+    <p>所有消息事件均封装为标准 <code>ChaiteEvent</code> 对象传递给插件：</p>
+    <table>
+      <thead>
+        <tr>
+          <th>字段 / 方法</th>
+          <th>类型</th>
+          <th>说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>e.userId</code></td>
+          <td><code>string | number</code></td>
+          <td>发送者用户 ID（私聊或群成员唯一标识）</td>
+        </tr>
+        <tr>
+          <td><code>e.groupId</code></td>
+          <td><code>number | null</code></td>
+          <td>群号（私聊时为 <code>null</code>）</td>
+        </tr>
+        <tr>
+          <td><code>e.isGroup / e.isPrivate</code></td>
+          <td><code>boolean</code></td>
+          <td>当前是否为群聊 / 私聊环境</td>
+        </tr>
+        <tr>
+          <td><code>e.text</code></td>
+          <td><code>string</code></td>
+          <td>清洗后的文本（已剥离 @ 机器人与指令前缀）</td>
+        </tr>
+        <tr>
+          <td><code>e.rawText</code></td>
+          <td><code>string</code></td>
+          <td>未经清洗的原始消息文本</td>
+        </tr>
+        <tr>
+          <td><code>e.sender</code></td>
+          <td><code>SenderInfo</code></td>
+          <td>发送者信息：<code>{ nickname, card, role, title, level }</code></td>
+        </tr>
+        <tr>
+          <td><code>e.images</code></td>
+          <td><code>ImageAttachment[]</code></td>
+          <td>携带的图片数组 <code>[{ ref, url, mimeType }]</code></td>
+        </tr>
+        <tr>
+          <td><code>await e.reply(content)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>统一回复方法，支持字符串或对象，底层自动转换为对应协议段</td>
+        </tr>
+        <tr>
+          <td><code>await e.queryAI(prompt, [opt])</code></td>
+          <td><code>Promise&lt;string&gt;</code></td>
+          <td>直接调用系统配置的主模型/预设提问（单轮直通）</td>
+        </tr>
+        <tr>
+          <td><code>await e.askWithContext(prompt, [opt])</code></td>
+          <td><code>Promise&lt;string&gt;</code></td>
+          <td><strong>携带群聊近期双水位线滑动窗口记录</strong>向模型提问</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 5. 直调 AI & 上下文 -->
+    <h2 id="ai-capabilities">5. AI 能力赋能</h2>
+    <p>你不需要在插件里手动引入 OpenAI SDK 或拼接请求头，Chaite 为插件提供开箱即用的大模型调用接口：</p>
+    <pre><code class="language-javascript">ctx.registerCommand('#今日诗词', async (e) => {
+  // 1. 单轮直调 AI
+  const poem = await e.queryAI('请以"春雨"为题写一首七言绝句，直接输出诗文')
+  await e.reply(poem)
+  return true
+})
+
+ctx.registerCommand('#总结讨论', async (e) => {
+  if (!e.isGroup) {
+    await e.reply('请在群聊中使用总结功能哦')
+    return true
+  }
+  await e.reply('正在阅读刚才的群消息，请稍候...')
+  // 2. 携带当前群聊上下文
+  const summary = await e.askWithContext('请用活泼的语气总结刚才群友的核心讨论，列出3个看点')
+  await e.reply(summary)
+  return true
+})
+</code></pre>
+
+    <!-- 6. 轻量持久化 KV -->
+    <h2 id="storage">6. 轻量持久化 KV 存储</h2>
+    <p>每个插件都自动注入了一个完全数据隔离的 <code>ctx.storage</code> 客户端（基于主数据库 SQLite），无需自行管理连接或文件并发：</p>
+    <pre><code class="language-javascript">// 存储数据（支持基础类型与任意 JSON 对象）
+await ctx.storage.set('user_level_' + e.userId, 5)
+
+// 获取数据（支持设置默认回退值）
+const level = await ctx.storage.get('user_level_' + e.userId, 1)
+
+// 删除数据
+await ctx.storage.delete('user_level_' + e.userId)
+
+// 静态配置（直接读取随插件自带的 config.json）
+const customPrefix = ctx.config.myPrefix || '#默认'
+</code></pre>
+
+    <!-- 7. 工具与定时任务 -->
+    <h2 id="tools">7. 工具注入 (Function Calling) 与定时任务</h2>
+    <p>通过向全局大模型注册 Tool，可以让预设在思考时自主调用插件中的功能：</p>
+    <pre><code class="language-javascript">export default function setup(ctx) {
+  // 1. 注册 Function Calling 工具
+  ctx.registerTool({
+    name: 'query_inventory',
+    description: '查询某样物品的当前库存数量',
+    parameters: {
+      type: 'object',
+      properties: {
+        itemName: { type: 'string', description: '物品名称' }
+      },
+      required: ['itemName']
+    }
+  }, async (args) => {
+    return { stock: 42, item: args.itemName }
+  })
+
+  // 2. 注册定时任务（重载或禁用插件时系统会自动安全清理，防止泄漏）
+  ctx.cron('0 8 * * *', async () => {
+    ctx.logger.info('早上 8 点整定时播报触发！')
+  })
+}
+</code></pre>
+  </main>
+
+  <script>
+    hljs.highlightAll();
+  </script>
+</body>
+</html>
