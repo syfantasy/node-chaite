@@ -1,13 +1,9 @@
 name: Release and Publish
 
+# 临时关闭自动构建发版，改仅保留手动触发
 on:
-  push:
-    branches:
-      - main
-    # Frontend source is delivered by chatgpt-plugin, not the npm package.
-    # A frontend-only commit therefore must not create a release PR or publish.
-    paths-ignore:
-      - "frontend/**"
+  workflow_dispatch:
+
 
 permissions:
   contents: write

@@ -677,7 +677,10 @@ export default function setup(ctx) {
             code="// 1. 结构化艾特回复 (框架自动向协议端转换原生 @)
 await e.reply({ text: '查询成功！', at: true })
 
-// 2. 图文混合回复
+// 2. 取消引用回复 (默认 reply: true 带引用，设为 false 即单发)
+await e.reply({ text: '不带引用的独立消息', reply: false })
+
+// 3. 图文混合回复
 await e.reply({ text: '图片如下：', images: ['https://example.com/pic.png'] })
 
 // 注：手写 [CQ:at,qq=...] 亦会被底层内置解析器自动转为原生段兼容"
