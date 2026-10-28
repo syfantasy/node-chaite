@@ -177,7 +177,16 @@ async function handleSaveCode() {
 
 function openConfigModal(plugin: PluginMeta) {
   configPlugin.value = plugin
-  const currentCfg = plugin.config || {}
+  let currentCfg = plugin.config || {}
+  while (
+    currentCfg &&
+    typeof currentCfg === 'object' &&
+    'config' in currentCfg &&
+    Object.keys(currentCfg).length === 1 &&
+    typeof (currentCfg as any).config === 'object'
+  ) {
+    currentCfg = (currentCfg as any).config
+  }
   configFormData.value = { ...currentCfg }
   configRawJson.value = JSON.stringify(currentCfg, null, 2)
   configMode.value = (plugin.configSchema && plugin.configSchema.length > 0) ? 'form' : 'json'
