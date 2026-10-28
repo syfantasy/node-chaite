@@ -2,8 +2,9 @@
 import type { DataTableColumns } from 'naive-ui'
 import { NButton, NDataTable, NDatePicker, NInput, NSelect, NTag, useMessage } from 'naive-ui'
 import { computed, h, onMounted, reactive, ref } from 'vue'
-import { clearLogs, fetchLogs, fetchLogsStats } from '@/service/api/logs'
+import { clearLogs, fetchLogDetail, fetchLogs, fetchLogsStats } from '@/service/api/logs'
 import type { ListLogsQuery, LogsStats, OperationLog } from '@/service/api/logs'
+import LogDetailDrawer from './LogDetailDrawer.vue'
 
 const message = useMessage()
 const loading = ref(false)
@@ -12,6 +13,23 @@ const total = ref(0)
 const stats = ref<LogsStats>()
 const range = ref<[number, number] | null>(null)
 const query = reactive<ListLogsQuery>({ page: 1, pageSize: 30 })
+
+const selectedLog = ref<OperationLog | null>(null)
+const showDrawer = ref(false)
+
+async function openDetail(row: OperationLog) {
+  selectedLog.value = row
+  showDrawer.value = true
+  // Try fetching detailed entity in case summary list omitted full metadata
+  try {
+    const res = await fetchLogDetail(row.id)
+    if (res.code === 0 && res.data) {
+      selectedLog.value = res.data
+    }
+  } catch {
+    // Keep row as fallback
+  }
+}
 const typeOptions = [
   ['llm.call', '模型调用'], ['tool.call', '工具调用'], ['tool.error', '工具错误'],
   ['processor.call', '处理器'], ['processor.error', '处理器错误'],
@@ -33,6 +51,25 @@ const columns: DataTableColumns<OperationLog> = [
   { title: '群 / 用户', key: 'groupId', width: 150, render: row => h('div', [h('div', row.groupId ? `群 ${row.groupId}` : '私聊/系统'), h('small', { style: 'color: var(--chaite-muted)' }, row.userId ? `用户 ${row.userId}` : '')]) },
   { title: 'Usage', key: 'totalTokens', width: 145, render: row => row.type === 'llm.call' ? `${row.inputTokens || 0} + ${row.outputTokens || 0} = ${row.totalTokens ?? ((row.inputTokens || 0) + (row.outputTokens || 0))}` : '—' },
   { title: '耗时', key: 'durationMs', width: 92, render: row => row.durationMs == null ? '—' : `${row.durationMs} ms` },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 90,
+    render: row =>
+      h(
+        NButton,
+        {
+          size: 'tiny',
+          secondary: true,
+          type: 'primary',
+          onClick: (e: MouseEvent) => {
+            e.stopPropagation()
+            openDetail(row)
+          },
+        },
+        { default: () => '详情' }
+      ),
+  },
 ]
 async function load() {
   loading.value = true
@@ -81,8 +118,19 @@ onMounted(load)
         <NButton type="primary" @click="query.page = 1; load()">查询</NButton>
         <NButton quaternary @click="reset">重置</NButton>
       </div>
-      <NDataTable remote :loading="loading" :columns="columns" :data="rows" :row-key="row => row.id" :pagination="{ page: query.page, pageSize: query.pageSize, itemCount: total, showSizePicker: true, pageSizes: [20, 30, 50, 100], onChange: (p: number) => { query.page = p; load() }, onUpdatePageSize: (s: number) => { query.pageSize = s; query.page = 1; load() } }" />
+      <NDataTable
+        remote
+        :loading="loading"
+        :columns="columns"
+        :data="rows"
+        :row-key="row => row.id"
+        :row-props="(row) => ({ style: 'cursor: pointer;', onClick: () => openDetail(row) })"
+        :pagination="{ page: query.page, pageSize: query.pageSize, itemCount: total, showSizePicker: true, pageSizes: [20, 30, 50, 100], onChange: (p: number) => { query.page = p; load() }, onUpdatePageSize: (s: number) => { query.pageSize = s; query.page = 1; load() } }"
+      />
     </section>
+
+    <!-- PrismCat-inspired Log Detail Drawer -->
+    <LogDetailDrawer v-model:show="showDrawer" :log="selectedLog" />
   </div>
 </template>
 

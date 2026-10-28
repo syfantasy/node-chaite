@@ -9,14 +9,20 @@ interface LoginRequest {
 
 router.post('/login', async (req: Request<object, object, LoginRequest>, res: Response) => {
   const body = req.body
-  const success = Chaite.getInstance().getFrontendAuthHandler()?.validateToken(body.token)
-  if (success) {
-    if (!Chaite.getInstance().getGlobalConfig()) {
-      Chaite.getInstance().setGlobalConfig(new GlobalConfig())
-    }
-    const config = Chaite.getInstance().getGlobalConfig() as GlobalConfig
-    const key = config.getAuthKey() || Chaite.getInstance().getFrontendAuthHandler().generateToken(0, true)
-    Chaite.getInstance().getLogger().info('Login success, generating token' + key)
+  const authHandler = Chaite.getInstance().getFrontendAuthHandler()
+  if (!Chaite.getInstance().getGlobalConfig()) {
+    Chaite.getInstance().setGlobalConfig(new GlobalConfig())
+  }
+  const config = Chaite.getInstance().getGlobalConfig() as GlobalConfig
+  const authKey = config.getAuthKey()
+
+  const inputToken = String(body.token || (body as any).password || '').trim()
+  const isDynamicValid = authHandler ? authHandler.validateToken(inputToken) : false
+  const isStaticValid = !!authKey && inputToken === authKey
+
+  if (isStaticValid || isDynamicValid) {
+    const key = authKey || (authHandler ? authHandler.generateToken(0, true) : 'chaite-key')
+    Chaite.getInstance().getLogger().info('Login success, generating token ' + key)
     config.setAuthKey(key)
     const token = FrontEndAuthHandler.generateJWT(key)
     res.status(200)

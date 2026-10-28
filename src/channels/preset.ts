@@ -8,6 +8,7 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
     super(params)
     if (params) {
       this.prefix = params.prefix || ''
+      this.prefixes = Array.isArray(params.prefixes) ? params.prefixes : (params.prefix ? [params.prefix] : [])
       if (params.sendMessageOption) {
         this.sendMessageOption = params.sendMessageOption
       }
@@ -16,16 +17,95 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
       this.groupContext = params.groupContext
       this.dynamicContextHistory = params.dynamicContextHistory
       this.builtinToolCategories = params.builtinToolCategories
+      this.isBymMode = params.isBymMode
+      this.prefixAnywhere = params.prefixAnywhere !== undefined ? params.prefixAnywhere : true
       this.disableSystemInstructions = params.disableSystemInstructions
       this.disableConversationContext = params.disableConversationContext
+      this.quoteReply = params.quoteReply !== undefined ? params.quoteReply : false
+      this.showThinking = params.showThinking !== undefined ? params.showThinking : false
+      this.customOptions = params.customOptions
+      this.autoTriggerProbability = typeof params.autoTriggerProbability === 'number' ? params.autoTriggerProbability : 0
+      this.groupContextMinMessages = params.groupContextMinMessages
+      this.groupContextMinTokens = params.groupContextMinTokens
+      this.groupContextMaxMessages = params.groupContextMaxMessages
+      this.groupContextMaxTokens = params.groupContextMaxTokens
+      this.enableRetry = params.enableRetry !== undefined ? params.enableRetry : false
+      this.maxRetries = typeof params.maxRetries === 'number' ? params.maxRetries : 2
+      this.enableFallback = params.enableFallback !== undefined ? params.enableFallback : false
+      this.fallbackModel = params.fallbackModel
+      this.fallbackModels = Array.isArray(params.fallbackModels) ? params.fallbackModels : (params.fallbackModel ? [params.fallbackModel] : [])
+      this.whiteGroups = Array.isArray(params.whiteGroups) ? params.whiteGroups : []
+      this.blackGroups = Array.isArray(params.blackGroups) ? params.blackGroups : []
+      this.whiteUsers = Array.isArray(params.whiteUsers) ? params.whiteUsers : []
+      this.blackUsers = Array.isArray(params.blackUsers) ? params.blackUsers : []
     }
   }
 
   prefix: string
+  prefixes?: string[]
   // channelId: string
   local: boolean
   namespace?: string
   sendMessageOption: SendMessageOption
+
+  /**
+   * 回复时是否引用原消息（默认关闭）
+   */
+  quoteReply?: boolean
+
+  /**
+   * 是否输出思考内容（若模型产生思考过程，以转发聊天记录形式发送，默认关闭）
+   */
+  showThinking?: boolean
+
+  /**
+   * 自定义扩展配置或插件参数（预留未来插件系统动态配置）
+   */
+  customOptions?: Record<string, any>
+
+  /**
+   * 自动触发 AI 对话的概率（0 ~ 1，默认为 0；群聊产生新消息时按概率唤醒，不论是否开启伪人模式均生效）
+   */
+  autoTriggerProbability?: number
+
+  /**
+   * 群聊上下文覆盖配置（选填，未填则继承全局配置）
+   */
+  groupContextMinMessages?: number
+  groupContextMinTokens?: number
+  groupContextMaxMessages?: number
+  groupContextMaxTokens?: number
+
+  /**
+   * 错误重试开关与最大重试次数
+   */
+  enableRetry?: boolean
+  maxRetries?: number
+
+  /**
+   * 基本模型请求失败（或重试耗尽）后是否转用备用模型及备用模型名称 (渠道/模型名)
+   */
+  enableFallback?: boolean
+  fallbackModel?: string
+  fallbackModels?: string[]
+
+  /**
+   * 预设生效的群聊/群员黑白名单
+   */
+  whiteGroups?: string[]
+  blackGroups?: string[]
+  whiteUsers?: string[]
+  blackUsers?: string[]
+
+  /**
+   * 伪人模式：开启后作为独立群友插话，不绑定多轮记忆，且不向数据库写入死历史
+   */
+  isBymMode?: boolean
+
+  /**
+   * 允许在消息的任意位置匹配触发前缀（默认开启）
+   */
+  prefixAnywhere?: boolean
 
   /**
    * 携带群聊上下文
@@ -60,8 +140,28 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
       groupContext: this.groupContext,
       dynamicContextHistory: this.dynamicContextHistory,
       builtinToolCategories: this.builtinToolCategories,
+      isBymMode: this.isBymMode,
+      prefixAnywhere: this.prefixAnywhere !== undefined ? this.prefixAnywhere : true,
       disableSystemInstructions: this.disableSystemInstructions,
       disableConversationContext: this.disableConversationContext,
+      quoteReply: this.quoteReply !== undefined ? this.quoteReply : false,
+      showThinking: this.showThinking !== undefined ? this.showThinking : false,
+      customOptions: this.customOptions,
+      autoTriggerProbability: this.autoTriggerProbability !== undefined ? this.autoTriggerProbability : 0,
+      groupContextMinMessages: this.groupContextMinMessages,
+      groupContextMinTokens: this.groupContextMinTokens,
+      groupContextMaxMessages: this.groupContextMaxMessages,
+      groupContextMaxTokens: this.groupContextMaxTokens,
+      enableRetry: this.enableRetry !== undefined ? this.enableRetry : false,
+      maxRetries: this.maxRetries !== undefined ? this.maxRetries : 2,
+      enableFallback: this.enableFallback !== undefined ? this.enableFallback : false,
+      fallbackModel: this.fallbackModel,
+      fallbackModels: this.fallbackModels,
+      prefixes: this.prefixes,
+      whiteGroups: this.whiteGroups,
+      blackGroups: this.blackGroups,
+      whiteUsers: this.whiteUsers,
+      blackUsers: this.blackUsers,
     })
   }
 
@@ -84,8 +184,31 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
     preset.groupContext = raw.groupContext
     preset.dynamicContextHistory = raw.dynamicContextHistory
     preset.builtinToolCategories = raw.builtinToolCategories
+    preset.isBymMode = raw.isBymMode
+    preset.prefixAnywhere = raw.prefixAnywhere !== undefined ? Boolean(raw.prefixAnywhere) : true
     preset.disableSystemInstructions = raw.disableSystemInstructions
     preset.disableConversationContext = raw.disableConversationContext
+    preset.quoteReply = raw.quoteReply !== undefined ? Boolean(raw.quoteReply) : false
+    preset.showThinking = raw.showThinking !== undefined ? Boolean(raw.showThinking) : false
+    preset.customOptions = raw.customOptions
+    preset.autoTriggerProbability = typeof raw.autoTriggerProbability === 'number' ? raw.autoTriggerProbability : 0
+    preset.groupContextMinMessages = typeof raw.groupContextMinMessages === 'number' ? raw.groupContextMinMessages : undefined
+    preset.groupContextMinTokens = typeof raw.groupContextMinTokens === 'number' ? raw.groupContextMinTokens : undefined
+    preset.groupContextMaxMessages = typeof raw.groupContextMaxMessages === 'number' ? raw.groupContextMaxMessages : undefined
+    preset.groupContextMaxTokens = typeof raw.groupContextMaxTokens === 'number' ? raw.groupContextMaxTokens : undefined
+    preset.enableRetry = raw.enableRetry !== undefined ? Boolean(raw.enableRetry) : false
+    preset.maxRetries = typeof raw.maxRetries === 'number' ? raw.maxRetries : 2
+    preset.enableFallback = raw.enableFallback !== undefined ? Boolean(raw.enableFallback) : false
+    preset.fallbackModel = raw.fallbackModel
+    preset.fallbackModels = Array.isArray(raw.fallbackModels) ? raw.fallbackModels : (raw.fallbackModel ? [raw.fallbackModel] : [])
+    preset.prefixes = Array.isArray(raw.prefixes) ? raw.prefixes : (raw.prefix ? [raw.prefix] : [])
+    if (preset.prefixes.length > 0 && !preset.prefix) {
+      preset.prefix = preset.prefixes[0]
+    }
+    preset.whiteGroups = Array.isArray(raw.whiteGroups) ? raw.whiteGroups.map(String) : []
+    preset.blackGroups = Array.isArray(raw.blackGroups) ? raw.blackGroups.map(String) : []
+    preset.whiteUsers = Array.isArray(raw.whiteUsers) ? raw.whiteUsers.map(String) : []
+    preset.blackUsers = Array.isArray(raw.blackUsers) ? raw.blackUsers.map(String) : []
 
     if (raw.sendMessageOption) {
       preset.sendMessageOption = typeof raw.sendMessageOption === 'string'
@@ -155,12 +278,8 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
       base += '\n群聊上下文使用全局配置'
     }
 
-    if (this.disableConversationContext) {
-      base += '\n禁止对话上下文'
-    }
-
-    if (this.disableSystemInstructions) {
-      base += '\n禁止系统提示词'
+    if (this.isBymMode) {
+      base += '\n伪人模式：开启'
     }
 
     return base.trimEnd()

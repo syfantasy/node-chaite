@@ -88,7 +88,6 @@ function createColumns({
               { default: () => '修改' },
           ),
           h(NButton, { strong: true, tertiary: true, size: 'small', onClick: () => clone(row) }, { default: () => '复制' }),
-          h(NButton, { strong: true, tertiary: true, size: 'small', type: 'success', onClick: () => useForBym(row) }, { default: () => '用于伪人' }),
           h(
             NButton,
             {
@@ -177,16 +176,6 @@ function handleClonePreset(row: PresetModel) {
   copy.name = `${row.name} 副本`
   currentPreset.value = copy
   showModal.value = true
-}
-
-async function handleUseForBym(row: PresetModel) {
-  const rsp = await fetchConfig()
-  if (rsp.code !== 0) { message.error(rsp.message || '配置读取失败'); return }
-  const config: any = rsp.data
-  config.bym = { ...(config.bym || {}), enable: true, defaultPreset: row.id }
-  const saved = await saveConfig(config)
-  if (saved.code === 0) message.success(`已启用伪人模式并使用“${row.name}”`)
-  else message.error(saved.message || '配置保存失败')
 }
 
 function handleRemovePreset(row: PresetModel) {
@@ -304,10 +293,34 @@ function fetchToolGroups(filter?: any) {
 async function getChannelModels() {
   try {
     const res = await fetchChannelModels()
-    modelOptions.value = res.data.map(model => ({
-      value: model.name,
-      label: `${model.name}（${model.channelCount} 个渠道）`,
-    }))
+    const data = res.data as any
+    if (data?.channelModels && Array.isArray(data.channelModels)) {
+      const channelGroupMap = new Map<string, Array<{ label: string, value: string }>>()
+      for (const cm of data.channelModels) {
+        const group = channelGroupMap.get(cm.channelName) || []
+        group.push({
+          label: `${cm.channelName} / ${cm.modelName}`,
+          value: cm.fullKey,
+        })
+        channelGroupMap.set(cm.channelName, group)
+      }
+      const grouped: any[] = []
+      for (const [chName, children] of channelGroupMap.entries()) {
+        grouped.push({
+          type: 'group',
+          label: `渠道: ${chName}`,
+          key: chName,
+          children,
+        })
+      }
+      modelOptions.value = grouped
+    }
+    else if (Array.isArray(data)) {
+      modelOptions.value = data.map((model: any) => ({
+        value: model.name,
+        label: `${model.name}（${model.channelCount} 个渠道）`,
+      }))
+    }
   }
   catch (err) {
     console.error(err)

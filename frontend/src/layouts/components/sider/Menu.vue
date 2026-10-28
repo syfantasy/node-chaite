@@ -13,7 +13,7 @@ const appStore = useAppStore()
 const routeStore = useRouteStore()
 
 const menuInstRef = ref<MenuInst | null>(null)
-const bottomMenuKeys = new Set(['/config', '/chaite'])
+const bottomMenuKeys = new Set(['/config'])
 const menuOptions = computed(() => routeStore.menus.filter((option) => {
   const isBottom = bottomMenuKeys.has(String(option.key))
   return props.placement === 'bottom' ? isBottom : !isBottom

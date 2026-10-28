@@ -399,15 +399,6 @@ watch(showModal, (val) => {
                   <NInput v-model:value="addChannel.options!!.proxy" placeholder="请输入代理地址(可选)" />
                 </NFormItemGridItem>
 
-                <!-- 优先级与权重 -->
-                <NFormItemGridItem span="24 s:12 m:8" label="优先级" path="priority">
-                  <NInputNumber v-model:value="addChannel.priority" />
-                </NFormItemGridItem>
-
-                <NFormItemGridItem span="24 s:12 m:8" label="权重" path="weight">
-                  <NInputNumber v-model:value="addChannel.weight" />
-                </NFormItemGridItem>
-
                 <!-- 描述字段 -->
                 <NFormItemGridItem span="24" label="描述" path="description">
                   <NInput

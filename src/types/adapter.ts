@@ -28,6 +28,8 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
     this.parentMessageId = option.parentMessageId
     this.stream = option.stream
     this.isThinkingModel = option.isThinkingModel
+    this.showThinking = option.showThinking
+    this.customOptions = option.customOptions
     this.enableReasoning = option.enableReasoning
     this.reasoningEffort = option.reasoningEffort
     this.reasoningBudgetTokens = option.reasoningBudgetTokens
@@ -93,9 +95,17 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
   stream?: boolean
 
   /**
-     * 是否是思考模型
+     * @deprecated 已废弃
      */
   isThinkingModel?: boolean
+  /**
+     * 是否以合并转发形式输出思考内容
+     */
+  showThinking?: boolean
+  /**
+     * 预留扩展或插件自定义配置参数
+     */
+  customOptions?: Record<string, any>
   enableReasoning?: boolean
   reasoningEffort?: 'high' | 'medium' | 'low' | 'minimal'
   reasoningBudgetTokens?: number
@@ -174,6 +184,8 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
       parentMessageId: this.parentMessageId,
       stream: this.stream,
       isThinkingModel: this.isThinkingModel,
+      showThinking: this.showThinking,
+      customOptions: this.customOptions,
       enableReasoning: this.enableReasoning,
       reasoningEffort: this.reasoningEffort,
       reasoningBudgetTokens: this.reasoningBudgetTokens,

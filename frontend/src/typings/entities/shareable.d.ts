@@ -166,7 +166,12 @@ namespace Shareable {
      * 流模式
      */
     stream?: boolean
+    /** @deprecated 已废弃，请使用 enableReasoning 或各厂商思考控制 */
     isThinkingModel?: boolean
+    /** 是否以合并转发聊天记录形式输出思考内容 */
+    showThinking?: boolean
+    /** 扩展自定义参数或未来插件参数配置 */
+    customOptions?: Record<string, any>
 
     enableReasoning?: boolean
     reasoningEffort?: 'high' | 'medium' | 'low'
@@ -209,8 +214,11 @@ namespace Shareable {
 
   interface ChatPreset {
     prefix: string
+    prefixes?: string[]
     local: boolean
     namespace?: string
+    isBymMode?: boolean
+    prefixAnywhere?: boolean
     sendMessageOption: SendMessageOption
     /**
      * 携带群聊上下文
@@ -222,6 +230,31 @@ namespace Shareable {
     builtinToolCategories?: Array<'mcp-discovery' | 'mcp-management' | 'skill-management'>
     /** Whether to start each turn without previous user/assistant conversation context. */
     disableConversationContext?: boolean
+    /** 回复时是否引用原消息（默认关闭） */
+    quoteReply?: boolean
+    /** 是否以合并转发聊天记录形式输出思考内容（默认关闭） */
+    showThinking?: boolean
+    /** 扩展自定义参数或未来插件参数配置 */
+    customOptions?: Record<string, any>
+    /** 自动触发概率 (0~1) */
+    autoTriggerProbability?: number
+    /** 群聊上下文覆盖配置（选填，未填则继承全局配置） */
+    groupContextMinMessages?: number
+    groupContextMinTokens?: number
+    groupContextMaxMessages?: number
+    groupContextMaxTokens?: number
+    /** 错误重试开关与最大重试次数 */
+    enableRetry?: boolean
+    maxRetries?: number
+    /** 失败降级到备用模型开关与模型名称（渠道/模型名） */
+    enableFallback?: boolean
+    fallbackModel?: string
+    fallbackModels?: string[]
+    /** 预设群聊与群员黑白名单 */
+    whiteGroups?: string[]
+    blackGroups?: string[]
+    whiteUsers?: string[]
+    blackUsers?: string[]
     /**
      * 禁止系统prompt
      */

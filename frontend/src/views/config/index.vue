@@ -19,8 +19,10 @@ import {
   NTag,
   NTabPane,
   NTabs,
+  NTooltip,
   useMessage,
 } from 'naive-ui'
+import { InformationCircleOutline } from '@vicons/ionicons5'
 import IconLinkStar from '~icons/icon-park-outline/star-one'
 import IconLinkSystem from '~icons/icon-park-outline/system'
 import IconLinkPermission from '~icons/icon-park-outline/permissions'
@@ -31,6 +33,8 @@ import type { CustomConfig } from '@/service/api/config'
 import { fetchConfig, saveConfig } from '@/service/api/config'
 import { fetchAllPresetList } from '@/service/api/presets'
 import { fetchVisionChannelModels } from '@/service/api/channels'
+import { cleanUnusedImages, fetchMaintenanceStats, pruneHistory } from '@/service/api/maintenance'
+import type { MaintenanceStats } from '@/service/api/maintenance'
 import type { DownloadSimpleExtensionParams, MemoryConfig, SimpleExtensionStatus } from '@/service/api/memory'
 import {
   downloadSimpleExtension,
@@ -74,6 +78,16 @@ const menuOptions: MenuOption[] = [
     icon: renderIcon(IconLinkVision),
   },
   {
+    label: '日志与调试',
+    key: 'logging',
+    icon: renderIcon(IconLinkSystem),
+  },
+  {
+    label: '存储与维护',
+    key: 'maintenance',
+    icon: renderIcon(IconLinkStar),
+  },
+  {
     label: 'Chaite配置',
     key: 'chaite',
     icon: renderIcon(IconLinkStar),
@@ -91,7 +105,9 @@ const config = reactive({
     toggleMode: 'at',
     togglePrefix: '#chat',
     debug: false,
-    commandPrefix: '^#chatgpt',
+    commandPrefix: '#',
+    enableAt: true,
+    atPresetId: '',
   },
   /**
    * 伪人模式，基于框架实现，因此机器人开启前缀后依然需要带上前缀。
@@ -117,7 +133,7 @@ const config = reactive({
    */
   bym: {
     enable: false,
-    hit: ['bym'],
+    hit: [],
     probability: 0.02,
     speakingMode: 'reply',
     contextualPrompt: '你现在不是在回复某一条特定消息，而是作为这个群里的一名普通群友自然参与当前聊天。请阅读前面的群聊上下文，选择一个自然的切入点发言，可以接续话题、补充信息、吐槽、提问或表达态度。不要解释任务，不要提及“上下文”“指令”“AI”或“机器人”，不要强行引用、@或逐句回答触发你的那条消息。直接输出一段适合发到群里的自然发言。',
@@ -157,20 +173,24 @@ const config = reactive({
     responseBlockWords: [],
     blockStrategy: 'full',
     blockWordMask: '**',
-    enableGroupContext: false,
-    retainDynamicContextHistory: false,
-    groupContextLength: 20,
-    groupContextTemplatePrefix: 'Latest several messages in the group chat:\n'
-      + '| sender.card | sender.nickname | sender.user_id | sender.role | sender.title | time | messageId | raw_message |\n'
-      + '|---|---|---|---|---|---|---|---|',
-    groupContextTemplateMessage: '| $' + '{message.sender.card} | $' + '{message.sender.nickname} | $' + '{message.sender.user_id} | $' + '{message.sender.role} | $' + '{message.sender.title} | $' + '{message.time} | $' + '{message.messageId} | $' + '{message.raw_message} |',
-    groupContextTemplateSuffix: '\n',
+    enableGroupContext: true,
+  },
+  groupContext: {
+    enable: true,
+    minMessages: 20,
+    minTokens: 2000,
+    maxMessages: 100,
+    maxTokens: 10000,
+    enableRichCards: true,
+    enableForwardParse: true,
+    maxForwardMessages: 15,
   },
   management: {
     blackGroups: [],
     whiteGroups: [],
     blackUsers: [],
     whiteUsers: [],
+    masterUsers: [],
     defaultRateLimit: 0,
   },
   chaite: {
@@ -191,8 +211,18 @@ const config = reactive({
     imageDescriptionSystemPrompt: 'You are an image analysis assistant. Answer questions about images accurately and thoroughly.',
     defaultQuestion: '请详细描述这张图片的内容，包括场景、人物、物体、文字、颜色等所有可见细节。',
     maxImageSize: 10485760,
-    maxImageDimension: 8000,
+    maxImageSizeMb: 4,
+    maxRecentImages: 3,
+    maxImageDimension: 4096,
     enableGroupContextImages: true,
+  },
+  logging: {
+    enabled: true,
+    maxRecords: 500,
+  },
+  maintenance: {
+    historyRetentionDays: 30,
+    autoCleanImages: true,
   },
 })
 
@@ -319,6 +349,83 @@ function applyMemoryConfigPayload(payload?: Partial<MemoryConfig>) {
   }
 }
 
+const maintenanceStats = ref<MaintenanceStats>({
+  supported: false,
+  totalMessages: 0,
+  totalImages: 0,
+  imagesSizeBytes: 0,
+})
+const maintenanceStatsLoading = ref(false)
+const cleanImagesLoading = ref(false)
+const pruneHistoryLoading = ref(false)
+
+function formatBytes(bytes: number) {
+  if (!bytes || bytes <= 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
+}
+
+async function loadMaintenanceStats() {
+  maintenanceStatsLoading.value = true
+  try {
+    const res = await fetchMaintenanceStats()
+    if (res.isSuccess && res.data) {
+      maintenanceStats.value = res.data
+    }
+  } catch (err: any) {
+    console.error('获取维护统计失败:', err)
+  } finally {
+    maintenanceStatsLoading.value = false
+  }
+}
+
+async function handleCleanImages() {
+  cleanImagesLoading.value = true
+  try {
+    const res = await cleanUnusedImages()
+    if (res.isSuccess && res.data) {
+      message.success(`孤立图片清理成功：删除了 ${res.data.deleted} 张无引用图片（共扫描 ${res.data.total} 张）`)
+      await loadMaintenanceStats()
+    } else {
+      message.error(res.message || '清理图片失败')
+    }
+  } catch (err: any) {
+    message.error(`清理图片出错: ${err?.message || err}`)
+  } finally {
+    cleanImagesLoading.value = false
+  }
+}
+
+async function handlePruneHistory() {
+  const days = config.maintenance.historyRetentionDays
+  if (!days || days <= 0) {
+    message.warning('当前保留天数设为 0（永久保留），无法执行过期清理')
+    return
+  }
+  pruneHistoryLoading.value = true
+  try {
+    const res = await pruneHistory(days, config.maintenance.autoCleanImages)
+    if (res.isSuccess && res.data) {
+      message.success(`历史清理完成：清理了 ${res.data.prunedMessages} 条过期消息，删除了 ${res.data.deletedImages} 张孤立图片`)
+      await loadMaintenanceStats()
+    } else {
+      message.error(res.message || '历史清理失败')
+    }
+  } catch (err: any) {
+    message.error(`历史清理出错: ${err?.message || err}`)
+  } finally {
+    pruneHistoryLoading.value = false
+  }
+}
+
+watch(activeTab, (val) => {
+  if (val === 'maintenance') {
+    loadMaintenanceStats()
+  }
+})
+
 async function getConfig(): Promise<CustomConfig> {
   const data = await fetchConfig()
   if (data.isSuccess) {
@@ -327,21 +434,46 @@ async function getConfig(): Promise<CustomConfig> {
   else {
     message.error('配置加载失败')
   }
+  const rawMgmt = (data.data?.management || {}) as Record<string, any>
+  const rawLlm = (data.data?.llm || {}) as Record<string, any>
   // Keep defaults introduced by newer plugin versions when loading older
   // persisted nested config objects that do not yet contain them.
   Object.assign(config, {
     ...data.data,
+    basic: {
+      ...config.basic,
+      ...(data.data?.basic || {}),
+    },
+    management: {
+      ...config.management,
+      ...rawMgmt,
+      whiteGroups: ((rawMgmt.whiteGroups as any[]) || []).map(String),
+      blackGroups: ((rawMgmt.blackGroups as any[]) || []).map(String),
+      whiteUsers: ((rawMgmt.whiteUsers as any[]) || []).map(String),
+      blackUsers: ((rawMgmt.blackUsers as any[]) || []).map(String),
+      masterUsers: ((rawMgmt.masterUsers as any[]) || []).map(String),
+    },
     bym: {
       ...config.bym,
       ...(data.data?.bym || {}),
     },
     llm: {
       ...config.llm,
-      ...(data.data?.llm || {}),
+      ...rawLlm,
+      customPresetUserWhiteList: ((rawLlm.customPresetUserWhiteList as any[]) || []).map(String),
+      customPresetUserBlackList: ((rawLlm.customPresetUserBlackList as any[]) || []).map(String),
     },
     vision: {
       ...config.vision,
       ...(data.data?.vision || {}),
+    },
+    groupContext: {
+      ...config.groupContext,
+      ...(data.data?.groupContext || {}),
+    },
+    maintenance: {
+      ...config.maintenance,
+      ...(data.data?.maintenance || {}),
     },
   })
   if (!Array.isArray(config.bym.presetMap)) {
@@ -351,7 +483,19 @@ async function getConfig(): Promise<CustomConfig> {
 }
 
 async function updateConfig() {
-  const updateRes = await saveConfig(config)
+  const payload = JSON.parse(JSON.stringify(config))
+  if (payload.groupContext) {
+    if (!payload.llm) payload.llm = {}
+    payload.llm.enableGroupContext = payload.groupContext.enable
+  }
+  if (payload.management) {
+    payload.management.whiteGroups = (payload.management.whiteGroups || []).map(Number).filter(Boolean)
+    payload.management.blackGroups = (payload.management.blackGroups || []).map(Number).filter(Boolean)
+    payload.management.whiteUsers = (payload.management.whiteUsers || []).map(Number).filter(Boolean)
+    payload.management.blackUsers = (payload.management.blackUsers || []).map(Number).filter(Boolean)
+    payload.management.masterUsers = (payload.management.masterUsers || []).map(Number).filter(Boolean)
+  }
+  const updateRes = await saveConfig(payload)
   if (updateRes.isSuccess) {
     message.success('配置保存成功')
   }
@@ -403,13 +547,9 @@ async function refreshSimpleExtensionStatus() {
     if (res.isSuccess) {
       simpleStatus.value = res.data
     }
-    else {
-      message.error(res.message || '扩展状态获取失败')
-    }
   }
   catch (error) {
-    console.error('Failed to fetch simple extension status:', error)
-    message.error('扩展状态获取失败')
+    console.warn('Simple extension not active or installed:', error)
   }
   finally {
     simpleStatusLoading.value = false
@@ -489,6 +629,11 @@ onMounted(async () => {
 <template>
   <div class="config-container">
     <NCard title="系统配置" class="main-card">
+      <template #header-extra>
+        <NButton type="primary" size="small" @click="updateConfig">
+          保存配置
+        </NButton>
+      </template>
       <div class="layout-container">
         <!-- Left sidebar for navigation on wider screens -->
         <div class="sidebar">
@@ -526,30 +671,54 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="config.basic">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
-                    <NFormItemGridItem span="24 s:24 m:12" label="触发方式" path="toggleMode">
-                      <NSelect
-                        v-model:value="config.basic.toggleMode"
-                        :options="[
-                          { label: '@ 触发', value: 'at' },
-                          { label: '前缀触发', value: 'prefix' },
-                        ]"
-                      />
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                    <NFormItemGridItem span="24 s:24 m:12" label="@ 触发">
+                      <div style="display: flex; align-items: center; height: 34px;">
+                        <NSwitch v-model:value="config.basic.enableAt" />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>关闭时，群内 @ 机器人不会触发对话；开启时可直接触发对话。</span>
+                        </NTooltip>
+                      </div>
                     </NFormItemGridItem>
 
-                    <NFormItemGridItem span="24 s:24 m:12" label="触发前缀" path="togglePrefix">
-                      <NInput
-                        v-model:value="config.basic.togglePrefix"
-                        placeholder="仅前缀触发时有效"
-                        :disabled="config.basic.toggleMode !== 'prefix'"
-                      />
+                    <NFormItemGridItem span="24 s:24 m:12" label="@ 触发预设">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NSelect
+                          v-model:value="config.basic.atPresetId"
+                          :options="presetOptions"
+                          clearable
+                          placeholder="选择 @ 触发时使用的预设（留空使用默认预设）"
+                          :disabled="!config.basic.enableAt"
+                          style="flex: 1;"
+                        />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>开启 @ 触发时，若指定了预设，则 @ 触发就像在消息前加了该预设的前缀一样直接唤醒该预设。</span>
+                        </NTooltip>
+                      </div>
                     </NFormItemGridItem>
 
-                    <NFormItemGridItem span="24 s:24 m:12" label="命令前缀" path="commandPrefix">
-                      <NInput
-                        v-model:value="config.basic.commandPrefix"
-                        placeholder="例如: ^#chatgpt"
-                      />
+                    <NFormItemGridItem span="24 s:24 m:12" label="命令触发前缀" path="commandPrefix">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NInput v-model:value="config.basic.commandPrefix" placeholder="默认 #" style="flex: 1;" />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>绑定 #chaite、#ping、#拉黑 等交互指令的前缀（若改成 /，则指令变为 /chaite）。默认为 #。</span>
+                        </NTooltip>
+                      </div>
                     </NFormItemGridItem>
 
                     <NFormItemGridItem span="24 s:24 m:12" label="调试模式" path="debug">
@@ -574,7 +743,7 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="config.llm">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <!--                    <NFormItemGridItem span="24 s:24 m:12" label="默认模型" path="defaultModel"> -->
                     <!--                      <NInput v-model:value="config.llm.defaultModel" placeholder="输入默认模型名称" /> -->
                     <!--                    </NFormItemGridItem> -->
@@ -606,243 +775,6 @@ onMounted(async () => {
                 </NForm>
               </NCard>
 
-              <NCard class="inner-card mb-4">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      预设控制
-                    </div>
-                    <div class="card-subtitle">
-                      设置用户预设切换权限
-                    </div>
-                  </div>
-                </template>
-                <NForm label-placement="left" label-width="auto" :model="config.llm">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
-                    <NFormItemGridItem span="24 s:24 m:12" label="允许切换预设" path="enableCustomPreset">
-                      <NSwitch v-model:value="config.llm.enableCustomPreset" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24" label="预设白名单用户" path="customPresetUserWhiteList">
-                      <NDynamicTags
-                        v-model:value="config.llm.customPresetUserWhiteList"
-                        placeholder="输入用户ID并按回车添加"
-                      />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24" label="预设黑名单用户" path="customPresetUserBlackList">
-                      <NDynamicTags
-                        v-model:value="config.llm.customPresetUserBlackList"
-                        placeholder="输入用户ID并按回车添加"
-                      />
-                    </NFormItemGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
-
-              <NCard class="inner-card">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      伪人模式
-                    </div>
-                    <div class="card-subtitle">
-                      设置和管理伪人模式配置
-                    </div>
-                  </div>
-                </template>
-                <NForm label-placement="left" label-width="auto" :model="config.bym">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
-                    <!-- 开关 -->
-                    <NFormItemGridItem span="24 s:24 m:12" label="启用伪人模式" path="enable">
-                      <NSwitch v-model:value="config.bym.enable" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24 s:24 m:12" label="发言策略" path="speakingMode" :span-feedback="24">
-                      <NSelect
-                        v-model:value="config.bym.speakingMode"
-                        :options="[
-                          { label: '回复触发消息（原有模式）', value: 'reply' },
-                          { label: '自主融入群聊（结合上下文）', value: 'contextual' },
-                        ]"
-                      />
-                      <template #feedback>
-                        <span class="form-hint">自主模式仅在群聊上下文开启时生效，否则自动使用原有模式</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem v-if="config.bym.speakingMode === 'contextual'" span="24" label="自主发言指令" path="contextualPrompt" :span-feedback="24">
-                      <NInput
-                        v-model:value="config.bym.contextualPrompt"
-                        type="textarea"
-                        :autosize="{ minRows: 4, maxRows: 10 }"
-                        placeholder="告诉模型如何作为普通群友结合上下文自然发言"
-                      />
-                      <template #feedback>
-                        <span class="form-hint">该指令会替代触发者本轮消息作为 user prompt；群聊上下文仍在其前方</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <!-- 伪人必定触发词 -->
-                    <NFormItemGridItem span="24" label="伪人触发词" path="hit" :span-feedback="24">
-                      <NDynamicTags v-model:value="config.bym.hit" placeholder="输入触发词并按回车添加" />
-                      <template #feedback>
-                        <span class="form-hint">包含这些词时将必定触发伪人模式</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <!-- 不包含伪人必定触发词时的概率 -->
-                    <NFormItemGridItem span="24 s:24 m:12" label="随机触发概率" path="probability" :span-feedback="24">
-                      <NInputNumber
-                        v-model:value="config.bym.probability"
-                        :min="0"
-                        :max="1"
-                        :step="0.01"
-                        style="width: 100%"
-                      >
-                        <template #suffix>
-                          {{ (config.bym.probability * 100).toFixed(0) }}%
-                        </template>
-                      </NInputNumber>
-                      <template #feedback>
-                        <span class="form-hint">不包含触发词时随机触发的概率</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <!-- 伪人模式的默认预设 -->
-                    <NFormItemGridItem span="24 s:24 m:12" label="默认预设" path="defaultPreset" :span-feedback="24">
-                      <NSelect
-                        v-model:value="config.bym.defaultPreset"
-                        :options="presetOptions"
-                        filterable
-                        :filter-option="filterOption"
-                        placeholder="选择默认预设"
-                        clearable
-                      />
-                      <template #feedback>
-                        <span class="form-hint">伪人模式的默认预设</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <!-- 预设前缀 -->
-                    <NFormItemGridItem span="24" label="预设前缀" path="presetPrefix" :span-feedback="24">
-                      <NInput
-                        v-model:value="config.bym.presetPrefix"
-                        type="textarea"
-                        placeholder="输入预设前缀"
-                        :autosize="{ minRows: 3, maxRows: 6 }"
-                      />
-                      <template #feedback>
-                        <span class="form-hint">会加在所有伪人模式预设前的通用前缀，可用于配置通用的伪人发言风格</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <!-- maxTokens -->
-                    <NFormItemGridItem span="24 s:24 m:12" label="最大Token数" path="maxTokens" :span-feedback="24">
-                      <NInputNumber
-                        v-model:value="config.bym.maxTokens"
-                        :min="0"
-                        placeholder="0表示不限制"
-                        style="width: 100%"
-                      />
-                      <template #feedback>
-                        <span class="form-hint">大于0时会覆盖预设中的maxToken值</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <!-- temperature -->
-                    <NFormItemGridItem span="24 s:24 m:12" label="温度" path="temperature" :span-feedback="24">
-                      <NInputNumber
-                        v-model:value="config.bym.temperature"
-                        :min="-1"
-                        :max="2"
-                        :step="0.1"
-                        placeholder="-1表示使用预设值"
-                        style="width: 100%"
-                      />
-                      <template #feedback>
-                        <span class="form-hint">大于等于0时会覆盖预设中的temperature值，-1表示使用预设值</span>
-                      </template>
-                    </NFormItemGridItem>
-
-                    <!-- 是否发送思考内容 -->
-                    <NFormItemGridItem span="24 s:24 m:12" label="发送思考过程" path="sendReasoning">
-                      <NSwitch v-model:value="config.bym.sendReasoning" />
-                    </NFormItemGridItem>
-
-                    <!-- 预设映射 -->
-                    <NFormItemGridItem span="24" label="预设映射" path="presetMap" :span-feedback="24">
-                      <div class="preset-map-container">
-                        <div v-for="(item, index) in config.bym.presetMap" :key="index" class="preset-map-item">
-                          <div class="preset-map-keyword-container">
-                            <NDynamicTags
-                              v-model:value="item.keywords"
-                              placeholder="添加关键词"
-                              class="preset-map-keywords"
-                            />
-                          </div>
-                          <NIcon class="preset-map-arrow">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                              <path fill="currentColor" d="M16.01 11H4v2h12.01v3L20 12l-3.99-4z" />
-                            </svg>
-                          </NIcon>
-                          <NSelect
-                            v-model:value="item.presetId"
-                            class="preset-map-preset"
-                            :options="presetOptions"
-                            filterable
-                            :filter-option="filterOption"
-                            placeholder="选择预设"
-                            clearable
-                          />
-                          <NInputNumber
-                            v-model:value="item.priority"
-                            class="preset-map-priority"
-                            :min="0"
-                            placeholder="优先级"
-                          />
-                          <NSwitch
-                            v-model:value="item.recall"
-                            class="preset-map-recall"
-                            :default-value="false"
-                          >
-                            <template #checked>
-                              撤回
-                            </template>
-                            <template #unchecked>
-                              保留
-                            </template>
-                          </NSwitch>
-                          <NButton
-                            type="error"
-                            quaternary
-                            circle
-                            class="preset-map-delete"
-                            @click="config.bym.presetMap.splice(index, 1)"
-                          >
-                            <NIcon>
-                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                                <path fill="currentColor" d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12z" />
-                              </svg>
-                            </NIcon>
-                          </NButton>
-                        </div>
-                        <NButton
-                          type="primary"
-                          dashed
-                          class="preset-map-add"
-                          @click="config.bym.presetMap.push({ keywords: [], presetId: '', priority: 0, recall: false })"
-                        >
-                          添加关键词预设映射
-                        </NButton>
-                      </div>
-                      <template #feedback>
-                        <span class="form-hint">按优先级排序，消息包含特定关键词时使用对应的预设</span>
-                      </template>
-                    </NFormItemGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
               <NCard class="inner-card">
                 <template #header>
                   <div class="card-header">
@@ -855,7 +787,7 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="config.llm">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24" label="用户输入屏蔽词" path="promptBlockWords">
                       <NDynamicTags
                         v-model:value="config.llm.promptBlockWords"
@@ -896,6 +828,7 @@ onMounted(async () => {
                 </NForm>
               </NCard>
 
+              <!-- 群聊上下文卡片 -->
               <NCard class="inner-card mb-4">
                 <template #header>
                   <div class="card-header">
@@ -903,69 +836,95 @@ onMounted(async () => {
                       群聊上下文
                     </div>
                     <div class="card-subtitle">
-                      配置群组上下文相关参数
+                      基于双水位滚动窗口的群聊背景管理机制，兼顾前缀缓存命中与上下文完整度
                     </div>
                   </div>
                 </template>
-                <NForm label-placement="left" label-width="auto" :model="config.llm">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
-                    <NFormItemGridItem span="24 s:24 m:12" label="启用群组上下文" path="enableGroupContext">
-                      <NSwitch v-model:value="config.llm.enableGroupContext" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24 s:24 m:12" label="保留每轮动态上下文" path="retainDynamicContextHistory">
-                      <NSwitch v-model:value="config.llm.retainDynamicContextHistory" />
+                <NForm label-placement="left" label-width="auto" :model="config.groupContext">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                    <NFormItemGridItem span="24 s:24 m:12" label="全局启用群组上下文" path="enable">
+                      <NSwitch v-model:value="config.groupContext.enable" />
                       <template #feedback>
-                        <span class="form-hint">默认关闭：仅保留最新一轮群聊记录、时间和记忆；支持提示词缓存的渠道可开启</span>
+                        <span class="form-hint">总开关：关闭后所有预设默认不携带群聊背景（个别预设单独开启除外）</span>
                       </template>
                     </NFormItemGridItem>
 
-                    <NFormItemGridItem span="24 s:24 m:12" label="上下文长度" path="groupContextLength" :span-feedback="24">
+                    <NFormItemGridItem span="24 s:24 m:12" label="富媒体卡片解析" path="enableRichCards">
+                      <NSwitch v-model:value="config.groupContext.enableRichCards" />
+                      <template #feedback>
+                        <span class="form-hint">将群里的小程序、音乐卡片、B站视频等压缩为单行紧凑 Markdown，避免垃圾 Token 污染</span>
+                      </template>
+                    </NFormItemGridItem>
+
+                    <NFormItemGridItem span="24 s:24 m:12" label="合并转发解析" path="enableForwardParse">
+                      <NSwitch v-model:value="config.groupContext.enableForwardParse" />
+                      <template #feedback>
+                        <span class="form-hint">自动拉取群聊合并转发记录并提取概要，支持生成句柄供后续查阅</span>
+                      </template>
+                    </NFormItemGridItem>
+
+                    <NFormItemGridItem span="24 s:24 m:12" label="转发最多采样条数" path="maxForwardMessages">
                       <NInputNumber
-                        v-model:value="config.llm.groupContextLength"
-                        :min="0"
-                        :max="100"
+                        v-model:value="config.groupContext.maxForwardMessages"
+                        :min="1"
+                        :max="50"
                         style="width: 100%"
-                        placeholder="群组上下文保留的消息数"
+                        placeholder="默认 15 条"
                       />
                       <template #feedback>
-                        <span class="form-hint">保留的群聊消息数量</span>
+                        <span class="form-hint">单个合并转发最多采样的消息条数</span>
                       </template>
                     </NFormItemGridItem>
 
-                    <NFormItemGridItem span="24" label="上下文模板前缀" path="groupContextTemplatePrefix" :span-feedback="24">
-                      <NInput
-                        v-model:value="config.llm.groupContextTemplatePrefix"
-                        type="textarea"
-                        placeholder="输入上下文模板前缀"
-                        :autosize="{ minRows: 3, maxRows: 6 }"
+                    <NFormItemGridItem span="24 s:12 m:6" label="最低保留条数" path="minMessages">
+                      <NInputNumber
+                        v-model:value="config.groupContext.minMessages"
+                        :min="1"
+                        :max="500"
+                        style="width: 100%"
+                        placeholder="默认 20 条"
                       />
                       <template #feedback>
-                        <span class="form-hint">用于组装群聊上下文提示词的模板前缀</span>
+                        <span class="form-hint">水位重置后的保底消息数量</span>
                       </template>
                     </NFormItemGridItem>
 
-                    <NFormItemGridItem span="24" label="上下文消息模板" path="groupContextTemplateMessage" :span-feedback="24">
-                      <NInput
-                        v-model:value="config.llm.groupContextTemplateMessage"
-                        type="textarea"
-                        placeholder="输入上下文消息模板"
-                        :autosize="{ minRows: 3, maxRows: 6 }"
+                    <NFormItemGridItem span="24 s:12 m:6" label="最低保留 Token" path="minTokens">
+                      <NInputNumber
+                        v-model:value="config.groupContext.minTokens"
+                        :min="100"
+                        :max="50000"
+                        style="width: 100%"
+                        placeholder="默认 2000"
                       />
                       <template #feedback>
-                        <span class="form-hint">用于组装群聊上下文提示词的模板内容部分，使用${message.xxx}引用消息属性</span>
+                        <span class="form-hint">水位重置后的保底 Token 预算</span>
                       </template>
                     </NFormItemGridItem>
 
-                    <NFormItemGridItem span="24" label="上下文模板后缀" path="groupContextTemplateSuffix" :span-feedback="24">
-                      <NInput
-                        v-model:value="config.llm.groupContextTemplateSuffix"
-                        type="textarea"
-                        placeholder="输入上下文模板后缀"
-                        :autosize="{ minRows: 2, maxRows: 4 }"
+                    <NFormItemGridItem span="24 s:12 m:6" label="上限条数" path="maxMessages">
+                      <NInputNumber
+                        v-model:value="config.groupContext.maxMessages"
+                        :min="5"
+                        :max="1000"
+                        style="width: 100%"
+                        placeholder="默认 100 条"
                       />
                       <template #feedback>
-                        <span class="form-hint">用于组装群聊上下文提示词的模板后缀</span>
+                        <span class="form-hint">仅当条数与 Token 均超过上限时才触发修剪</span>
+                      </template>
+                    </NFormItemGridItem>
+
+                    <NFormItemGridItem span="24 s:12 m:6" label="上限 Token" path="maxTokens">
+                      <NInputNumber
+                        v-model:value="config.groupContext.maxTokens"
+                        :min="500"
+                        :max="100000"
+                        style="width: 100%"
+                        placeholder="默认 10000"
+                      />
+                      <template #feedback>
+                        <span class="form-hint">双重条件触发截断，最大化利用 Prompt Cache</span>
                       </template>
                     </NFormItemGridItem>
                   </NGrid>
@@ -986,8 +945,31 @@ onMounted(async () => {
                     </div>
                   </div>
                 </template>
+                <template #header-extra>
+                  <NButton type="primary" size="small" @click="updateConfig">
+                    保存配置
+                  </NButton>
+                </template>
                 <NForm label-placement="left" label-width="auto" :model="config.management">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                    <NFormItemGridItem span="24" label="管理员/主人 QQ" path="masterUsers">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NDynamicTags
+                          v-model:value="config.management.masterUsers"
+                          placeholder="输入管理员 QQ 号并按回车添加"
+                          style="flex: 1;"
+                        />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>享有管理员权限的 QQ 号列表。可执行 #结束全部对话 等全局维护指令。</span>
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+
                     <NFormItemGridItem span="24 s:24 m:12" label="黑名单群组" path="blackGroups">
                       <NDynamicTags
                         v-model:value="config.management.blackGroups"
@@ -1047,7 +1029,7 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="memoryConfig">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24 s:24 m:12" label="数据库路径" path="database">
                       <NInput v-model:value="memoryConfig.database" placeholder="data/memory.db" />
                     </NFormItemGridItem>
@@ -1070,7 +1052,7 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="memoryConfig.group">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24 s:24 m:12" label="启用群组记忆" path="enable">
                       <NSwitch v-model:value="memoryConfig.group.enable" />
                     </NFormItemGridItem>
@@ -1206,7 +1188,7 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="memoryConfig.user">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24 s:24 m:12" label="启用用户记忆" path="enable">
                       <NSwitch v-model:value="memoryConfig.user.enable" />
                     </NFormItemGridItem>
@@ -1297,7 +1279,7 @@ onMounted(async () => {
                     用于提供中文和拼音分词能力。点击下方按钮自动下载，也可以手动填写库文件路径和词典目录。
                   </NAlert>
                   <NForm label-placement="left" label-width="auto" :model="memoryConfig.extensions.simple">
-                    <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                    <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                       <NFormItemGridItem span="24 s:24 m:12" label="启用扩展" path="enable">
                         <NSwitch v-model:value="memoryConfig.extensions.simple.enable" />
                       </NFormItemGridItem>
@@ -1319,7 +1301,7 @@ onMounted(async () => {
                     </NGrid>
                   </NForm>
                   <NForm label-placement="left" label-width="auto">
-                    <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                    <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                       <NFormItemGridItem span="24 s:24 m:12" label="目标平台">
                         <NSelect v-model:value="simpleSelectedAsset" :options="simpleAssetOptions" />
                       </NFormItemGridItem>
@@ -1404,7 +1386,7 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="config.chaite">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24 s:24 m:12" label="数据目录" path="dataDir">
                       <NInput v-model:value="config.chaite.dataDir" placeholder="相对于插件目录" />
                     </NFormItemGridItem>
@@ -1432,7 +1414,7 @@ onMounted(async () => {
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="config.chaite">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24" label="云端API URL" path="cloudBaseUrl">
                       <NInput v-model:value="config.chaite.cloudBaseUrl" placeholder="输入云端API URL" />
                     </NFormItemGridItem>
@@ -1489,7 +1471,7 @@ onMounted(async () => {
                   <span>视觉处理</span>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="config.vision">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24 s:12 m:12" label="非视觉模型策略">
                       <NSelect
                         v-model:value="config.vision.nonVisionStrategy"
@@ -1529,29 +1511,167 @@ onMounted(async () => {
                         placeholder="未指定 question 时的默认提问"
                       />
                     </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:12 m:6" label="最大图片大小 (bytes)">
-                      <NInputNumber
-                        v-model:value="config.vision.maxImageSize"
-                        :min="1"
-                        style="width: 100%"
-                      />
+                    <NFormItemGridItem span="24 s:12 m:12" label="群聊最近图片数 (张)">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NInputNumber
+                          v-model:value="config.vision.maxRecentImages"
+                          :min="1"
+                          :max="20"
+                          style="flex: 1;"
+                        />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>群聊中仅保留最近 N 张图片作为多模态输入，更早的图片将自动转为文本引用，以避免消耗过大 Token。</span>
+                        </NTooltip>
+                      </div>
                     </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:12 m:6" label="图片最长边 (px)">
-                      <NInputNumber
-                        v-model:value="config.vision.maxImageDimension"
-                        :min="1"
-                        :max="8000"
-                        :precision="0"
-                        style="width: 100%"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:12 m:6" label="群聊上下文图片">
-                      <NSwitch v-model:value="config.vision.enableGroupContextImages" />
-                      <span class="text-xs ml-2">开启后群聊图片会进入主干对话</span>
+                    <NFormItemGridItem span="24 s:12 m:12" label="群聊上下文图片">
+                      <div style="display: flex; align-items: center; height: 34px;">
+                        <NSwitch v-model:value="config.vision.enableGroupContextImages" />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>开启后群聊历史记录中的图片会进入多模态主干对话上下文。</span>
+                        </NTooltip>
+                      </div>
                     </NFormItemGridItem>
                   </NGrid>
                 </NForm>
               </NCard>
+            </NTabPane>
+
+            <!-- 日志与调试配置选项卡 -->
+            <NTabPane name="logging" tab="日志与调试">
+              <NCard class="inner-card">
+                <template #header>
+                  <span>日志系统配置</span>
+                </template>
+                <NForm label-placement="left" label-width="auto" :model="config.logging">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                    <NFormItemGridItem span="24 s:12 m:12" label="开启请求与调试日志">
+                      <NSwitch v-model:value="config.logging.enabled" />
+                      <span class="text-xs ml-2">开启后完整记录模型调用、伪人插话及错误追踪</span>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:12 m:12" label="最大保留记录条数 (FIFO)">
+                      <NInputNumber
+                        v-model:value="config.logging.maxRecords"
+                        :min="50"
+                        :max="10000"
+                        style="width: 100%"
+                      />
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24">
+                      <NAlert type="info">
+                        日志采用循环覆盖 (FIFO) 存储，超限自动删除最老记录；Base64 图片在详情中已默认紧凑折叠并支持一键预览与复制，避免卡顿与磁盘暴涨。
+                      </NAlert>
+                    </NFormItemGridItem>
+                  </NGrid>
+                </NForm>
+              </NCard>
+            </NTabPane>
+
+            <!-- 存储与维护选项卡 -->
+            <NTabPane name="maintenance" tab="存储与维护">
+              <NSpace vertical size="large">
+                <NCard class="inner-card">
+                  <template #header>
+                    <div class="card-header">
+                      <div class="card-title">数据状态概览</div>
+                      <div class="card-subtitle">实时查看当前历史消息和图片缓存存储情况</div>
+                    </div>
+                  </template>
+                  <template #header-extra>
+                    <NButton size="small" :loading="maintenanceStatsLoading" @click="loadMaintenanceStats">
+                      刷新状态
+                    </NButton>
+                  </template>
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                    <NFormItemGridItem span="24 s:8 m:8" label="历史消息总数">
+                      <div style="font-size: 20px; font-weight: bold; color: #18a058;">
+                        {{ maintenanceStats.totalMessages }} 条
+                      </div>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:8 m:8" label="本地缓存图片数">
+                      <div style="font-size: 20px; font-weight: bold; color: #2080f0;">
+                        {{ maintenanceStats.totalImages }} 张
+                      </div>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:8 m:8" label="图片磁盘占用">
+                      <div style="font-size: 20px; font-weight: bold; color: #f0a020;">
+                        {{ formatBytes(maintenanceStats.imagesSizeBytes) }}
+                      </div>
+                    </NFormItemGridItem>
+                  </NGrid>
+                </NCard>
+
+                <NCard class="inner-card">
+                  <template #header>
+                    <div class="card-header">
+                      <div class="card-title">自动清理策略</div>
+                      <div class="card-subtitle">配置历史消息及孤立图片的定期维护规则</div>
+                    </div>
+                  </template>
+                  <NForm label-placement="left" label-width="auto" :model="config.maintenance">
+                    <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                      <NFormItemGridItem span="24 s:12 m:12" label="会话历史保留天数">
+                        <div style="display: flex; align-items: center; width: 100%;">
+                          <NInputNumber
+                            v-model:value="config.maintenance.historyRetentionDays"
+                            :min="0"
+                            :max="3650"
+                            placeholder="如: 30"
+                            style="flex: 1;"
+                          />
+                          <span class="text-xs ml-2" style="white-space: nowrap;">天（填 0 为永久保留不清理）</span>
+                        </div>
+                      </NFormItemGridItem>
+                      <NFormItemGridItem span="24 s:12 m:12" label="自动清理孤立图片">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                          <NSwitch v-model:value="config.maintenance.autoCleanImages" />
+                          <span class="text-xs">定时维护与历史清理时，自动从磁盘删除无引用的孤立图片</span>
+                        </div>
+                      </NFormItemGridItem>
+                      <NFormItemGridItem span="24">
+                        <NAlert type="info">
+                          系统每天会在后台自动执行一次定期维护；当历史消息因过期被清理后，若开启了孤立图片清理，与该消息关联的本地图片文件也会被自动删除并回收磁盘。
+                        </NAlert>
+                      </NFormItemGridItem>
+                    </NGrid>
+                  </NForm>
+                </NCard>
+
+                <NCard class="inner-card">
+                  <template #header>
+                    <div class="card-header">
+                      <div class="card-title">手动数据维护</div>
+                      <div class="card-subtitle">立即触发清理操作释放磁盘空间</div>
+                    </div>
+                  </template>
+                  <NSpace size="large">
+                    <NButton
+                      type="warning"
+                      :loading="cleanImagesLoading"
+                      @click="handleCleanImages"
+                    >
+                      立即清理未引用的孤立图片
+                    </NButton>
+                    <NButton
+                      type="error"
+                      :loading="pruneHistoryLoading"
+                      @click="handlePruneHistory"
+                    >
+                      按保留期立即清理历史消息
+                    </NButton>
+                  </NSpace>
+                </NCard>
+              </NSpace>
             </NTabPane>
           </NTabs>
 
@@ -1656,6 +1776,12 @@ onMounted(async () => {
 }
 
 .action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: var(--n-color);
+  padding: 12px 0;
+  border-top: 1px solid rgba(140, 140, 140, 0.15);
   margin-top: 24px;
   display: flex;
   justify-content: flex-end;

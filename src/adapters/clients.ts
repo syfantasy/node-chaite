@@ -314,28 +314,9 @@ export class AbstractClient implements IClient {
       try {
         modelResponse = await this._sendMessage(histories, apiKey, options as SendMessageOption)
       } catch (error) {
-        this.context.chaite.getOperationLogManager()?.addSync({
-          type: 'llm.call', level: 'error', summary: `模型调用失败${options.model ? ` [${options.model}]` : ''}`,
-          detail: error instanceof Error ? error.message : String(error),
-          durationMs: Date.now() - _llmCallStart,
-          ...this.getUsageLogContext(options as SendMessageOption),
-        })
         throw error
       }
       const _llmCallDuration = Date.now() - _llmCallStart
-      // ── Operation log: LLM call ──────────────────────────────────────────────
-      asyncLocalStorage.getStore()?.chaite?.getOperationLogManager?.()?.addSync({
-        type: 'llm.call',
-        level: 'info',
-        summary: `LLM call${options.model ? ` [${options.model}]` : ''}`,
-        ...this.getUsageLogContext(options as SendMessageOption),
-        durationMs: _llmCallDuration,
-        inputTokens: (modelResponse.usage as any)?.promptTokens ?? (modelResponse.usage as any)?.inputTokens,
-        outputTokens: (modelResponse.usage as any)?.completionTokens ?? (modelResponse.usage as any)?.outputTokens,
-        totalTokens: modelResponse.usage?.totalTokens,
-        cachedTokens: modelResponse.usage?.cachedTokens,
-        reasoningTokens: modelResponse.usage?.reasoningTokens,
-      })
 
       // 后处理器
       if (modelResponse.role === 'assistant') {

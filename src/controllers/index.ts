@@ -12,6 +12,7 @@ import TriggerRouter from './trigger'
 import SystemRouter from './basic'
 import AgentRouter from './agent'
 import LogsRouter from './logs'
+import MaintenanceRouter from './maintenance'
 import cors from 'cors'
 import { authenticateToken } from './middlewares'
 import { getLogger } from '../utils'
@@ -41,6 +42,7 @@ export function createApp (configure?: (app: Application) => void, options: ApiS
   app.use('/api/toolGroups', authenticateToken, ToolGroupsRouter)
   app.use('/api/agent', authenticateToken, AgentRouter)
   app.use('/api/logs', authenticateToken, LogsRouter)
+  app.use('/api/maintenance', authenticateToken, MaintenanceRouter)
   app.use('/v1', authenticateToken, OpenAIRouter)
   configure?.(app)
   const frontendDir = options.frontendDir

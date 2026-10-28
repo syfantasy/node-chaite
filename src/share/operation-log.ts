@@ -65,6 +65,17 @@ export class OperationLogManager {
 
   // ─── Read ─────────────────────────────────────────────────────────────────
 
+  async get(id: string): Promise<OperationLog | null> {
+    if (this.storage) {
+      try {
+        return (await this.storage.getItem(id)) || null
+      } catch {
+        return null
+      }
+    }
+    return this.memBuf.find(l => l.id === id) || null
+  }
+
   async list(filter: ListLogsFilter = {}): Promise<LogsPage> {
     const {
       page = 1,

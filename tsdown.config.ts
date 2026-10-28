@@ -38,6 +38,9 @@ export default defineConfig({
     return { js: '.js', dts: '.d.ts' }
   },
   dts: true,
+  deps: {
+    neverBundle: ['axios'],
+  },
   format: ['esm'],
   shims: true,
   target: 'node20',

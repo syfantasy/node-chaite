@@ -101,6 +101,10 @@ export function fetchLogs(query: ListLogsQuery = {}) {
   return request.Get<Service.ResponseResult<LogsPage>>('/api/logs', { params: query })
 }
 
+export function fetchLogDetail(id: string) {
+  return request.Get<Service.ResponseResult<OperationLog>>(`/api/logs/${id}`)
+}
+
 export function fetchLogsStats() {
   return request.Get<Service.ResponseResult<LogsStats>>('/api/logs/stats')
 }

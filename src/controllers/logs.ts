@@ -61,6 +61,42 @@ router.get('/stats', (req: Request, res: Response) => {
 })
 
 /**
+ * GET /api/logs/:id
+ * Returns a single log entry with full details and metadata
+ */
+router.get('/:id', (req: Request, res: Response) => {
+  const mgr = Chaite.getInstance().getOperationLogManager()
+  if (!mgr) return notConfigured(res)
+  handle(res, async () => {
+    const id = String(req.params['id'])
+    if (!id) throw new Error('Missing log ID')
+    const item = await mgr.get(id)
+    if (!item) throw new Error('Log not found')
+
+    if (!item.channelName) {
+      try {
+        const channelMgr = Chaite.getInstance().getChannelsManager()
+        if (channelMgr) {
+          if (item.channelId) {
+            const chan = await channelMgr.getInstance(item.channelId).catch(() => null)
+            if (chan) item.channelName = chan.name
+          } else if (item.model) {
+            const chans = await channelMgr.getChannelByModel(item.model).catch(() => [])
+            const matched = chans?.find(c => c.status === 'enabled') || chans?.[0]
+            if (matched) {
+              item.channelId = matched.id
+              item.channelName = matched.name
+            }
+          }
+        }
+      } catch {}
+    }
+
+    return item
+  })
+})
+
+/**
  * DELETE /api/logs
  * Clear logs. Optionally filtered by: type, level, userId, from (ms), to (ms).
  */

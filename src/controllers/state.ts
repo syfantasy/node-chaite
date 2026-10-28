@@ -32,7 +32,8 @@ router.get('/list', (req: Request, res: Response) => {
 /** GET /api/state/:userId */
 router.get('/:userId', (req: Request, res: Response) => {
   wrap(res, async () => {
-    const state = await Chaite.getInstance().getUserStateStorage().getItem(req.params.userId)
+    const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId
+    const state = await Chaite.getInstance().getUserStateStorage().getItem(userId)
     if (!state) { res.status(404).json(ChaiteResponse.fail(null, 'User state not found')); return null }
     return state
   })
@@ -41,7 +42,8 @@ router.get('/:userId', (req: Request, res: Response) => {
 /** DELETE /api/state/:userId */
 router.delete('/:userId', (req: Request, res: Response) => {
   wrap(res, async () => {
-    await Chaite.getInstance().getUserStateStorage().removeItem(req.params.userId)
+    const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId
+    await Chaite.getInstance().getUserStateStorage().removeItem(userId)
     return { deleted: true }
   })
 })
@@ -53,8 +55,9 @@ router.delete('/:userId', (req: Request, res: Response) => {
  */
 router.get('/history/:conversationId', (req: Request, res: Response) => {
   wrap(res, async () => {
+    const conversationId = Array.isArray(req.params.conversationId) ? req.params.conversationId[0] : req.params.conversationId
     const messageId = req.query['messageId'] as string | undefined
-    const history = await Chaite.getInstance().getHistoryManager().getHistory(messageId, req.params.conversationId)
+    const history = await Chaite.getInstance().getHistoryManager().getHistory(messageId, conversationId)
     return history
   })
 })

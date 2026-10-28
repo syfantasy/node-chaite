@@ -1,4 +1,5 @@
-import axios, {
+import axios from 'axios'
+import type {
   AxiosInstance,
   AxiosRequestConfig,
   AxiosResponse,
@@ -172,35 +173,35 @@ export class HttpClient {
    * HTTP GET 请求
    */
   public async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.get<T, T>(url, config)
+    return this.instance.get(url, config) as unknown as Promise<T>
   }
 
   /**
    * HTTP POST 请求
    */
   public async post<T, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.post<T, T, D>(url, data, config)
+    return this.instance.post(url, data, config) as unknown as Promise<T>
   }
 
   /**
    * HTTP PUT 请求
    */
   public async put<T, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.put<T, T, D>(url, data, config)
+    return this.instance.put(url, data, config) as unknown as Promise<T>
   }
 
   /**
    * HTTP DELETE 请求
    */
   public async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.delete<T, T>(url, config)
+    return this.instance.delete(url, config) as unknown as Promise<T>
   }
 
   /**
    * HTTP PATCH 请求
    */
   public async patch<T, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.patch<T, T, D>(url, data, config)
+    return this.instance.patch(url, data, config) as unknown as Promise<T>
   }
 }
 

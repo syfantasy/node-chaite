@@ -38,20 +38,42 @@ router.get('/list', (req: Request, res: Response) => {
   })
 })
 
-/** GET /api/channels/models — unique configured models with their channel counts */
+/** GET /api/channels/models — configured models grouped by channel + unique models */
 router.get('/models', (req: Request, res: Response) => {
   wrap(res, async () => {
     const channels = await Chaite.getInstance().getChannelsManager().listInstances()
     const counts = new Map<string, number>()
+    const channelModels: Array<{
+      channelId: string
+      channelName: string
+      modelName: string
+      fullKey: string
+    }> = []
+
     for (const channel of channels) {
+      if (channel.status === 'disabled') continue
       for (const model of channel.models) {
         const name = model.name?.trim()
-        if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+        if (name) {
+          counts.set(name, (counts.get(name) ?? 0) + 1)
+          channelModels.push({
+            channelId: channel.id,
+            channelName: channel.name,
+            modelName: name,
+            fullKey: `${channel.name}/${name}`,
+          })
+        }
       }
     }
-    return [...counts.entries()]
+
+    const uniqueModels = [...counts.entries()]
       .map(([name, channelCount]) => ({ name, channelCount }))
       .sort((left, right) => left.name.localeCompare(right.name))
+
+    return {
+      models: uniqueModels,
+      channelModels,
+    }
   })
 })
 

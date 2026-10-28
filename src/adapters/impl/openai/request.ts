@@ -3,7 +3,11 @@ import type { IMessage, SendMessageOption, Tool } from '../../../types'
 import { getFromChaiteConverter, getFromChaiteToolConverter } from '../../../utils/converter'
 import './converter'
 
-export type OpenAIRequest = OpenAI.ChatCompletionCreateParamsNonStreaming & { thinking_budget_tokens?: number }
+export type OpenAIRequest = OpenAI.ChatCompletionCreateParamsNonStreaming & {
+  thinking_budget_tokens?: number
+  thinking?: { type: 'enabled' | 'disabled' }
+  [key: string]: any
+}
 
 export function buildOpenAIRequest(histories: IMessage[], tools: Tool[], options: SendMessageOption, baseUrl = ''): OpenAIRequest {
   const model = options.model || 'gpt-4.1'
@@ -53,6 +57,13 @@ export function buildOpenAIRequest(histories: IMessage[], tools: Tool[], options
   }
   const budget = options.openaiThinkingBudgetTokens
   if (options.openaiThinkingBudgetTokens !== undefined && officialEndpoint) throw new Error('OpenAI 官方接口不支持 thinking_budget_tokens')
+
+  const isDeepSeek = /deepseek/i.test(name) || /deepseek/i.test(baseUrl)
+  const deepseekThinking: { thinking?: { type: 'enabled' | 'disabled' } } = isDeepSeek && options.enableReasoning !== undefined
+    ? { thinking: { type: options.enableReasoning ? 'enabled' : 'disabled' } }
+    : {}
+  const customParams = options.customOptions || {}
+
   return {
     model,
     messages,
@@ -60,6 +71,8 @@ export function buildOpenAIRequest(histories: IMessage[], tools: Tool[], options
     ...(!reasoningModel || effort === 'none' ? (options.temperature !== undefined ? { temperature: options.temperature } : {}) : {}),
     ...(reasoning || options.openaiReasoningEffort ? (effort ? { reasoning_effort: effort } : {}) : {}),
     ...(budget !== undefined ? { thinking_budget_tokens: budget } : {}),
+    ...deepseekThinking,
     ...(tools.length && !(responsesTools && toolChoice === 'none') ? { tools: tools.map(getFromChaiteToolConverter('openai')), tool_choice: toolChoice } : {}),
+    ...customParams,
   }
 }

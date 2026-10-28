@@ -230,29 +230,84 @@ export class Chaite extends EventEmitter {
         }
       }
 
-      const modelName = options.chatPreset.sendMessageOption.model || ''
-      context.presetId = options.chatPreset.id
-      context.presetName = options.chatPreset.name
-      const channels = await this.channelsManager.getChannelByModel(modelName)
-      if (channels.length > 0) {
-        const channel = channels[0]
+      if (!options.chatPreset) {
+        throw new Error('ChatPreset is required for sendMessage')
+      }
+      const preset = options.chatPreset
+
+      context.presetId = preset.id
+      context.presetName = preset.name
+
+      const primaryModelSpec = preset.sendMessageOption?.model || ''
+      const enableRetry = Boolean(preset.enableRetry)
+      const maxRetries = Math.max(1, Number(preset.maxRetries) || 2)
+      const enableFallback = Boolean(preset.enableFallback)
+      const fallbackSpecs: string[] = []
+      if (enableFallback) {
+        if (Array.isArray(preset.fallbackModels)) {
+          for (const m of preset.fallbackModels) {
+            if (m && typeof m === 'string' && m.trim()) fallbackSpecs.push(m.trim())
+          }
+        }
+        if (fallbackSpecs.length === 0 && preset.fallbackModel?.trim()) {
+          fallbackSpecs.push(preset.fallbackModel.trim())
+        }
+      }
+
+      const allSpecsToTry = [primaryModelSpec, ...fallbackSpecs].filter(Boolean)
+
+      const resolveChannelAndModel = async (spec: string) => {
+        let selectedChannel: any = undefined
+        let realModel = spec
+
+        if (spec.includes('/')) {
+          const slashIdx = spec.indexOf('/')
+          const channelIdent = spec.slice(0, slashIdx).trim()
+          const candidateModel = spec.slice(slashIdx + 1).trim()
+
+          const allChannels = await this.channelsManager.listInstances()
+          const matched = allChannels.find(c => c.name === channelIdent || c.id === channelIdent)
+          if (matched) {
+            selectedChannel = matched
+            realModel = candidateModel
+          }
+        }
+
+        if (!selectedChannel) {
+          const channels = await this.channelsManager.getChannelByModel(realModel)
+          if (channels.length > 0) {
+            selectedChannel = channels[0]
+          }
+        }
+
+        if (!selectedChannel) {
+          throw new Error(`No available channels for model "${spec}"`)
+        }
+
+        return { channel: selectedChannel, realModel }
+      }
+
+      const invokeModel = async (spec: string): Promise<ModelResponse> => {
+        const { channel, realModel } = await resolveChannelAndModel(spec)
         context.channelId = channel.id
         context.channelName = channel.name
-        const clientOptions = channel.getOptionsForModel(modelName)
+
+        const clientOptions = channel.getOptionsForModel(realModel)
         await clientOptions.ready()
         clientOptions.setHistoryManager(this.historyManager)
         clientOptions.setLogger(this.logger)
         const client = createClient(channel.adapterType, clientOptions, context)
+
         const newOptions = {
-          ...options.chatPreset.sendMessageOption,
-          builtinToolCategories: options.chatPreset.builtinToolCategories,
+          ...preset.sendMessageOption,
+          model: realModel,
+          builtinToolCategories: preset.builtinToolCategories,
           ...Object.fromEntries(
             Object.entries(options)
               .filter(([_, value]) => value !== undefined),
           ),
         }
-        // Keep only a compact server catalogue in the prompt. Actual MCP tool
-        // schemas stay hidden until the model searches and selects tools.
+
         if (this.mcpServerManager) {
           const servers = await this.mcpServerManager.listEnabled()
           const catalogue = servers
@@ -265,8 +320,7 @@ export class Chaite extends EventEmitter {
               .join('\n\n')
           }
         }
-        // A direct skill is progressive disclosure too: its full instructions
-        // are loaded only after matching, never added to every chat prompt.
+
         if (options.skillName && this.skillRegistry) {
           const skill = this.skillRegistry.getSkillByName(options.skillName)
           if (skill) {
@@ -278,13 +332,51 @@ export class Chaite extends EventEmitter {
             }
           }
         }
+
         if (this.globalConfig?.getDebug()) {
           this.logger.debug(`sendMessage options: ${JSON.stringify(newOptions)}`)
         }
-        return await client.sendMessage(message, newOptions)
-      } else {
-        throw new Error('No available channels')
+
+        const resp = await client.sendMessage(message, newOptions)
+        if (resp && typeof resp === 'object') {
+          ;(resp as any).channelId = channel.id
+          ;(resp as any).channelName = channel.name
+        }
+        return resp
       }
+
+      const callWithRetry = async (spec: string, retries: number): Promise<ModelResponse> => {
+        let attempt = 0
+        while (true) {
+          try {
+            return await invokeModel(spec)
+          } catch (err: any) {
+            attempt++
+            if (retries > 0 && attempt <= retries) {
+              this.logger.warn(`[Chaite] Request for model "${spec}" failed (attempt ${attempt}/${retries}): ${err?.message || err}. Retrying in 1s...`)
+              await new Promise(r => setTimeout(r, 1000))
+              continue
+            }
+            throw err
+          }
+        }
+      }
+
+      let lastSpecError: any = null
+      for (let i = 0; i < allSpecsToTry.length; i++) {
+        const currentSpec = allSpecsToTry[i]
+        try {
+          if (i > 0) {
+            this.logger.warn(`[Chaite] Fallback step ${i}: attempting fallback model "${currentSpec}"`)
+          }
+          return await callWithRetry(currentSpec, enableRetry ? maxRetries : 0)
+        } catch (err: any) {
+          lastSpecError = err
+          this.logger.warn(`[Chaite] Model "${currentSpec}" exhausted all retries/attempts: ${err?.message || err}`)
+        }
+      }
+
+      throw lastSpecError || new Error(`No available model succeeded for preset "${preset.name}"`)
     })
   }
 

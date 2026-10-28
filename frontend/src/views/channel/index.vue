@@ -96,14 +96,6 @@ function createColumns({
       },
     },
     {
-      title: '优先级',
-      key: 'priority',
-    },
-    {
-      title: '权重',
-      key: 'weight',
-    },
-    {
       title: '上传者',
       key: 'uploader',
       render(row: ChannelModel) {
