@@ -61,24 +61,23 @@ async function finish() {
     if (!testRsp.data?.success) throw new Error(`渠道测试失败：${testRsp.data?.error || '未知错误'}`)
     testText.value = `连接成功，耗时 ${testRsp.data.elapsed}ms`
 
+    const prefixList = form.prefix ? form.prefix.split(/[,，\s]+/).filter(Boolean) : []
     const presetRsp = await createPreset({
       name: form.presetName, description: `使用 ${form.channelName} / ${form.model}`, modelType: 'settings', embedded: false,
-      local: true, prefix: form.prefix, groupContext: form.groupContext ? 'enabled' : 'disable',
+      local: true, prefix: prefixList[0] || '', prefixes: prefixList,
+      isBymMode: form.enableBym,
+      autoTriggerProbability: form.enableBym ? form.bymProbability : 0,
+      groupContext: form.groupContext ? 'enabled' : 'disable',
       sendMessageOption: { model: form.model, systemOverride: form.systemPrompt, temperature: form.temperature, maxToken: form.maxToken, toolGroupId: form.toolGroupIds },
     } as Shareable.PresetModel)
     if (presetRsp.code !== 0) throw new Error(presetRsp.message || '预设创建失败')
     presetId = presetRsp.data.id
 
-    if (form.applyDefault || form.enableBym) {
+    if (form.applyDefault) {
       const configRsp = await fetchConfig()
       if (configRsp.code !== 0) throw new Error(configRsp.message || '插件配置读取失败')
       const config: any = configRsp.data
-      if (form.applyDefault) {
-        config.llm = { ...(config.llm || {}), defaultModel: form.model, defaultChatPresetId: presetId }
-      }
-      if (form.enableBym) {
-        config.bym = { ...(config.bym || {}), enable: true, defaultPreset: presetId, probability: form.bymProbability }
-      }
+      config.llm = { ...(config.llm || {}), defaultModel: form.model, defaultChatPresetId: presetId }
       const saveRsp = await saveConfig(config)
       if (saveRsp.code !== 0) throw new Error(saveRsp.message || '群聊配置保存失败')
     }
@@ -132,20 +131,19 @@ onMounted(async () => {
           <NFormItem label="API 地址"><NInput v-model:value="form.baseUrl" /></NFormItem>
           <NFormItem label="API Key"><NInput v-model:value="form.apiKey" type="password" show-password-on="click" placeholder="仅保存在你的机器人服务器" /></NFormItem>
           <NFormItem label="模型能力"><NCheckboxGroup v-model:value="form.features"><NCheckbox value="chat" disabled>对话</NCheckbox><NCheckbox value="tool">工具</NCheckbox><NCheckbox value="visual">图片</NCheckbox></NCheckboxGroup></NFormItem>
-          <div class="two"><NFormItem label="优先级"><NInputNumber v-model:value="form.priority" :min="0" /></NFormItem><NFormItem label="权重"><NInputNumber v-model:value="form.weight" :min="1" /></NFormItem></div>
         </NForm>
       </section>
 
       <section class="chaite-panel form-panel">
         <div class="section-head"><span>02</span><div><h2>预设与群聊</h2><p>无需记住模型名称或离开本页。</p></div></div>
         <NForm label-placement="top">
-          <div class="two"><NFormItem label="预设名称"><NInput v-model:value="form.presetName" placeholder="例如：群聊小助手" /></NFormItem><NFormItem label="触发前缀（可选）"><NInput v-model:value="form.prefix" placeholder="例如：小助手" /></NFormItem></div>
+          <div class="two"><NFormItem label="预设名称"><NInput v-model:value="form.presetName" placeholder="例如：群聊小助手" /></NFormItem><NFormItem label="触发前缀（支持多个，逗号分隔）"><NInput v-model:value="form.prefix" placeholder="例如：小助手, 助手" /></NFormItem></div>
           <NFormItem label="角色设定"><NInput v-model:value="form.systemPrompt" type="textarea" :autosize="{ minRows: 5, maxRows: 10 }" /></NFormItem>
           <div class="two"><NFormItem label="温度"><NInputNumber v-model:value="form.temperature" :min="0" :max="2" :step="0.1" /></NFormItem><NFormItem label="最大输出"><NInputNumber v-model:value="form.maxToken" :min="1" /></NFormItem></div>
           <NFormItem label="处理器"><NSelect v-model:value="form.preProcessorIds" multiple clearable :options="processorOptions" placeholder="可选：选择消息处理器" @update:value="value => { form.preProcessorIds = value; form.postProcessorIds = value }" /></NFormItem>
           <NFormItem label="工具组"><NSelect v-model:value="form.toolGroupIds" multiple clearable :options="toolOptions" placeholder="可选：让模型使用工具" /></NFormItem>
-          <div class="checks"><NCheckbox v-model:checked="form.groupContext">携带群聊上下文</NCheckbox><NCheckbox v-model:checked="form.applyDefault">设为默认对话预设</NCheckbox><NCheckbox v-model:checked="form.enableBym">立即用于伪人模式</NCheckbox></div>
-          <NFormItem v-if="form.enableBym" label="伪人触发概率"><NInputNumber v-model:value="form.bymProbability" :min="0" :max="1" :step="0.01" /></NFormItem>
+          <div class="checks"><NCheckbox v-model:checked="form.groupContext">携带群聊上下文</NCheckbox><NCheckbox v-model:checked="form.applyDefault">设为默认对话预设</NCheckbox><NCheckbox v-model:checked="form.enableBym">设为伪人预设（单轮插话）</NCheckbox></div>
+          <NFormItem v-if="form.enableBym" label="主动插话概率（0~1）"><NInputNumber v-model:value="form.bymProbability" :min="0" :max="1" :step="0.01" /></NFormItem>
         </NForm>
         <NAlert v-if="testText" type="success" :show-icon="true" class="result">{{ testText }}</NAlert>
         <NButton type="primary" size="large" block :loading="submitting" @click="finish">创建渠道、测试并应用到群聊</NButton>
