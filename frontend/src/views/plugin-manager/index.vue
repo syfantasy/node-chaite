@@ -604,10 +604,24 @@ export default function setup(ctx) {
             <tr><td><code>e.isGroup / e.isPrivate</code></td><td>是否为群聊 / 私聊</td></tr>
             <tr><td><code>e.text</code></td><td>去除 @ 和指令前缀后的纯文本</td></tr>
             <tr><td><code>e.sender</code></td><td>名片信息：<code>{ nickname, card, role }</code></td></tr>
-            <tr><td><code>await e.reply(content)</code></td><td>统一回复消息（字符串或图文对象）</td></tr>
+            <tr><td><code>await e.reply(content)</code></td><td>跨协议统一回复（文本 / 结构化 at / 图片）</td></tr>
             <tr><td><code>await e.queryAI(prompt, [opt])</code></td><td>单轮问答（支持指定预设或纯净基元对话）</td></tr>
             <tr><td><code>await e.askWithContext(prompt, [opt])</code></td><td>携带当前群聊双水位线上下文发问</td></tr>
           </table>
+
+          <p style="font-size: 13px; color: #666; margin-top: 10px;">
+            <strong>跨协议回复规范 (推荐结构化传参，无需手拼 CQ 码)：</strong>
+          </p>
+          <NCode
+            language="javascript"
+            code="// 1. 结构化艾特回复 (框架自动向协议端转换原生 @)
+await e.reply({ text: '查询成功！', at: true })
+
+// 2. 图文混合回复
+await e.reply({ text: '图片如下：', images: ['https://example.com/pic.png'] })
+
+// 注：手写 [CQ:at,qq=...] 亦会被底层内置解析器自动转为原生段兼容"
+          />
 
           <h3 style="margin-top: 20px;">4. queryAI 高级调用模式</h3>
           <p style="font-size: 13px; color: #666;">
