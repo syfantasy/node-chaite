@@ -25,6 +25,7 @@ import {
   useMessage,
 } from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   fetchPluginCode,
   fetchPlugins,
@@ -37,6 +38,7 @@ import {
   type PluginMeta,
 } from '@/service/api/pluginManager'
 
+const router = useRouter()
 const message = useMessage()
 const loading = ref(false)
 const plugins = ref<PluginMeta[]>([])
@@ -296,6 +298,7 @@ onMounted(() => {
         </p>
       </div>
       <NSpace align="center">
+        <NButton secondary @click="router.push('/chaite')">🛍️ 安装插件</NButton>
         <NButton secondary @click="docsDrawerVisible = true">📖 开发文档</NButton>
         <NButton secondary @click="triggerImport">导入插件</NButton>
         <NButton type="primary" @click="createModalVisible = true">新建单文件插件</NButton>
@@ -593,11 +596,28 @@ export default function setup(ctx) {
             <tr><td><code>e.text</code></td><td>去除 @ 和指令前缀后的纯文本</td></tr>
             <tr><td><code>e.sender</code></td><td>名片信息：<code>{ nickname, card, role }</code></td></tr>
             <tr><td><code>await e.reply(content)</code></td><td>统一回复消息（字符串或图文对象）</td></tr>
-            <tr><td><code>await e.queryAI(prompt)</code></td><td>一句话直调主预设大模型回答</td></tr>
-            <tr><td><code>await e.askWithContext(prompt)</code></td><td>携带当前群聊上下文向 AI 发问</td></tr>
+            <tr><td><code>await e.queryAI(prompt, [opt])</code></td><td>单轮问答（支持指定预设或纯净基元对话）</td></tr>
+            <tr><td><code>await e.askWithContext(prompt, [opt])</code></td><td>携带当前群聊双水位线上下文发问</td></tr>
           </table>
 
-          <h3 style="margin-top: 20px;">4. 插件配置与 Schema 声明</h3>
+          <h3 style="margin-top: 20px;">4. queryAI 高级调用模式</h3>
+          <p style="font-size: 13px; color: #666;">
+            当群聊默认预设性格活泼/不听话，而插件需要执行严谨任务时，推荐以下两种方式：
+          </p>
+          <NCode
+            language="javascript"
+            code="// 方式 1: 指定严肃/听话的预设 ID (预设已绑定好渠道与参数)
+const res = await e.queryAI('帮我提取关键词', { presetId: 'translator' })
+
+// 方式 2: 纯净基元调用 (完全不走预设人设，直接走指定渠道/模型，适合严格任务)
+const pureRes = await e.queryAI('请将以下内容转为 JSON', {
+  pure: true, // 开启纯净模式
+  systemPrompt: '你是一个只输出 JSON 的高精度助手',
+  temperature: 0.1
+})"
+          />
+
+          <h3 style="margin-top: 20px;">5. 插件配置与 Schema 声明</h3>
           <p style="font-size: 13px; color: #666;">
             插件目录下放置 <code>config.json</code>，即可在代码中通过 <code>ctx.config</code> 读取。如需可视化表单，同级创建 <code>schema.json</code>：
           </p>
