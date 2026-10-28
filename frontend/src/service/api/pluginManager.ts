@@ -23,25 +23,33 @@ export interface PluginMeta {
 }
 
 export function fetchPlugins() {
-  return request.Get<Service.ResponseResult<PluginMeta[]>>('/api/plugins')
+  return request.get<{ code: number; data: PluginMeta[]; message: string }>('/plugins')
 }
 
 export function togglePlugin(id: string, enabled: boolean) {
-  return request.Post<Service.ResponseResult<{ success: boolean }>>(`/api/plugins/${id}/toggle`, { enabled })
+  return request.post<{ code: number; message: string }>(`/plugins/${id}/toggle`, { enabled })
 }
 
 export function savePluginConfig(id: string, config: Record<string, any>) {
-  return request.Post<Service.ResponseResult<{ success: boolean }>>(`/api/plugins/${id}/config`, config)
+  return request.post<{ code: number; message: string }>(`/plugins/${id}/config`, { config })
 }
 
 export function fetchPluginCode(id: string) {
-  return request.Get<Service.ResponseResult<{ code: string }>>(`/api/plugins/${id}/code`)
+  return request.get<{ code: number; data: { code: string }; message: string }>(`/plugins/${id}/code`)
 }
 
 export function savePluginCode(id: string, code: string) {
-  return request.Post<Service.ResponseResult<{ success: boolean }>>(`/api/plugins/${id}/code`, { code })
+  return request.post<{ code: number; message: string }>(`/plugins/${id}/code`, { code })
 }
 
 export function reloadPlugin(id: string) {
-  return request.Post<Service.ResponseResult<{ success: boolean }>>(`/api/plugins/${id}/reload`, {})
+  return request.post<{ code: number; message: string }>(`/plugins/${id}/reload`)
+}
+
+export function importPlugin(type: 'single-file' | 'directory', filename: string, base64: string) {
+  return request.post<{ code: number; data: { id: string }; message: string }>('/plugins/import', {
+    type,
+    filename,
+    base64,
+  })
 }

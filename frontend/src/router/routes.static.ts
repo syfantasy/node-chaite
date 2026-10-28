@@ -9,7 +9,6 @@ export const staticRoutes: AppRoute.RowRoute[] = [
 
   { name: 'plugins', path: '/plugins', title: '插件板块', requiresAuth: true, icon: 'icon-park-outline:application-two', menuType: 'dir', componentPath: null, id: 25, pid: null },
   { name: 'plugin-manager', path: '/plugin-manager', title: '插件管理', requiresAuth: true, icon: 'icon-park-outline:plug-one', menuType: 'page', componentPath: '/plugin-manager/index.vue', id: 28, pid: 25 },
-  { name: 'plugin-docs', path: '/plugin-docs', title: '插件开发指南', requiresAuth: true, icon: 'icon-park-outline:book-one', menuType: 'page', componentPath: '/plugin-docs/index.vue', id: 29, pid: 25 },
   { name: 'tools', path: '/tools', title: '工具与分组', requiresAuth: true, icon: 'icon-park-outline:tool', menuType: 'page', componentPath: '/tools/index.vue', id: 13, pid: 25 },
   { name: 'processors', path: '/processors', title: '处理器', requiresAuth: true, icon: 'icon-park-outline:filter', menuType: 'page', componentPath: '/processors/index.vue', id: 14, pid: 25 },
   { name: 'chaite', path: '/chaite', title: '插件市场 (Chaite)', requiresAuth: true, icon: 'icon-park-outline:shopping', menuType: 'page', componentPath: '/chaite/index.vue', id: 27, pid: 25 },
