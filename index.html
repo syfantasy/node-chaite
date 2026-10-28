@@ -269,22 +269,32 @@ export default function setup(ctx) {
     </div>
 
     <!-- 5. 直调 AI & 上下文 -->
-    <h2 id="ai-capabilities">5. AI 能力赋能</h2>
-    <pre><code class="language-javascript">ctx.registerCommand('#今日诗词', async (e) => {
-  // 单轮直调预设模型
-  const poem = await e.queryAI('请以"春雨"为题写一首七言绝句，直接输出诗文')
-  await e.reply(poem)
+    <h2 id="ai-capabilities">5. AI 能力赋能 (预设模式 vs 纯净基元模式)</h2>
+    <p>当默认预设性格活泼/不听话，而插件需要执行提取、摘要、严谨计算等任务时，可自由选择以下方式：</p>
+    <pre><code class="language-javascript">ctx.registerCommand('#翻译', async (e) => {
+  // 方式 1: 指定听话预设 ID (预设已绑定好渠道与模型，无需额外配置)
+  const res = await e.queryAI(e.text, { presetId: 'translator' })
+  await e.reply(res)
+  return true
+})
+
+ctx.registerCommand('#提取', async (e) => {
+  // 方式 2: 纯净基元对话 (完全不带预设性格与提示词，直接调渠道模型)
+  const jsonStr = await e.queryAI(e.text, {
+    pure: true,                     // 纯净模式，零预设污染
+    channelId: 'my-openai-channel', // 可选：指定特定渠道 ID
+    systemPrompt: '你是一个严格的数据提取助手，仅返回格式化后的 JSON',
+    temperature: 0.1
+  })
+  await e.reply(jsonStr)
   return true
 })
 
 ctx.registerCommand('#总结讨论', async (e) => {
-  if (!e.isGroup) {
-    await e.reply('请在群聊中使用该指令')
-    return true
-  }
+  if (!e.isGroup) return true
   await e.reply('正在阅读刚才的发言，请稍候...')
   // 携带群聊上下文提炼
-  const summary = await e.askWithContext('请用活泼的语气总结刚才群友的核心讨论，列出3个看点')
+  const summary = await e.askWithContext('请总结刚才群友的核心讨论，列出3个看点')
   await e.reply(summary)
   return true
 })
