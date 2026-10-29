@@ -15,18 +15,22 @@ import {
   NInputNumber,
   NModal,
   NPopover,
+  NRadio,
+  NRadioGroup,
   NSelect,
   NSpace,
   NSwitch,
   NTabPane,
   NTabs,
   NTooltip,
+  NAlert,
 } from 'naive-ui'
 import { InformationCircleOutline } from '@vicons/ionicons5'
 import type { SelectMixedOption } from 'naive-ui/es/select/src/interface'
 import type { FormInst } from 'naive-ui'
 import { HarmBlockThreshold, HarmCategory } from '@/utils/constants'
 import type { Shareable } from '@/typings/entities/shareable'
+import { fetchAllMcpServerList, fetchSkillList } from '@/service/api/agent'
 
 const props = defineProps({
   show: Boolean,
@@ -160,6 +164,32 @@ const blackGroupTags = ref<string[]>([])
 const whiteUserTags = ref<string[]>([])
 const blackUserTags = ref<string[]>([])
 
+const mcpOptions = ref<Array<{ label: string; value: string }>>([])
+const skillOptions = ref<Array<{ label: string; value: string }>>([])
+
+function loadMcpAndSkills() {
+  fetchAllMcpServerList().then((items) => {
+    mcpOptions.value = (items || []).map(s => ({
+      label: `${s.name} (${s.transport === 'stdio' ? (s.command || '') : (s.url || '')})`,
+      value: s.id,
+    }))
+  }).catch(() => {})
+
+  fetchSkillList({}).then((res) => {
+    if (res.code === 0 && res.data?.items) {
+      skillOptions.value = res.data.items.map(sk => ({
+        label: `${sk.frontmatter.name || sk.id} (${(sk.frontmatter.keywords || []).join('、') || '无暗号'})`,
+        value: sk.id,
+      }))
+    }
+  }).catch(() => {})
+}
+
+watch(() => props.show, (val) => {
+  if (val)
+    loadMcpAndSkills()
+}, { immediate: true })
+
 function addFallbackModel() {
   fallbackModelList.value.push('')
 }
@@ -200,6 +230,9 @@ const addPreset = ref<Partial<Shareable.PresetModel>>({
       tools: [],
     } as Shareable.ToolChoice,
     toolGroupId: ['default_local'],
+    toolMountMode: 'basic',
+    mcpServerIds: [],
+    enabledSkills: [],
     geminiBuiltinTools: [],
     responseModalities: undefined,
     safetySettings: undefined,
@@ -221,6 +254,16 @@ watch(() => props.initialData, (newVal) => {
 
     if (!data.sendMessageOption.toolChoice) {
       data.sendMessageOption.toolChoice = { type: 'auto', tools: [] }
+    }
+
+    if (!data.sendMessageOption.toolMountMode) {
+      data.sendMessageOption.toolMountMode = 'basic'
+    }
+    if (!Array.isArray(data.sendMessageOption.mcpServerIds)) {
+      data.sendMessageOption.mcpServerIds = []
+    }
+    if (!Array.isArray(data.sendMessageOption.enabledSkills)) {
+      data.sendMessageOption.enabledSkills = []
     }
 
     if (!Array.isArray(data.builtinToolCategories)) {
@@ -377,6 +420,9 @@ watch(showModal, (val) => {
           tools: [],
         },
         toolGroupId: ['default_local'],
+        toolMountMode: 'basic',
+        mcpServerIds: [],
+        enabledSkills: [],
         geminiBuiltinTools: [],
         responseModalities: undefined,
         safetySettings: undefined,
@@ -629,22 +675,71 @@ watch(showModal, (val) => {
                       </NSpace>
                     </NFormItemGridItem>
 
-                    <!-- 工具组 -->
-                    <NFormItemGridItem span="24 s:12 m:12" label="工具" path="tools">
-                      <NPopover trigger="hover" placement="bottom" :width="260">
-                        <template #trigger>
-                          <NButton size="small">
-                            工具组
-                          </NButton>
-                        </template>
+                    <!-- 工具与能力装配分区 -->
+                    <NFormItemGridItem span="24" label="工具与能力装配模式">
+                      <NRadioGroup v-model:value="addPreset.sendMessageOption!!.toolMountMode">
+                        <NSpace>
+                          <NRadio value="basic">
+                            🟢 基础常驻模式 (常规全量携带 · 开箱即用)
+                          </NRadio>
+                          <NRadio value="skill">
+                            🟡 智能技能模式 (进阶按需唤醒 · 极致省 Token)
+                          </NRadio>
+                        </NSpace>
+                      </NRadioGroup>
+                    </NFormItemGridItem>
+
+                    <!-- 基础模式下的配置 -->
+                    <template v-if="addPreset.sendMessageOption!!.toolMountMode === 'basic'">
+                      <NFormItemGridItem span="24 s:12 m:12" label="常驻本地工具组">
                         <NSelect
                           v-model:value="addPreset.sendMessageOption!!.toolGroupId"
                           multiple
-                          placeholder="请选择工具组"
+                          filterable
+                          placeholder="选择每轮对话常驻携带的工具组"
                           :options="toolsOptions as SelectMixedOption[]"
                         />
-                      </NPopover>
-                    </NFormItemGridItem>
+                      </NFormItemGridItem>
+
+                      <NFormItemGridItem span="24 s:12 m:12" label="常驻 MCP 服务">
+                        <NSelect
+                          v-model:value="addPreset.sendMessageOption!!.mcpServerIds"
+                          multiple
+                          filterable
+                          placeholder="选择每轮对话常驻挂载的 MCP 服务"
+                          :options="mcpOptions as SelectMixedOption[]"
+                        />
+                      </NFormItemGridItem>
+                    </template>
+
+                    <!-- 智能技能模式下的配置 -->
+                    <template v-else>
+                      <NFormItemGridItem span="24" label="技能动态唤醒说明">
+                        <NAlert type="info" :show-icon="true">
+                          智能技能模式下，闲聊对话仅携带轻量常驻底座；当用户触发特定暗号或意图时，Chaite 会自动动态加载对应技能绑定的工具及 MCP 服务，有效避免上下文膨胀与误调用。
+                        </NAlert>
+                      </NFormItemGridItem>
+
+                      <NFormItemGridItem span="24 s:12 m:12" label="轻量常驻底座 (高频基础工具)">
+                        <NSelect
+                          v-model:value="addPreset.sendMessageOption!!.toolGroupId"
+                          multiple
+                          filterable
+                          placeholder="日常轻量工具组（如表情包、日常问候）"
+                          :options="toolsOptions as SelectMixedOption[]"
+                        />
+                      </NFormItemGridItem>
+
+                      <NFormItemGridItem span="24 s:12 m:12" label="允许动态唤醒的技能 (Skills)">
+                        <NSelect
+                          v-model:value="addPreset.sendMessageOption!!.enabledSkills"
+                          multiple
+                          filterable
+                          placeholder="留空表示允许唤醒所有已配置技能"
+                          :options="skillOptions as SelectMixedOption[]"
+                        />
+                      </NFormItemGridItem>
+                    </template>
 
                     <!-- 工具选择 -->
                     <NFormItemGridItem span="24" label="工具选择策略" path="sendMessageOption.toolChoice">

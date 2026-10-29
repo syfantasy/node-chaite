@@ -549,7 +549,8 @@ async function handleMessage(
           messageText: currentText,
           event,
         })
-        if (matchedSkill) {
+        const allowedSkills = sendOptions.enabledSkills
+        if (matchedSkill && (!allowedSkills?.length || allowedSkills.includes(matchedSkill.id))) {
           sendOptions.skillName = matchedSkill.id
           if (config.logging?.enabled !== false) {
             console.log(`[Runner] Activated skill "${matchedSkill.id}" (${matchedSkill.frontmatter.name}) for user ${event.userId}`)

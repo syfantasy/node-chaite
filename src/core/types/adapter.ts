@@ -43,6 +43,9 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
     this.preProcessorIds = option.preProcessorIds
     this.postProcessorIds = option.postProcessorIds
     this.toolGroupId = option.toolGroupId
+    this.mcpServerIds = option.mcpServerIds
+    this.toolMountMode = option.toolMountMode
+    this.enabledSkills = option.enabledSkills
     this.safetySettings = option.safetySettings
     this.responseModalities = option.responseModalities
     this.onChunk = option.onChunk
@@ -126,6 +129,21 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
 
   toolGroupId?: string[]
 
+  /**
+   * 工具装配模式：'basic' 基础常驻全量模式，'skill' 智能技能按需唤醒模式
+   */
+  toolMountMode?: 'basic' | 'skill'
+
+  /**
+   * 常驻携带的 MCP 服务 ID 列表
+   */
+  mcpServerIds?: string[]
+
+  /**
+   * 允许动态唤醒的 Skill ID 列表（留空则不限制全部允许）
+   */
+  enabledSkills?: string[]
+
   // gemini专属的一堆
 
   responseModalities?: string[]
@@ -199,6 +217,9 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
       preProcessorIds: this.preProcessorIds,
       postProcessorIds: this.postProcessorIds,
       toolGroupId: this.toolGroupId,
+      mcpServerIds: this.mcpServerIds,
+      toolMountMode: this.toolMountMode,
+      enabledSkills: this.enabledSkills,
       responseModalities: this.responseModalities,
       safetySettings: this.safetySettings,
       toolCallLimit: this.toolCallLimit,

@@ -212,6 +212,35 @@ export class AbstractClient implements IClient {
     // reconnect here so the actual execution uses the server's live tool view.
     const capabilityManager = this.context.chaite?.getMcpCapabilityManager?.()
     const mcpManager = this.context.chaite?.getMcpServerManager?.()
+    // Load statically mounted MCP servers configured in preset (mcpServerIds)
+    const mcpServerIds: string[] = (this.options as any).mcpServerIds || []
+    if (mcpServerIds.length > 0 && mcpManager) {
+      for (const serverId of mcpServerIds) {
+        const server = await mcpManager.get(serverId)
+        if (!server || !server.enabled) continue
+        const executor = new McpToolExecutor(server)
+        const execCtxBuilder = (): ExecutionContext => ({
+          runId: crypto.randomUUID(),
+          userId: this.context.getEvent()?.sender?.user_id?.toString() ?? 'unknown',
+          groupId: this.context.getEvent()?.group?.group_id?.toString(),
+          skillName: this.context.skillName,
+          jobId: this.context.jobId,
+          planId: this.context.planId,
+          timeoutMs: server.timeoutMs ?? this.options.toolTimeoutMs,
+        })
+        try {
+          const liveSchemas = await executor.listAvailableTools(execCtxBuilder())
+          for (const schema of liveSchemas) {
+            if (!resolvedTools.find(tool => tool.function.name === schema.name)) {
+              resolvedTools.push(new McpToolProxy(schema, executor, execCtxBuilder))
+            }
+          }
+        } catch (error) {
+          this.logger.warn(`[fullfillTools] Static MCP server "${server.name}" unavailable: ${(error as Error).message}`)
+        }
+      }
+    }
+
     if (capabilityManager) {
       for (const active of capabilityManager.getActive(this.context)) {
         const server = active.server
