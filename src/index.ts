@@ -612,24 +612,50 @@ async function handleMessage(
           let chanName = response?.channelName
           let chanId = response?.channelId || preset?.sendMessageOption?.channelId
 
-          storageCtx.operationLogManager.addLog({
-            type: 'chat',
-            title: `Chat [${preset?.name || 'Default'}] - ${event.sender?.nickname || event.userId}`,
-            status: errorCaught ? 'error' : 'success',
+          const userText = currentText || (userMessage?.content?.filter((c: any) => c.type === "text").map((c: any) => c.text).join(" ") || "User message")
+          const shortUser = userText.length > 50 ? userText.slice(0, 47) + "..." : userText
+          const shortResp = respText.length > 50 ? respText.slice(0, 47) + "..." : respText
+          const summary = errorCaught
+            ? `${shortUser} -> [Error] ${errorCaught.message || "Execution failed"}`
+            : `${shortUser} -> ${shortResp || "OK"}`
+
+          storageCtx.operationLogManager.addSync({
+            type: "llm.call",
+            level: errorCaught ? "error" : "info",
+            summary,
             detail: errorCaught ? (errorCaught.stack || errorCaught.message) : undefined,
             userId: String(event.userId),
             groupId: event.groupId ? String(event.groupId) : undefined,
             channelId: chanId,
             channelName: chanName,
-            model: response?.model || preset?.sendMessageOption?.model || '(default)',
+            model: response?.model || preset?.sendMessageOption?.model || "(default)",
             presetId: preset?.id,
             presetName: preset?.name,
+            skillName: sendOptions.skillName,
             durationMs,
             inputTokens: inTok,
             outputTokens: outTok,
             totalTokens: totalTok,
             reasoningTokens: reasonTok,
-          }).catch(() => {})
+            metadata: {
+              triggerType: isBym ? "bym_mode" : (preset?.prefix ? `preset_prefix (${preset.prefix})` : "direct_chat"),
+              isBymMode: isBym,
+              status: errorCaught ? 500 : 200,
+              requestPayload: {
+                userMessage,
+                sendOptions,
+              },
+              responsePayload: errorCaught ? null : {
+                contents: response?.contents,
+                usage: response?.usage,
+                model: response?.model,
+              },
+              error: errorCaught ? {
+                message: errorCaught.message,
+                stack: errorCaught.stack,
+              } : null,
+            },
+          })
         } catch {}
       }
     }
