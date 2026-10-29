@@ -12,6 +12,14 @@ export interface GroupContextOptions {
   enableRichCards?: boolean
   enableForwardParse?: boolean
   maxForwardMessages?: number
+  currentSender?: {
+    userId: string | number
+    nickname?: string
+    card?: string
+    role?: string
+    title?: string
+    level?: string | number
+  }
 }
 
 export interface BufferedMessage {
@@ -144,7 +152,12 @@ export class GroupHistoryBuffer {
    * Format message segments into clean text with ref anchors
    */
   private async formatSegmentsToText(event: OneBotMessageEvent, onebotClient?: any): Promise<{ text: string; imageRefs: string[] }> {
-    const segments = Array.isArray(event.message) ? event.message : []
+    const rawMsg: any = event.message
+    if (typeof rawMsg === 'string') {
+      return { text: rawMsg.replace(/\r\n/g, '\n'), imageRefs: [] }
+    }
+
+    const segments = Array.isArray(rawMsg) ? rawMsg : []
     const parts: string[] = []
     const imageRefs: string[] = []
 
@@ -301,7 +314,12 @@ export class GroupHistoryBuffer {
       }
     }
 
-    return { text: parts.join('').replace(/\r\n/g, '\n'), imageRefs }
+    let text = parts.join('').replace(/\r\n/g, '\n')
+    if (!text.trim() && (event as any).raw_message) {
+      text = String((event as any).raw_message).replace(/\r\n/g, '\n')
+    }
+
+    return { text, imageRefs }
   }
 
   /**
@@ -314,13 +332,11 @@ export class GroupHistoryBuffer {
     onebotClient?: any
   ): Promise<string | null> {
     const gid = String(groupId)
-    let list = this.buffers.get(gid)
-    if (!list || list.length === 0) return null
+    let list = this.buffers.get(gid) || []
 
     if (excludeMessageId !== undefined) {
       const exId = String(excludeMessageId)
       list = list.filter((m) => String(m.messageId) !== exId)
-      if (list.length === 0) return null
     }
 
     const minMessages = options.minMessages ?? 20
@@ -370,10 +386,9 @@ export class GroupHistoryBuffer {
     }
 
     const effectiveSlice = list.slice(Math.max(0, startIndex))
-    if (effectiveSlice.length === 0) return null
 
     // Prefetch missing member metadata (title, level) in parallel
-    if (onebotClient) {
+    if (onebotClient && effectiveSlice.length > 0) {
       const uniqueUids = Array.from(new Set(effectiveSlice.map((m) => m.userId)))
       await Promise.all(
         uniqueUids.map((uid) => this.fetchMemberMeta(groupId, uid, onebotClient))
@@ -405,63 +420,83 @@ export class GroupHistoryBuffer {
       }
     >()
 
-    for (const msg of effectiveSlice) {
-      if (!memberMap.has(msg.userId)) {
-        const isMaster = masterUsers.has(String(msg.userId))
-        const isBot = String(msg.userId) === botUin || msg.role === 'bot'
+    const registerMember = (m: {
+      userId: string | number
+      card?: string
+      nickname?: string
+      role?: string
+      title?: string
+      level?: string | number
+    }) => {
+      const uidStr = String(m.userId)
+      if (!uidStr || uidStr === 'unknown') return
+      const isMaster = masterUsers.has(uidStr)
+      const isBot = uidStr === botUin || m.role === 'bot'
 
-        let roleBadge = ''
-        let roleTitle = ''
+      let roleBadge = ''
+      let roleTitle = ''
 
-        if (isBot) {
-          roleBadge = '[机器人]'
-          roleTitle = '机器人'
-        } else if (isMaster) {
-          if (msg.role === 'owner') {
-            roleBadge = '[群主/主人]'
-            roleTitle = '群主/主人'
-          } else if (msg.role === 'admin') {
-            roleBadge = '[群管/主人]'
-            roleTitle = '群管/主人'
-          } else {
-            roleBadge = '[主人]'
-            roleTitle = '主人'
-          }
-        } else if (msg.role === 'owner') {
-          roleBadge = '[群主]'
-          roleTitle = '群主'
-        } else if (msg.role === 'admin') {
-          roleBadge = '[群管]'
-          roleTitle = '群管'
+      if (isBot) {
+        roleBadge = '[机器人]'
+        roleTitle = '机器人'
+      } else if (isMaster) {
+        if (m.role === 'owner') {
+          roleBadge = '[群主/主人]'
+          roleTitle = '群主/主人'
+        } else if (m.role === 'admin') {
+          roleBadge = '[群管/主人]'
+          roleTitle = '群管/主人'
+        } else {
+          roleBadge = '[主人]'
+          roleTitle = '主人'
         }
+      } else if (m.role === 'owner') {
+        roleBadge = '[群主]'
+        roleTitle = '群主'
+      } else if (m.role === 'admin') {
+        roleBadge = '[群管]'
+        roleTitle = '群管'
+      }
 
-        const displayName = getSafeSpeakerName(msg.card, msg.nickname)
-        const meta = this.memberMetaCache.get(`${gid}:${msg.userId}`)
+      const displayName = getSafeSpeakerName(m.card, m.nickname)
+      const meta = this.memberMetaCache.get(`${gid}:${uidStr}`)
 
-        memberMap.set(msg.userId, {
-          userId: msg.userId,
+      if (!memberMap.has(uidStr)) {
+        memberMap.set(uidStr, {
+          userId: uidStr,
           displayName,
-          card: msg.card,
-          nickname: msg.nickname,
+          card: m.card,
+          nickname: m.nickname || '',
           roleBadge,
           roleTitle,
-          title: meta?.title || msg.title,
-          level: meta?.level || msg.level,
+          title: meta?.title || m.title,
+          level: meta?.level || m.level,
         })
       } else {
-        // Incrementally complement metadata if earlier messages were missing some fields
-        const existing = memberMap.get(msg.userId)!
-        const meta = this.memberMetaCache.get(`${gid}:${msg.userId}`)
-        if (!existing.card && msg.card) {
-          existing.card = msg.card
-          existing.displayName = getSafeSpeakerName(msg.card, existing.nickname)
+        const existing = memberMap.get(uidStr)!
+        if (!existing.card && m.card) {
+          existing.card = m.card
+          existing.displayName = getSafeSpeakerName(m.card, existing.nickname)
         }
-        if (!existing.nickname && msg.nickname) existing.nickname = msg.nickname
+        if (!existing.nickname && m.nickname) existing.nickname = m.nickname
         if (meta?.title) existing.title = meta.title
-        else if (!existing.title && msg.title) existing.title = msg.title
+        else if (!existing.title && m.title) existing.title = m.title
         if (meta?.level) existing.level = meta.level
-        else if (!existing.level && msg.level) existing.level = msg.level
+        else if (!existing.level && m.level) existing.level = m.level
       }
+    }
+
+    // Always register currentSender first so model always knows who is asking right now
+    if (options.currentSender) {
+      registerMember(options.currentSender)
+    }
+
+    for (const msg of effectiveSlice) {
+      registerMember(msg)
+    }
+
+    if (memberMap.size === 0 && effectiveSlice.length === 0) {
+      return null
     }
 
     const memberLines: string[] = []
@@ -490,15 +525,16 @@ export class GroupHistoryBuffer {
       messageLines.push(`[${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
     }
 
-    return [
-      '<chat_members>',
-      ...memberLines,
-      '</chat_members>',
-      '',
-      '<group_messages>',
-      ...messageLines,
-      '</group_messages>',
-    ].join('\n')
+    const parts: string[] = []
+    if (memberLines.length > 0) {
+      parts.push('<chat_members>', ...memberLines, '</chat_members>')
+    }
+    if (messageLines.length > 0) {
+      if (parts.length > 0) parts.push('')
+      parts.push('<group_messages>', ...messageLines, '</group_messages>')
+    }
+
+    return parts.length > 0 ? parts.join('\n') : null
   }
 
   /**

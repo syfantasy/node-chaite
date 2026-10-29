@@ -176,6 +176,27 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
 
   const app = createApp(
     (expressApp: any) => {
+      // Memory config & fallback routes (avoids 404/HTML alert on WebUI)
+      expressApp.get('/api/memory/config', (_req: any, res: any) => {
+        res.status(200).json(
+          ChaiteResponse.ok({
+            database: 'sqlite',
+            vectorDimensions: 1536,
+            extensions: {
+              simple: {
+                enabled: false,
+                libraryPath: '',
+                dictPath: '',
+              },
+            },
+          })
+        )
+      })
+
+      expressApp.post('/api/memory/config', (req: any, res: any) => {
+        res.status(200).json(ChaiteResponse.ok(req.body || {}))
+      })
+
       // Memory simple-extension fallback status route (avoids 404 alert on WebUI)
       expressApp.get('/api/memory/extensions/simple/status', (_req: any, res: any) => {
         res.status(200).json(

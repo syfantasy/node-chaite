@@ -113,7 +113,7 @@ async function handleMessage(
 ): Promise<void> {
   const config = getConfig()
   const rawEvent: any = event.raw || {}
-  const onebotAdapter = (globalThis as any).onebotAdapter || rawEvent._adapter
+  const onebotAdapter = event.client || (globalThis as any).onebotAdapter || rawEvent._adapter
 
   // 1. Check permissions (Enforce dynamic black/white lists via config)
   if (rawEvent.post_type === 'message') {
@@ -560,7 +560,11 @@ async function handleMessage(
     }
 
     // 注入群聊上下文流 (Group Context Stream)
-    if (event.isGroup && event.groupId && config.llm?.enableGroupContext !== false) {
+    const presetGroupCtxSetting = (preset as any)?.groupContext || 'use_system'
+    const shouldInjectGroupContext = presetGroupCtxSetting === 'enabled'
+      || (presetGroupCtxSetting === 'use_system' && config.llm?.enableGroupContext !== false)
+
+    if (event.isGroup && event.groupId && shouldInjectGroupContext) {
       try {
         const groupContext = await groupHistoryBuffer.buildContext(
           event.groupId,
@@ -572,6 +576,14 @@ async function handleMessage(
             enableRichCards: config.groupContext?.enableRichCards ?? true,
             enableForwardParse: config.groupContext?.enableForwardParse ?? true,
             maxForwardMessages: config.groupContext?.maxForwardMessages ?? 15,
+            currentSender: {
+              userId: event.userId,
+              nickname: event.sender?.nickname,
+              card: event.sender?.card,
+              role: event.sender?.role,
+              title: event.sender?.title,
+              level: event.sender?.level,
+            },
           },
           rawEvent.message_id,
           onebotAdapter
@@ -675,12 +687,12 @@ async function handleMessage(
             ? `${shortUser} -> [Error] ${errorCaught.message || "Execution failed"}`
             : `${shortUser} -> ${shortResp || "OK"}`
 
-          // 清理记录到日志的 Options，剔除下划线私有内部状态与重复项
+          // 清理记录到日志的 Options，剔除下划线私有内部状态与重复项（如嵌套的 chatPreset）
           const cleanOptionsForLog = (opts: any) => {
             if (!opts || typeof opts !== "object") return {}
             const res: Record<string, any> = {}
             for (const [k, v] of Object.entries(opts)) {
-              if (k.startsWith("_")) continue
+              if (k.startsWith("_") || k === "chatPreset") continue
               if (k === "customOptions" && v && typeof v === "object") {
                 const sub: Record<string, any> = {}
                 for (const [sk, sv] of Object.entries(v as Record<string, any>)) {

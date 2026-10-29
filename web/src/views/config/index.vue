@@ -616,14 +616,25 @@ function filterOption(query: string, option: any) {
 
 // Load configuration on component mount
 onMounted(async () => {
+  // 1. Fetch presets & channels first so select components have options available
   try {
-    await Promise.all([getConfig(), getMemoryConfig(), loadVisionChannels()])
-    fetchPresets()
-    await refreshSimpleExtensionStatus()
+    await Promise.allSettled([fetchPresets(), loadVisionChannels()])
+  } catch {}
+
+  // 2. Fetch main system config
+  try {
+    await getConfig()
+  } catch (error) {
+    console.error('加载系统配置失败:', error)
+    message.error('系统配置加载失败')
   }
-  catch (error) {
-    console.error('加载配置失败:', error)
-    message.error('配置加载失败')
+
+  // 3. Fetch optional memory config and extension status
+  try {
+    await getMemoryConfig()
+    await refreshSimpleExtensionStatus()
+  } catch (error) {
+    console.warn('加载记忆或扩展配置失败:', error)
   }
 })
 </script>
