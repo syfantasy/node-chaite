@@ -135,7 +135,7 @@ export class AbstractClient implements IClient {
     const toolsGroupManager = this.context.chaite.getToolsGroupManager()
     const toolManager = this.context.chaite.getToolsManager()
     const groupIds = toolGroupIds ? [...toolGroupIds] : []
-    const builtinCategories = new Set(this.context.getOptions()?.builtinToolCategories ?? ['mcp-discovery', 'mcp-management', 'skill-management'])
+    const builtinCategories = new Set(this.context.getOptions()?.builtinToolCategories ?? [])
     // These compact MCP discovery tools are always available, but real MCP
     // schemas are only loaded after the model selects the required tools.
     if (builtinCategories.has('mcp-discovery') && this.context.chaite?.getMcpCapabilityManager?.()) {

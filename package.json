@@ -10,6 +10,7 @@
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "build:web": "pnpm --prefix web build",
+    "postinstall": "node -e \"try { require('sqlite3') } catch { require('child_process').execSync('npm rebuild sqlite3', { stdio: 'inherit' }) }\"",
     "check": "tsc --noEmit"
   },
   "dependencies": {

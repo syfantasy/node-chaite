@@ -207,7 +207,7 @@ const addPreset = ref<Partial<Shareable.PresetModel>>({
   prefix: '',
   local: true,
   groupContext: 'use_system',
-  builtinToolCategories: ['mcp-discovery', 'mcp-management', 'skill-management'],
+  builtinToolCategories: [],
 })
 
 // Initialize form when in edit mode
@@ -224,7 +224,7 @@ watch(() => props.initialData, (newVal) => {
     }
 
     if (!Array.isArray(data.builtinToolCategories)) {
-      data.builtinToolCategories = ['mcp-discovery', 'mcp-management', 'skill-management']
+      data.builtinToolCategories = []
     }
     if (!Array.isArray(data.sendMessageOption.geminiBuiltinTools)) {
       data.sendMessageOption.geminiBuiltinTools = []
@@ -384,7 +384,7 @@ watch(showModal, (val) => {
       prefix: '',
       local: true,
       groupContext: 'use_system',
-      builtinToolCategories: ['mcp-discovery', 'mcp-management', 'skill-management'],
+      builtinToolCategories: [],
       disableSystemInstructions: false,
       disableConversationContext: false,
       quoteReply: false,
@@ -644,23 +644,6 @@ watch(showModal, (val) => {
                           :options="toolsOptions as SelectMixedOption[]"
                         />
                       </NPopover>
-                    </NFormItemGridItem>
-
-                    <!-- 内置工具 -->
-                    <NFormItemGridItem span="24" label="内置工具" path="builtinToolCategories">
-                      <NCheckboxGroup v-model:value="addPreset.builtinToolCategories">
-                        <NSpace>
-                          <NCheckbox value="mcp-discovery">
-                            MCP 发现与按需激活（2 个）
-                          </NCheckbox>
-                          <NCheckbox value="mcp-management">
-                            MCP 管理（仅主人，2 个）
-                          </NCheckbox>
-                          <NCheckbox value="skill-management">
-                            Skill/工作流管理（仅主人，6 个）
-                          </NCheckbox>
-                        </NSpace>
-                      </NCheckboxGroup>
                     </NFormItemGridItem>
 
                     <!-- 工具选择 -->
