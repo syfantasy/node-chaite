@@ -109,6 +109,18 @@ export const COMMON_PLUGIN_SCHEMA_FIELDS: PluginConfigField[] = [
   },
 ]
 
+export interface PluginSkillDefinition {
+  id?: string
+  name: string
+  description: string
+  keywords?: string[]
+  allowedTools?: string[]
+  mcpServer?: string
+  mcpTools?: string[]
+  instructions?: string
+  validate?: (event: ChaiteEvent) => boolean | Promise<boolean>
+}
+
 export interface PluginContext {
   pluginId: string
   config: Record<string, any>
@@ -147,6 +159,7 @@ export interface PluginContext {
   registerRenderer: (renderer: RendererService) => void
   render: (options: RenderOptions) => Promise<Buffer | string>
   readonly services: Map<string, any>
+  registerSkill: (skill: PluginSkillDefinition) => void
 }
 
 export interface PluginInstance {
@@ -164,6 +177,7 @@ export interface PluginInstance {
   adapters: Map<string, any>
   modelProviders: Map<string, any>
   tools: any[]
+  skills: string[]
   services: Map<string, any>
   rawModule?: any
 }

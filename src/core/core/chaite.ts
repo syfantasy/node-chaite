@@ -176,7 +176,12 @@ export class Chaite extends EventEmitter {
         .join(' ') ?? ''
 
       if (!options.skillName && this.skillRegistry) {
-        const matched = this.skillRegistry.matchSkill(msgText)
+        const matched = await this.skillRegistry.matchSkill(msgText, {
+          userId: e.sender?.user_id,
+          groupId: e.group?.group_id,
+          isGroup: Boolean(e.group),
+          messageText: msgText,
+        })
         if (matched) {
           context.skillName = matched.id
           options.skillName = matched.id

@@ -15,8 +15,11 @@ import {
   COMMON_PLUGIN_SCHEMA_FIELDS,
   RendererService,
   RenderOptions,
+  PluginSkillDefinition,
 } from './types'
 import { PluginKVStorage } from './storage'
+import { Chaite } from '../core/core/chaite'
+import { InMemorySkillImpl } from '../core/agent/skills/SkillRegistry'
 
 export class PluginManager {
   private plugins = new Map<string, PluginInstance>()
@@ -203,6 +206,7 @@ export class PluginManager {
         adapters: new Map(),
         modelProviders: new Map(),
         tools: [],
+        skills: [],
         services: new Map(),
       }
 
@@ -273,6 +277,7 @@ export class PluginManager {
         adapters: new Map(),
         modelProviders: new Map(),
         tools: [],
+        skills: [],
         services: new Map(),
       }
 
@@ -298,6 +303,19 @@ export class PluginManager {
       try { await cleanup() } catch (err) { console.error(`[PluginManager] Cleanup error in "${instance.meta.name}":`, err) }
     }
     instance.cleanupFns = []
+
+    if (instance.skills && instance.skills.length > 0) {
+      try {
+        const chaite = Chaite.getInstance()
+        const registry = chaite?.getSkillRegistry?.()
+        if (registry) {
+          for (const skillId of instance.skills) {
+            registry.unregisterDynamicSkill(skillId)
+          }
+        }
+      } catch {}
+      instance.skills = []
+    }
 
     instance.commands = []
     instance.pokeHandlers = []
@@ -493,6 +511,39 @@ export class PluginManager {
       },
       registerTool: (tool) => {
         instance.tools.push(tool)
+      },
+      registerSkill: (skillDef: PluginSkillDefinition) => {
+        try {
+          const chaite = Chaite.getInstance()
+          const registry = chaite?.getSkillRegistry?.()
+          const skillId = skillDef.id || skillDef.name
+          if (registry) {
+            const inMemSkill = new InMemorySkillImpl({
+              id: skillId,
+              frontmatter: {
+                name: skillDef.name,
+                description: skillDef.description,
+                keywords: skillDef.keywords,
+                allowedTools: skillDef.allowedTools,
+                mcpServer: skillDef.mcpServer,
+                mcpTools: skillDef.mcpTools,
+                readonly: true,
+                source: 'plugin',
+              },
+              instructions: skillDef.instructions,
+              validate: skillDef.validate
+                ? (ctx) => {
+                    const evt = (ctx.event || ctx) as ChaiteEvent
+                    return skillDef.validate!(evt)
+                  }
+                : undefined,
+            })
+            registry.registerDynamicSkill(inMemSkill)
+            instance.skills.push(skillId)
+          }
+        } catch (err: any) {
+          console.warn(`[PluginManager] Failed to register dynamic skill "${skillDef.name}":`, err?.message || err)
+        }
       },
       onDestroy: (cleanupFn) => {
         instance.cleanupFns.push(cleanupFn)

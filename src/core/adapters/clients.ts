@@ -242,6 +242,58 @@ export class AbstractClient implements IClient {
       }
     }
 
+    // Append dynamically activated skill tools (allowedTools & mcpTools)
+    const activeSkillName = this.context.skillName || (this.options as any)?.skillName
+    if (activeSkillName) {
+      const skillRegistry = this.context.chaite?.getSkillRegistry?.()
+      const activeSkill = skillRegistry?.getSkillByName(activeSkillName)
+      if (activeSkill) {
+        // 1. Local allowed tools
+        if (Array.isArray(activeSkill.frontmatter.allowedTools)) {
+          for (const toolName of activeSkill.frontmatter.allowedTools) {
+            try {
+              const tool = await toolManager.getInstance(toolName)
+              if (tool) pushUnique(tool)
+            } catch (err) {
+              this.logger.warn(`[fullfillTools] Skill "${activeSkillName}" failed to load allowedTool "${toolName}": ${(err as Error).message}`)
+            }
+          }
+        }
+        // 2. Skill-specific MCP server / tools
+        const mcpServerName = activeSkill.frontmatter.mcpServer
+        const mcpToolNames = activeSkill.frontmatter.mcpTools
+        if (mcpServerName && this.context.chaite?.getMcpServerManager) {
+          try {
+            const mcpMgr = this.context.chaite.getMcpServerManager()
+            const server = (await mcpMgr.listEnabled()).find((s: any) => s.name === mcpServerName || s.id === mcpServerName)
+            if (server) {
+              const executor = new McpToolExecutor(server)
+              const execCtxBuilder = (): ExecutionContext => ({
+                runId: crypto.randomUUID(),
+                userId: this.context.getEvent()?.sender?.user_id?.toString() ?? 'unknown',
+                groupId: this.context.getEvent()?.group?.group_id?.toString(),
+                skillName: activeSkillName,
+                jobId: this.context.jobId,
+                planId: this.context.planId,
+                timeoutMs: server.timeoutMs ?? this.options.toolTimeoutMs,
+              })
+              const liveSchemas = await executor.listAvailableTools(execCtxBuilder())
+              const schemas = mcpToolNames && mcpToolNames.length > 0
+                ? liveSchemas.filter(s => mcpToolNames.includes(s.name))
+                : liveSchemas
+              for (const schema of schemas) {
+                if (!resolvedTools.find(t => t.function.name === schema.name)) {
+                  resolvedTools.push(new McpToolProxy(schema, executor, execCtxBuilder))
+                }
+              }
+            }
+          } catch (err) {
+            this.logger.warn(`[fullfillTools] Failed to load MCP tools for skill "${activeSkillName}": ${(err as Error).message}`)
+          }
+        }
+      }
+    }
+
     this.tools = resolvedTools
     return this.tools
   }

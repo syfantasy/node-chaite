@@ -4,12 +4,12 @@ export interface SkillFrontmatter {
   /** Unique skill name, a-z0-9- recommended */
   name: string
   description: string
-  /** Extra phrases, including Chinese phrases, used for lightweight routing. */
+  /** Extra phrases or keywords used for lightweight intent routing. */
   keywords?: string[]
   version?: string
   license?: string
   compatibility?: string
-  /** Tool names this skill is allowed to invoke */
+  /** Tool names this skill is allowed to invoke (maps to atomic Tools) */
   allowedTools?: string[]
   executionMode?: ExecutionMode
   /** Model used for the planning step when executionMode=plan */
@@ -29,24 +29,36 @@ export interface SkillFrontmatter {
   /**
    * When true, this skill is protected from modification or deletion by the LLM's
    * self-management tools (update_skill / delete_skill / create_skill overwrite).
-   * Set this in SKILL.md for developer-configured skills you don't want the LLM to touch.
-   * Only a human with filesystem access can modify readonly skills.
    */
   readonly?: boolean
+  /** Source of skill registration: 'file' | 'plugin' | 'runtime' */
+  source?: 'file' | 'plugin' | 'runtime'
   metadata?: Record<string, unknown>
+}
+
+export interface SkillValidationContext {
+  userId?: string | number
+  groupId?: string | number
+  isGroup?: boolean
+  channelId?: string
+  presetId?: string
+  messageText?: string
+  [key: string]: unknown
 }
 
 export interface Skill {
   id: string
-  rootDir: string
+  rootDir?: string
   frontmatter: SkillFrontmatter
   /**
    * Progressive disclosure: load full instruction body on demand.
-   * Tries system-prompt.md first, falls back to SKILL.md body.
+   * Tries system-prompt.md first, falls back to SKILL.md body or in-memory instructions.
    */
   loadInstructions(): Promise<string>
-  /** Read a file relative to the skill root directory */
+  /** Read a file relative to the skill root directory (optional for plugin/in-memory skills) */
   readFile(relPath: string): Promise<Buffer>
+  /** Optional guard condition to check whether this skill should be visible/active in current context */
+  validate?: (context: SkillValidationContext) => boolean | Promise<boolean>
 }
 
-export type SkillMeta = Pick<Skill, 'id' | 'rootDir' | 'frontmatter'>
+export type SkillMeta = Pick<Skill, 'id' | 'frontmatter'> & { rootDir?: string }

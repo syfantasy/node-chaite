@@ -537,6 +537,29 @@ async function handleMessage(
       sendOptions.stream = false
     }
 
+    // Skill intent matching & dynamic activation
+    const skillRegistry = chaite.getSkillRegistry()
+    if (skillRegistry && !sendOptions.skillName) {
+      try {
+        const matchedSkill = await skillRegistry.matchSkill(currentText, {
+          userId: event.userId,
+          groupId: event.groupId,
+          isGroup: event.isGroup,
+          presetId: targetPresetId,
+          messageText: currentText,
+          event,
+        })
+        if (matchedSkill) {
+          sendOptions.skillName = matchedSkill.id
+          if (config.logging?.enabled !== false) {
+            console.log(`[Runner] Activated skill "${matchedSkill.id}" (${matchedSkill.frontmatter.name}) for user ${event.userId}`)
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Runner] Failed to match skill:', err?.message || err)
+      }
+    }
+
     // Resolve images in history window
     if (Array.isArray(sendOptions.historyMessages)) {
       for (const hMsg of sendOptions.historyMessages) {

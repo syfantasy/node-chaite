@@ -1,81 +1,37 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import type { Skill, SkillFrontmatter, SkillMeta } from './skill.types'
+import { parse as parseYaml } from 'yaml'
+import type { Skill, SkillFrontmatter, SkillMeta, SkillValidationContext } from './skill.types'
 
 /**
- * Minimal YAML-subset parser for SKILL.md frontmatter.
- * Handles: string, number, boolean, block arrays (- item), inline arrays ([a, b]).
- * kebab-case keys are converted to camelCase.
+ * Robust frontmatter parser using the standard 'yaml' package.
+ * Gracefully handles complex YAML structures, comments, lists, and fallbacks.
  */
 function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
   if (!match) {
-    return { frontmatter: {}, body: content }
+    return { frontmatter: {}, body: content.trim() }
   }
 
   const yamlStr = match[1]
-  const body = (match[2] ?? '').trimStart()
-  const frontmatter: Record<string, unknown> = {}
+  const body = (match[2] ?? '').trim()
+  let frontmatter: Record<string, unknown> = {}
 
-  let pendingArrayKey: string | null = null
-  let pendingArray: string[] | null = null
-
-  const flush = () => {
-    if (pendingArrayKey !== null && pendingArray !== null) {
-      frontmatter[pendingArrayKey] = pendingArray
-      pendingArrayKey = null
-      pendingArray = null
+  try {
+    const parsed = parseYaml(yamlStr)
+    if (parsed && typeof parsed === 'object') {
+      frontmatter = parsed as Record<string, unknown>
     }
+  } catch (err) {
+    console.warn('[SkillRegistry] Failed to parse frontmatter with YAML parser, falling back:', err)
   }
 
-  for (const rawLine of yamlStr.split('\n')) {
-    const line = rawLine.trimEnd()
-
-    // Block array item
-    if (/^\s+-\s/.test(line) && pendingArrayKey !== null) {
-      pendingArray!.push(line.replace(/^\s+-\s+/, '').trim())
-      continue
-    }
-
-    flush()
-
-    // Key: value
-    const kvMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*):\s*(.*)$/)
-    if (!kvMatch) continue
-
-    const rawKey = kvMatch[1]
-    const camelKey = rawKey.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
-    const val = kvMatch[2].trim()
-
-    if (val === '') {
-      // Upcoming block array
-      pendingArrayKey = camelKey
-      pendingArray = []
-    } else if (val.startsWith('[') && val.endsWith(']')) {
-      // Inline array
-      frontmatter[camelKey] = val
-        .slice(1, -1)
-        .split(',')
-        .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
-        .filter(Boolean)
-    } else if (val === 'true') {
-      frontmatter[camelKey] = true
-    } else if (val === 'false') {
-      frontmatter[camelKey] = false
-    } else if (/^-?\d+(\.\d+)?$/.test(val)) {
-      frontmatter[camelKey] = Number(val)
-    } else {
-      frontmatter[camelKey] = val.replace(/^['"]|['"]$/g, '')
-    }
-  }
-
-  flush()
   return { frontmatter, body }
 }
 
-// ─── Skill implementation ─────────────────────────────────────────────────────
+// ─── File-based Skill Implementation ──────────────────────────────────────────
 
-class SkillImpl implements Skill {
+class FileSkillImpl implements Skill {
   readonly id: string
   readonly rootDir: string
   readonly frontmatter: SkillFrontmatter
@@ -84,18 +40,24 @@ class SkillImpl implements Skill {
   constructor(id: string, rootDir: string, frontmatter: SkillFrontmatter, skillMdPath: string) {
     this.id = id
     this.rootDir = rootDir
-    this.frontmatter = frontmatter
+    this.frontmatter = {
+      ...frontmatter,
+      source: 'file',
+    }
     this.skillMdPath = skillMdPath
   }
 
   async loadInstructions(): Promise<string> {
     const systemPromptPath = path.join(this.rootDir, 'system-prompt.md')
     if (fs.existsSync(systemPromptPath)) {
-      return fs.promises.readFile(systemPromptPath, 'utf-8')
+      return (await fs.promises.readFile(systemPromptPath, 'utf-8')).trim()
     }
-    const content = await fs.promises.readFile(this.skillMdPath, 'utf-8')
-    const { body } = parseFrontmatter(content)
-    return body.trim()
+    if (fs.existsSync(this.skillMdPath)) {
+      const content = await fs.promises.readFile(this.skillMdPath, 'utf-8')
+      const { body } = parseFrontmatter(content)
+      return body
+    }
+    return ''
   }
 
   async readFile(relPath: string): Promise<Buffer> {
@@ -103,18 +65,58 @@ class SkillImpl implements Skill {
   }
 }
 
+// ─── Dynamic / In-Memory Skill Implementation ─────────────────────────────────
+
+export class InMemorySkillImpl implements Skill {
+  readonly id: string
+  readonly rootDir: string
+  readonly frontmatter: SkillFrontmatter
+  private readonly instructions: string
+  readonly validate?: (context: SkillValidationContext) => boolean | Promise<boolean>
+
+  constructor(options: {
+    id: string
+    frontmatter: SkillFrontmatter
+    instructions?: string
+    rootDir?: string
+    validate?: (context: SkillValidationContext) => boolean | Promise<boolean>
+  }) {
+    this.id = options.id
+    this.rootDir = options.rootDir || ''
+    this.frontmatter = {
+      ...options.frontmatter,
+      readonly: options.frontmatter.readonly ?? true,
+      source: options.frontmatter.source || 'plugin',
+    }
+    this.instructions = options.instructions || ''
+    this.validate = options.validate
+  }
+
+  async loadInstructions(): Promise<string> {
+    return this.instructions
+  }
+
+  async readFile(_relPath: string): Promise<Buffer> {
+    throw new Error(`InMemorySkill "${this.id}" does not support relative file reading.`)
+  }
+}
+
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 export class SkillRegistry {
-  private skills: Map<string, Skill> = new Map()
+  private fileSkills: Map<string, Skill> = new Map()
+  private dynamicSkills: Map<string, Skill> = new Map()
   private readonly skillsDir: string
 
   constructor(skillsDir: string) {
     this.skillsDir = skillsDir
   }
 
+  /**
+   * Loads skills from the filesystem directory (e.g. data/skills/<name>/SKILL.md)
+   */
   async load(): Promise<void> {
-    this.skills.clear()
+    this.fileSkills.clear()
     if (!fs.existsSync(this.skillsDir)) {
       return
     }
@@ -137,16 +139,31 @@ export class SkillRegistry {
           sf.name = entry.name
         }
 
-        const skill = new SkillImpl(sf.name, skillDir, sf, skillMdPath)
-        this.skills.set(sf.name, skill)
+        const skill = new FileSkillImpl(sf.name, skillDir, sf, skillMdPath)
+        this.fileSkills.set(sf.name, skill)
       } catch (err) {
         console.warn(`[SkillRegistry] Failed to load skill at ${skillDir}:`, err)
       }
     }
   }
 
+  /**
+   * Register a dynamic skill created via plugin or code
+   */
+  registerDynamicSkill(skill: Skill): void {
+    this.dynamicSkills.set(skill.id, skill)
+  }
+
+  /**
+   * Unregister a dynamic skill by ID
+   */
+  unregisterDynamicSkill(id: string): boolean {
+    return this.dynamicSkills.delete(id)
+  }
+
   listSkillMetas(): SkillMeta[] {
-    return Array.from(this.skills.values()).map(s => ({
+    const all = this.getAllSkills()
+    return all.map(s => ({
       id: s.id,
       rootDir: s.rootDir,
       frontmatter: s.frontmatter,
@@ -154,11 +171,18 @@ export class SkillRegistry {
   }
 
   getSkillByName(name: string): Skill | null {
-    return this.skills.get(name) ?? null
+    return this.dynamicSkills.get(name) || this.fileSkills.get(name) || null
   }
 
   getAllSkills(): Skill[] {
-    return Array.from(this.skills.values())
+    const merged = new Map<string, Skill>()
+    for (const [k, v] of this.fileSkills.entries()) {
+      merged.set(k, v)
+    }
+    for (const [k, v] of this.dynamicSkills.entries()) {
+      merged.set(k, v)
+    }
+    return Array.from(merged.values())
   }
 
   getSkillsDir(): string {
@@ -166,32 +190,73 @@ export class SkillRegistry {
   }
 
   /**
-   * Simple rule-based skill matcher.
-   * Searches skill descriptions and names for keyword overlap with the user message.
-   * Returns the best match, or null if no good match found.
+   * Advanced multi-language and guard-aware skill matcher.
+   * Matches keywords, exact phrases, and names against the message.
+   * Filters out skills that do not satisfy their `validate` guard.
    */
-  matchSkill(userMessage: string): Skill | null {
-    const lower = userMessage.toLowerCase()
-    let best: Skill | null = null
-    let bestScore = 0
+  async matchSkill(userMessage: string, context?: SkillValidationContext): Promise<Skill | null> {
+    const matches = await this.matchSkills(userMessage, context, 1)
+    return matches.length > 0 ? matches[0] : null
+  }
 
-    for (const skill of this.skills.values()) {
-      const { name, description, keywords = [] } = skill.frontmatter
-      const candidate = `${name} ${description ?? ''} ${keywords.join(' ')}`.toLowerCase()
-      const words = lower.split(/\W+/).filter(w => w.length > 2)
-      // \w is ASCII-only, so keep explicit phrase matching for Chinese and
-      // other non-Latin trigger words.
-      const phrases = [name, description ?? '', ...keywords]
-        .map(value => value.toLowerCase().trim())
-        .filter(value => value.length > 1)
-      const score = words.filter(w => candidate.includes(w)).length
-        + phrases.filter(phrase => lower.includes(phrase)).length * 2
-      if (score > bestScore) {
-        bestScore = score
-        best = skill
+  /**
+   * Returns top matching skills sorted by relevance score
+   */
+  async matchSkills(
+    userMessage: string,
+    context?: SkillValidationContext,
+    limit = 2
+  ): Promise<Skill[]> {
+    if (!userMessage || typeof userMessage !== 'string') return []
+    const lower = userMessage.toLowerCase().trim()
+    const scored: Array<{ skill: Skill; score: number }> = []
+
+    for (const skill of this.getAllSkills()) {
+      // 1. Context validation guard
+      if (typeof skill.validate === 'function' && context) {
+        try {
+          const pass = await skill.validate(context)
+          if (!pass) continue
+        } catch (e) {
+          console.warn(`[SkillRegistry] Validation failed for skill "${skill.id}":`, e)
+          continue
+        }
+      }
+
+      const { name, description = '', keywords = [] } = skill.frontmatter
+      let score = 0
+
+      // Exact name match
+      if (name && lower.includes(name.toLowerCase())) {
+        score += 8
+      }
+
+      // Keyword phrase match (higher weight for explicit keywords)
+      for (const kw of keywords) {
+        if (!kw) continue
+        const kwLower = kw.toLowerCase().trim()
+        if (kwLower && lower.includes(kwLower)) {
+          // Bonus weight if keyword length is >= 2
+          score += kwLower.length >= 2 ? 5 : 2
+        }
+      }
+
+      // Description words matching
+      if (description) {
+        const descPhrases = description.split(/[\s,，。；;]+/).filter(w => w.length > 1)
+        for (const p of descPhrases) {
+          if (lower.includes(p.toLowerCase())) {
+            score += 1
+          }
+        }
+      }
+
+      if (score >= 3) {
+        scored.push({ skill, score })
       }
     }
 
-    return bestScore >= 1 ? best : null
+    scored.sort((a, b) => b.score - a.score)
+    return scored.slice(0, limit).map(s => s.skill)
   }
 }
