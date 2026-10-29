@@ -1,22 +1,52 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chaite 插件开发手册 - Chaite Plugin Docs</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <title>Chaite 插件与核心架构手册 - Chaite Docs</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-light">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" id="hljs-dark" disabled>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
     :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --border: #334155;
-      --text: #f8fafc;
+      --bg: #f8fafc;
+      --sidebar-bg: #ffffff;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --accent: #7c3aed;
+      --code-bg: #f1f5f9;
+      --code-border: #e2e8f0;
+      --table-th-bg: #f8fafc;
+      --table-td-bg: #ffffff;
+      --badge-bg: rgba(2, 132, 199, 0.1);
+      --badge-text: #0284c7;
+      --nav-active-bg: rgba(2, 132, 199, 0.08);
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+    }
+    [data-theme="dark"] {
+      --bg: #0b1120;
+      --sidebar-bg: #070d19;
+      --card-bg: #131d31;
+      --border: #223049;
+      --text: #f1f5f9;
       --text-muted: #94a3b8;
       --primary: #38bdf8;
       --primary-hover: #0ea5e9;
       --accent: #a855f7;
-      --code-bg: #090d16;
+      --code-bg: #070d19;
+      --code-border: #1e293b;
+      --table-th-bg: #101a2e;
+      --table-td-bg: #131d31;
+      --badge-bg: rgba(56, 189, 248, 0.15);
+      --badge-text: #38bdf8;
+      --nav-active-bg: rgba(56, 189, 248, 0.12);
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -25,311 +55,351 @@
       color: var(--text);
       line-height: 1.6;
       display: flex;
+      transition: background-color 0.2s, color 0.2s;
     }
     .sidebar {
-      width: 280px;
+      width: 290px;
       height: 100vh;
       position: sticky;
       top: 0;
-      background: #090d16;
+      background: var(--sidebar-bg);
       border-right: 1px solid var(--border);
       padding: 24px 16px;
       overflow-y: auto;
       flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      transition: background-color 0.2s, border-color 0.2s;
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
     }
     .logo {
       font-size: 20px;
       font-weight: 800;
-      background: linear-gradient(135deg, #38bdf8, #a855f7);
+      background: linear-gradient(135deg, var(--primary), var(--accent));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      margin-bottom: 8px;
+    }
+    .theme-toggle-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    .theme-toggle-btn:hover {
+      border-color: var(--primary);
     }
     .logo-desc {
       font-size: 12px;
       color: var(--text-muted);
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
-    .nav-list { list-style: none; }
-    .nav-item { margin-bottom: 6px; }
+    .nav-list { list-style: none; flex: 1; }
+    .nav-item { margin-bottom: 4px; }
     .nav-link {
       display: block;
       padding: 8px 12px;
-      font-size: 14px;
+      font-size: 13.5px;
       color: var(--text-muted);
       text-decoration: none;
       border-radius: 6px;
-      transition: all 0.2s;
+      transition: all 0.15s;
     }
     .nav-link:hover, .nav-link.active {
-      color: var(--text);
-      background: rgba(56, 189, 248, 0.12);
+      color: var(--primary);
+      background: var(--nav-active-bg);
+      font-weight: 600;
       border-left: 3px solid var(--primary);
     }
     .main {
       flex: 1;
-      max-width: 960px;
-      padding: 40px 48px 80px;
+      max-width: 980px;
+      padding: 40px 48px 100px;
       margin: 0 auto;
     }
-    h1 { font-size: 30px; font-weight: 800; margin-bottom: 12px; color: #fff; }
-    h2 { font-size: 20px; font-weight: 700; margin: 36px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: var(--primary); }
-    h3 { font-size: 16px; font-weight: 600; margin: 20px 0 10px; color: #e2e8f0; }
-    p { margin-bottom: 14px; color: #cbd5e1; font-size: 14px; }
-    ul, ol { margin: 0 0 16px 24px; color: #cbd5e1; font-size: 14px; }
+    h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; }
+    .subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 32px; }
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 44px 0 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h3 { font-size: 15px; font-weight: 600; margin: 20px 0 10px; color: var(--text); }
+    p { margin-bottom: 14px; color: var(--text); font-size: 14px; opacity: 0.92; }
+    ul, ol { margin: 0 0 16px 22px; color: var(--text); font-size: 14px; opacity: 0.92; }
     li { margin-bottom: 6px; }
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 18px;
+      padding: 18px 20px;
       margin-bottom: 20px;
+      box-shadow: var(--shadow-sm);
+      transition: background-color 0.2s, border-color 0.2s;
     }
     .badge {
       display: inline-block;
       padding: 2px 8px;
       font-size: 12px;
+      font-weight: 600;
       border-radius: 4px;
-      background: rgba(56, 189, 248, 0.2);
-      color: var(--primary);
+      background: var(--badge-bg);
+      color: var(--badge-text);
       margin-right: 6px;
     }
     pre {
       border-radius: 8px;
-      margin: 12px 0;
+      margin: 12px 0 18px;
       background: var(--code-bg) !important;
-      border: 1px solid var(--border);
+      border: 1px solid var(--code-border);
       font-size: 13px;
+      box-shadow: var(--shadow-sm);
     }
-    code { font-family: "Fira Code", Monaco, Menlo, Consolas, monospace; }
+    code { font-family: "Fira Code", "JetBrains Mono", Consolas, Monaco, monospace; }
     p code, li code, td code {
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--badge-bg);
+      color: var(--primary);
       padding: 2px 6px;
       border-radius: 4px;
       font-size: 13px;
-      color: #38bdf8;
+      font-weight: 500;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin: 16px 0;
-      font-size: 13px;
+      margin: 16px 0 24px;
+      font-size: 13.5px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
     }
     th, td {
       padding: 10px 14px;
       border: 1px solid var(--border);
       text-align: left;
     }
-    th { background: #131d2e; color: #e2e8f0; font-weight: 600; }
-    td { background: rgba(30, 41, 59, 0.6); }
-    @media (max-width: 800px) {
+    th { background: var(--table-th-bg); color: var(--text); font-weight: 600; }
+    td { background: var(--table-td-bg); }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 820px) {
       body { flex-direction: column; }
-      .sidebar { width: 100%; height: auto; position: static; }
-      .main { padding: 24px 16px; }
+      .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
+      .main { padding: 24px 16px 60px; }
+      .grid-2 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <aside class="sidebar">
-    <div class="logo">Chaite Plugin Dev</div>
-    <div class="logo-desc">智能体插件开发手册 · 自用速查</div>
+    <div class="brand-row">
+      <div class="logo">Chaite Docs</div>
+      <button class="theme-toggle-btn" id="themeToggleBtn" title="切换浅色/深色主题">
+        <span id="themeIcon">☀️</span> <span id="themeLabel">浅色</span>
+      </button>
+    </div>
+    <div class="logo-desc">轻量智能体核心与插件系统手册</div>
     <ul class="nav-list">
-      <li class="nav-item"><a href="#structure" class="nav-link active">1. 目录结构规范</a></li>
-      <li class="nav-item"><a href="#quickstart" class="nav-link">2. 最小起步实例</a></li>
-      <li class="nav-item"><a href="#event-api" class="nav-link">3. ChaiteEvent API</a></li>
-      <li class="nav-item"><a href="#config-schema" class="nav-link">4. 配置与 Schema</a></li>
-      <li class="nav-item"><a href="#ai-capabilities" class="nav-link">5. 直调 AI & 上下文</a></li>
-      <li class="nav-item"><a href="#media-ref" class="nav-link">6. 多媒体 Ref 体系</a></li>
-      <li class="nav-item"><a href="#storage" class="nav-link">7. 轻量持久化 KV</a></li>
-      <li class="nav-item"><a href="#tools" class="nav-link">8. 工具与定时任务</a></li>
-      <li class="nav-item"><a href="#poke-actions" class="nav-link">9. 戳一戳与协议直通</a></li>
-      <li class="nav-item"><a href="#service-renderer" class="nav-link">10. 渲染总线与 Shotium</a></li>
+      <li class="nav-item"><a href="#quickstart" class="nav-link active">1. 快速上手与规范</a></li>
+      <li class="nav-item"><a href="#event-system" class="nav-link">2. 事件系统与协议直通</a></li>
+      <li class="nav-item"><a href="#config-schema" class="nav-link">3. 声明式配置与控制</a></li>
+      <li class="nav-item"><a href="#ai-capabilities" class="nav-link">4. AI 赋能与对话流</a></li>
+      <li class="nav-item"><a href="#media-ref" class="nav-link">5. 多媒体 Ref 体系规范</a></li>
+      <li class="nav-item"><a href="#renderer-service" class="nav-link">6. 服务总线与原生渲染</a></li>
+      <li class="nav-item"><a href="#storage-advanced" class="nav-link">7. 存储、工具与时限管理</a></li>
     </ul>
   </aside>
 
   <main class="main">
-    <h1>Chaite 插件开发手册</h1>
-    <p>自用开发速查：零门槛单文件脚本、统一事件驱动、直调大模型、专属独立配置与工具扩展。</p>
+    <h1>Chaite 智能体开发手册</h1>
+    <div class="subtitle">统一事件体系 · 服务解耦总线 · 原生无损渲染 · 多模态轻量抽象</div>
 
-    <!-- 1. 目录结构规范 -->
-    <h2 id="structure">1. 目录结构规范</h2>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+    <!-- 1. 快速上手与规范 (合并：目录结构与最小起步) -->
+    <h2 id="quickstart">1. 快速上手与插件规范</h2>
+    <div class="grid-2">
       <div class="card" style="margin-bottom: 0;">
-        <h3><span class="badge">单文件</span> scripts/&lt;id&gt;/</h3>
+        <h3><span class="badge">单脚本</span> scripts/&lt;id&gt;/</h3>
         <ul>
-          <li>入口：<code>runner/plugins/scripts/&lt;id&gt;/index.js</code></li>
+          <li>入口：<code>plugins/scripts/&lt;id&gt;/index.js</code></li>
           <li>配置：同级 <code>config.json</code>（便携独立）</li>
-          <li>模式：在线代码编辑、支持直接导入 .js 或带配置的 .zip 压缩包</li>
-          <li>适合：小游戏、趣味互动、单指令脚本</li>
+          <li>特色：在线热改、即存即生效、支持导入导出纯 JS</li>
+          <li>适合：小游戏、趣味群聊互动、轻量小指令</li>
         </ul>
       </div>
       <div class="card" style="margin-bottom: 0;">
-        <h3><span class="badge">工程包</span> apps/&lt;id&gt;/</h3>
+        <h3><span class="badge">完整应用</span> apps/&lt;id&gt;/</h3>
         <ul>
-          <li>入口：<code>runner/plugins/apps/&lt;id&gt;/index.js</code></li>
-          <li>清单：<code>package.json</code>，同级 <code>config.json</code></li>
-          <li>模式：多文件完整模块，支持一键打包与导入 .zip</li>
-          <li>适合：多功能套件、企业接口对接、复杂业务</li>
+          <li>入口：<code>plugins/apps/&lt;id&gt;/index.js</code></li>
+          <li>清单：具备 <code>package.json</code> 与 <code>schema.json</code></li>
+          <li>特色：ESM 运行时自愈、影子目录热重载、Zip 导出</li>
+          <li>适合：表情包引擎、服务总线提供者、企业级业务</li>
         </ul>
       </div>
     </div>
 
-    <!-- 2. 最小起步实例 -->
-    <h2 id="quickstart">2. 最小起步实例</h2>
-    <p>在 <code>runner/plugins/scripts/hello/index.js</code> 创建脚本：</p>
-    <pre><code class="language-javascript">export const name = '打招呼插件'
+    <div class="card">
+      <h3>最小起步代码</h3>
+      <p>在 <code>plugins/scripts/hello/index.js</code> 中写入：</p>
+      <pre><code class="language-javascript">export const name = '问候示例'
 export const version = '1.0.0'
 
 export default function setup(ctx) {
-  ctx.logger.info('插件启动成功！')
+  ctx.logger.info('问候插件已初始化！')
 
-  // 读取插件专属配置
-  const prefix = ctx.config.prefix || '#打招呼'
-
-  // 注册指令
-  ctx.registerCommand(prefix, async (e) => {
-    await e.reply(`你好呀，${e.sender.nickname || e.userId}！`)
-    return true // 返回 true 表示拦截并完成处理
+  // 响应指定指令或前缀
+  ctx.registerCommand(/^#?(打招呼|hello)$/i, async (e) => {
+    // 跨协议友好回复发送者
+    await e.reply({
+      text: `你好呀，${e.sender.nickname || e.userId}！欢迎使用 Chaite。`,
+      at: true,
+    })
+    return true // 返回 true 表示拦截并完成事件消费
   })
-}
-</code></pre>
+}</code></pre>
+    </div>
 
-    <!-- 3. ChaiteEvent API -->
-    <h2 id="event-api">3. 统一事件对象 (ChaiteEvent) API 规范</h2>
+    <!-- 2. 事件系统与协议直通 (合并：ChaiteEvent、回复范式、戳一戳与底层协议调用) -->
+    <h2 id="event-system">2. 事件系统与协议直通</h2>
+    <p>
+      框架将 OneBot、飞书等异构协议的消息与通知统一抽象为标准 <code>ChaiteEvent</code>，业务层彻底告别直接操作底层 CQ 码或散落的全局对象。
+    </p>
+
     <table>
       <thead>
         <tr>
-          <th>字段 / 方法</th>
+          <th>属性 / 方法</th>
           <th>类型</th>
           <th>说明</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><code>e.userId</code></td>
-          <td><code>string | number</code></td>
-          <td>发送者用户 ID（QQ 号等）</td>
-        </tr>
-        <tr>
-          <td><code>e.groupId</code></td>
-          <td><code>number | null</code></td>
-          <td>群号（私聊时为 <code>null</code>）</td>
+          <td><code>e.userId / e.groupId</code></td>
+          <td><code>number | string | null</code></td>
+          <td>发送者用户 ID / 群号（私聊环境群号为 <code>null</code>）</td>
         </tr>
         <tr>
           <td><code>e.isGroup / e.isPrivate</code></td>
           <td><code>boolean</code></td>
-          <td>当前是否为群聊 / 私聊环境</td>
+          <td>当前会话场景判断布尔标记</td>
         </tr>
         <tr>
-          <td><code>e.text</code></td>
+          <td><code>e.text / e.rawText</code></td>
           <td><code>string</code></td>
-          <td>清洗后的文本（已剥离 @ 机器人与指令前缀）</td>
-        </tr>
-        <tr>
-          <td><code>e.rawText</code></td>
-          <td><code>string</code></td>
-          <td>未经清洗的原始消息文本</td>
+          <td><code>e.text</code> 已剥离机器人的 @ 与指令前缀，<code>rawText</code> 为纯原始文本</td>
         </tr>
         <tr>
           <td><code>e.sender</code></td>
           <td><code>SenderInfo</code></td>
-          <td>发送者信息：<code>{ nickname, card, role, title, level }</code></td>
+          <td>发送者元数据：<code>{ nickname, card, role, level }</code></td>
         </tr>
         <tr>
-          <td><code>e.images</code></td>
-          <td><code>ImageAttachment[]</code></td>
-          <td>携带的图片数组 <code>[{ ref, url, mimeType }]</code></td>
+          <td><code>e.isPoke / e.isSelfPoke</code></td>
+          <td><code>boolean</code></td>
+          <td>是否为戳一戳通知，<code>isSelfPoke</code> 指示是否戳的是机器人自身</td>
         </tr>
         <tr>
           <td><code>await e.reply(content)</code></td>
           <td><code>Promise&lt;any&gt;</code></td>
-          <td>统一回复方法（支持文本、<code>{ text, at: true, images }</code> 或 CQ 码自动转换）</td>
+          <td>跨协议多功能回复（支持纯文本、艾特、图片数组、引用或无引用）</td>
         </tr>
         <tr>
-          <td><code>await e.queryAI(prompt, [opt])</code></td>
-          <td><code>Promise&lt;string&gt;</code></td>
-          <td>直接调用系统配置的主模型/预设提问（单轮直通）</td>
+          <td><code>await e.getMemberList()</code></td>
+          <td><code>Promise&lt;any[]&gt;</code></td>
+          <td>群聊场景原生查询完整群成员列表</td>
         </tr>
         <tr>
-          <td><code>await e.askWithContext(prompt, [opt])</code></td>
-          <td><code>Promise&lt;string&gt;</code></td>
-          <td><strong>携带群聊近期双水位线滑动窗口记录</strong>向模型提问</td>
+          <td><code>await e.callAction(action, params)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>直通底层协议原生动作（如发送合并转发 <code>send_group_forward_msg</code> 等）</td>
         </tr>
       </tbody>
     </table>
 
-    <div class="card" style="margin-top: 16px;">
-      <h3>跨协议回复范例 (e.reply)</h3>
-      <p>为避免将插件死绑定在 QQ 专有的 CQ 码上，推荐使用跨协议的结构化调用方式（框架会自动向 OneBot / 飞书转换对应原生消息段）：</p>
-      <pre><code class="language-javascript">// 1. 最简文本回复（默认带原消息引用）
-await e.reply('处理成功喵！')
+    <div class="card">
+      <h3>戳一戳 (Poke) 响应与底层直通范例</h3>
+      <pre><code class="language-javascript">export default function setup(ctx) {
+  // 1. 极简监听群友戳一戳
+  ctx.onPoke(async (e) => {
+    if (e.isSelfPoke) {
+      await e.reply('别戳我啦，再戳要生气啦！(ง •_•)ง')
+      return true
+    }
+  })
 
-// 2. 不带引用回复 (独立单发)
-await e.reply({
-  text: '这是不带引用的独立回复消息',
-  reply: false, // 设为 false 则不引用原消息
-})
-
-// 3. 结构化艾特回复（跨平台通用，无需手拼 CQ 码）
-await e.reply({
-  text: '这是你的查询结果',
-  at: true,     // 自动 @ 发送者；亦可传入指定 QQ 号如 at: 123456
-  reply: false, // 可自由组合是否带引用
-})
-
-// 4. 图文混合回复
-await e.reply({
-  text: '图表已生成：',
-  images: ['https://example.com/chart.png'],
-})
-
-// 5. CQ 码兼容说明
-// 框架底层已内置 CQ 码解析器，手写的 [CQ:at,qq=123] 或 [CQ:image,file=...] 也会自动转为原生 Segment。</code></pre>
+  // 2. 原生调用底层协议动作 (彻底解耦全局变量)
+  ctx.registerCommand('#群名片列表', async (e) => {
+    if (!e.isGroup) return true
+    const members = await e.getMemberList()
+    const info = await e.callAction('get_group_info', { group_id: e.groupId })
+    await e.reply(`群名称: ${info?.data?.group_name || ''}\n成员数: ${members.length}`)
+    return true
+  })
+}</code></pre>
     </div>
 
-    <!-- 4. 配置与 Schema -->
-    <h2 id="config-schema">4. 插件配置与 Schema 声明</h2>
+    <!-- 3. 声明式配置与控制 (合并：config.json、schema.json 字段与按钮 action、控制台分栏) -->
+    <h2 id="config-schema">3. 声明式配置与控制</h2>
     <div class="card">
-      <p>每个插件的配置均保存在其独立目录下的 <code>config.json</code>，在代码中直接通过 <code>ctx.config</code> 访问。如需 Web 后台渲染可视化配置表单，同级放置 <code>schema.json</code>：</p>
+      <p>每个插件的配置存放在其独立目录下的 <code>config.json</code> 中，业务代码通过 <code>ctx.config</code> 读取。放置同级 <code>schema.json</code> 即可由 Web 管理面板生成可视化配置表单。</p>
       <pre><code class="language-json">[
-  { "key": "apiKey", "label": "第三方 API 密钥", "type": "string" },
-  { "key": "prefix", "label": "自定义指令唤醒词", "type": "string", "default": "#打招呼" },
-  { "key": "enableAt", "label": "回复时是否艾特", "type": "boolean", "default": true },
+  { "key": "apiKey", "label": "API 密钥", "type": "string" },
+  { "key": "maxCount", "label": "并发上限", "type": "number", "default": 5 },
   {
     "key": "installEngine",
-    "label": "引擎管理",
+    "label": "原生引擎管理",
     "type": "button",
-    "buttonText": "📦 一键安装核心组件",
+    "buttonText": "📦 一键安装引擎核心",
     "buttonType": "primary",
     "action": "installEngine",
-    "description": "点击即可在控制台免终端一键自动下载并配置核心依赖"
+    "description": "点击后由系统自动在后台执行依赖安装，免去命令行操作"
   }
-]
-</code></pre>
+]</code></pre>
       <p>
-        <strong>支持字段类型：</strong> <code>string</code>, <code>number</code>, <code>boolean</code>, <code>textarea</code>, <code>select</code>, <code>button</code>（声明式交互按钮）。<br/>
-        <strong>按钮类型属性：</strong> <code>buttonText</code>（按钮文案）、<code>buttonType</code>（<code>primary/warning/error/default</code>）、<code>action</code>（触发的动作名）。在插件中通过 <code>ctx.registerAction('installEngine', async () =&gt; { ... })</code> 处理点击事件。<br/>
-        <strong>配置分栏：</strong> 控制台自动拆分为 <code>🔌 插件配置</code>（专有字段）与 <code>⚙️ 通用配置</code>（独立触发前缀与群聊/用户黑白名单拦截）。
+        <strong>字段类型：</strong> <code>string</code>, <code>number</code>, <code>boolean</code>, <code>textarea</code>, <code>select</code>, <code>button</code>（声明式交互按钮）。<br/>
+        <strong>按钮动作（Actions）：</strong> 在插件代码中通过 <code>ctx.registerAction('installEngine', async () =&gt; { ... })</code> 处理点击响应。<br/>
+        <strong>控制台分栏：</strong> 面板自动将表单隔离为 <code>🔌 插件配置</code>（专有选项）与 <code>⚙️ 通用配置</code>（独立触发前缀、群聊及用户黑白名单），杜绝杂糅。
       </p>
     </div>
 
-    <!-- 5. 直调 AI & 上下文 -->
-    <h2 id="ai-capabilities">5. AI 能力赋能 (预设模式 vs 纯净基元模式)</h2>
-    <p>当默认预设性格活泼/不听话，而插件需要执行提取、摘要、严谨计算等任务时，可自由选择以下方式：</p>
+    <!-- 4. AI 赋能与对话流 -->
+    <h2 id="ai-capabilities">4. AI 赋能与对话流</h2>
+    <p>当预设性格活泼或有特定系统提示词，而插件需要执行提取、严谨计算等确定性任务时，可自由选择预设直通或纯净基元模式：</p>
     <pre><code class="language-javascript">ctx.registerCommand('#翻译', async (e) => {
-  // 方式 1: 指定听话预设 ID (预设已绑定好渠道与模型，无需额外配置)
+  // 方式 1: 走已配置的听话预设 (presetId)
   const res = await e.queryAI(e.text, { presetId: 'translator' })
   await e.reply(res)
   return true
 })
 
 ctx.registerCommand('#提取', async (e) => {
-  // 方式 2: 纯净基元对话 (完全不带预设性格与提示词，直接调渠道模型)
+  // 方式 2: 纯净基元模式 (pure: true)，零人设干扰，直连渠道模型
   const jsonStr = await e.queryAI(e.text, {
-    pure: true,                     // 纯净模式，零预设污染
-    channelId: 'my-openai-channel', // 可选：指定特定渠道 ID
-    systemPrompt: '你是一个严格的数据提取助手，仅返回格式化后的 JSON',
-    temperature: 0.1
+    pure: true,
+    channelId: 'my-openai-channel',
+    systemPrompt: '你是一个严谨的数据提取助手，只返回标准 JSON 数据',
+    temperature: 0.1,
   })
   await e.reply(jsonStr)
   return true
@@ -338,17 +408,16 @@ ctx.registerCommand('#提取', async (e) => {
 ctx.registerCommand('#总结讨论', async (e) => {
   if (!e.isGroup) return true
   await e.reply('正在阅读刚才的发言，请稍候...')
-  // 携带群聊上下文提炼
-  const summary = await e.askWithContext('请总结刚才群友的核心讨论，列出3个看点')
+  // 携带群聊双水位线滑动窗口记录提问
+  const summary = await e.askWithContext('请总结群友刚才的核心讨论，列出要点')
   await e.reply(summary)
   return true
-})
-</code></pre>
+})</code></pre>
 
-    <!-- 6. 多媒体与资源引用体系 (Ref Specification) -->
-    <h2 id="media-ref">6. 多媒体与资源引用体系 (Media Ref Specification)</h2>
+    <!-- 5. 多媒体 Ref 体系规范 -->
+    <h2 id="media-ref">5. 多媒体 Ref 体系规范 (Media Ref Specification)</h2>
     <p>
-      在聊天场景中，图片、视频、语音、文件及合并转发消息体量庞大且异构。Chaite 统一采用 <strong>Ref 引用体系 (<code>mediaRefStore</code>)</strong> 对非纯文本媒体进行轻量化占位抽象，避免上下文和网关 Payload 爆破，同时允许插件和大模型按需延迟解析。
+      为了防止多媒体体积撑爆模型上下文和网关负载，Chaite 统一采用 <strong>Ref 引用体系 (<code>mediaRefStore</code>)</strong> 对异构多媒体做轻量占位，支持大模型与插件按需延迟解析。
     </p>
 
     <table>
@@ -356,8 +425,8 @@ ctx.registerCommand('#总结讨论', async (e) => {
         <tr>
           <th>媒体类别</th>
           <th>文本占位符格式</th>
-          <th>Ref 前缀</th>
-          <th>核心元数据与扩展能力</th>
+          <th>Ref 标识</th>
+          <th>核心能力与解析规范</th>
         </tr>
       </thead>
       <tbody>
@@ -365,101 +434,86 @@ ctx.registerCommand('#总结讨论', async (e) => {
           <td><strong>图片 (Image)</strong></td>
           <td><code>[图片 ref:img_xxxx]</code></td>
           <td><code>img_</code></td>
-          <td>包含图片直链/本地文件、Base64 缓存与 MIME。具备双水位线防爆与 GIF 三级动态压缩。支持 <code>mediaRefStore.resolveImage(ref)</code>。</td>
+          <td>内置双水位线防爆与 GIF 三级动态压缩；支持 <code>mediaRefStore.resolveImage(ref)</code> 提取。</td>
         </tr>
         <tr>
           <td><strong>聊天记录 (Forward)</strong></td>
           <td><code>[聊天记录:共 N 条记录 摘要:... ref:fwd_xxxx]</code></td>
           <td><code>fwd_</code></td>
-          <td>包含合并转发 ID (<code>forwardId</code>) 与前 10 条消息图文摘要预览 (<code>previewMessages</code>)，大模型无需读取庞大原始 JSON 即可理解上下文对话脉络。</td>
+          <td>预存图文预览摘要，无需大模型读取庞大原始 JSON 即可精确掌握会话脉络。</td>
         </tr>
         <tr>
           <td><strong>视频 (Video)</strong></td>
           <td><code>[视频:xxx.mp4 ref:vid_xxxx]</code></td>
           <td><code>vid_</code></td>
-          <td>包含视频名称、后缀 (<code>ext</code>)、字节大小 (<code>fileSize</code>)。支持 <code>mediaRefStore.resolveMedia(ref)</code> 异步解析临时下载直链与本地缓存。</td>
+          <td>携带文件名、后缀与大小；支持 <code>mediaRefStore.resolveMedia(ref)</code> 异步解析下载直链。</td>
         </tr>
         <tr>
           <td><strong>语音 (Voice)</strong></td>
           <td><code>[语音 (5秒) ref:voice_xxxx]</code></td>
           <td><code>voice_</code></td>
-          <td>包含语音精确时长 (<code>duration</code>) 及 Silk/Amr 资源路径，插件可结合外部语音识别服务进行 STT 文本转录。</td>
+          <td>包含精确秒数与音频文件路径，便于对接外部 STT 语音识别服务。</td>
         </tr>
         <tr>
           <td><strong>文件 (File)</strong></td>
           <td><code>[文件:文档.pdf (3.5MB) ref:file_xxxx]</code></td>
           <td><code>file_</code></td>
-          <td>包含文件名、大小与群文件 ID (<code>fileId</code>)。支持 <code>mediaRefStore.resolveMedia(ref)</code> 自动获取群文件直链下载地址。</td>
+          <td>包含群文件 ID；支持 <code>mediaRefStore.resolveMedia(ref)</code> 获取群文件直链下载地址。</td>
         </tr>
       </tbody>
     </table>
 
-    <div class="card" style="margin-top: 16px;">
-      <h3>插件中提取与解析 Ref 示例</h3>
-      <pre><code class="language-javascript">// 全系列媒体 Ref 提取与按需解析示例
-import { mediaRefStore } from 'chaite' // 或直接读取 globalThis.mediaRefStore
-
-export default function setup(ctx) {
-  ctx.on('message', async (e) => {
-    const raw = e.rawText || ''
-
-    // 匹配消息中包含的任意多媒体 Ref
-    // 覆盖格式：[视频:... ref:vid_xxx]、[文件:... ref:file_xxx]、[语音 ref:voice_xxx]、[聊天记录 ref:fwd_xxx]、[图片 ref:img_xxx]
-    const refMatch = raw.match(/\[(?:视频|文件|语音|聊天记录|图片)[^\]]*ref:([a-z0-9_]+)\]/)
-    if (!refMatch) return
-
-    const ref = refMatch[1]
-    const item = mediaRefStore.get(ref)
-    if (!item) return
-
-    switch (item.type) {
-      case 'file': {
-        // 自动解析群文件/私聊文件的下载直链或本地缓存
-        const resolved = await mediaRefStore.resolveMedia(ref, globalThis.onebotClient)
-        if (resolved?.url) {
-          await e.reply(`已捕获文件: ${item.name} (${item.fileSize ? Math.round(item.fileSize / 1024) + 'KB' : '未知大小'})\n直链解析成功！`)
-        }
-        break
-      }
-      case 'video': {
-        const resolved = await mediaRefStore.resolveMedia(ref, globalThis.onebotClient)
-        console.log(`收到视频: ${item.name}，格式: ${item.ext}，直链: ${resolved?.url || '本地缓存'}`)
-        break
-      }
-      case 'voice': {
-        console.log(`收到语音: 时长 ${item.duration || 0} 秒，资源定位: ${item.file || item.url}`)
-        break
-      }
-      case 'forward': {
-        console.log(`收到聊天记录: ${item.summary}，前置预览条数: ${item.previewMessages?.length || 0}`)
-        break
-      }
-      case 'image': {
-        const img = await mediaRefStore.resolveImage(ref, globalThis.onebotClient)
-        console.log(`图片 MIME: ${img?.mimeType}，Base64 字符数: ${img?.base64?.length || 0}`)
-        break
-      }
-    }
+    <!-- 6. 服务总线与原生渲染 (Shotium 与 Service Provider) -->
+    <h2 id="renderer-service">6. 服务总线与原生渲染 (Shotium)</h2>
+    <div class="card">
+      <p>
+        Chaite 提倡 <strong>Service Provider（服务提供者模式）</strong>：业务插件（如 meme、卡片仪表盘）只依赖抽象的 <code>ctx.render({ html, url })</code>，底层渲染引擎由独立的 <code>service-renderer</code> 插件负责承载与切换。
+      </p>
+      <h3>Shotium 本地原生引擎核心优势 (@pixel.js/shotium)</h3>
+      <ul>
+        <li><strong>无端口、无微服务</strong>：纯本地 Node-API 进程内驱动，无需配置任何 HTTP 端口或 Docker 容器；</li>
+        <li><strong>剥离臃肿</strong>：深度移除 V8 引擎与 DevTools，仅保留 Blink 排版与 Skia 绘图，内存占用极低；</li>
+        <li><strong>秒级冷启动</strong>：毫秒级输出 PNG、JPEG 或 WebP 图像流，彻底告别 Chromium 僵尸进程；</li>
+        <li><strong>免终端一键安装</strong>：在面板点击 <code>📦 一键安装 Shotium</code> 即可走国内镜像源自动装配完毕。</li>
+      </ul>
+      <pre><code class="language-javascript">// 业务插件中使用渲染服务极简范例：
+ctx.registerCommand('#生成卡片', async (e) => {
+  const html = `
+    &lt;div style="background:#0f172a;color:#fff;padding:24px;border-radius:12px;font-family:sans-serif;"&gt;
+      &lt;h2 style="color:#38bdf8;margin:0 0 8px;"&gt;🚀 智能体状态卡片&lt;/h2&gt;
+      &lt;p&gt;用户: ${e.sender.nickname || e.userId}&lt;/p&gt;
+      &lt;p&gt;生成时间: ${new Date().toLocaleString()}&lt;/p&gt;
+    &lt;/div&gt;
+  `
+  // 直接调用渲染总线，无论底层是 Shotium 还是 Puppeteer 均完美出图
+  const imageBuf = await ctx.render({ html, format: 'png' })
+  const base64 = Buffer.isBuffer(imageBuf) ? imageBuf.toString('base64') : String(imageBuf)
+  await e.reply({
+    text: '渲染完成：',
+    images: [`base64://${base64}`]
   })
-}</code></pre>
+  return true
+})</code></pre>
     </div>
 
-    <!-- 7. 轻量持久化 KV -->
-    <h2 id="storage">7. 轻量持久化 KV 存储</h2>
-    <pre><code class="language-javascript">// 存储数据（自动 JSON 序列化）
+    <!-- 7. 存储、工具与时限管理 (合并：KV 存储、Tool、Cron 与时限拉黑) -->
+    <h2 id="storage-advanced">7. 存储、工具与时限管理</h2>
+    <div class="card">
+      <h3>轻量持久化 KV 存储</h3>
+      <pre><code class="language-javascript">// 写入数据（自动 JSON 序列化存储至插件私有命名空间）
 await ctx.storage.set('user_level_' + e.userId, 5)
 
-// 获取数据（支持回退默认值）
+// 获取数据（支持指定默认回退值）
 const level = await ctx.storage.get('user_level_' + e.userId, 1)
 
-// 删除
-await ctx.storage.delete('user_level_' + e.userId)
-</code></pre>
+// 删除条目
+await ctx.storage.delete('user_level_' + e.userId)</code></pre>
+    </div>
 
-    <!-- 8. 工具与定时任务 -->
-    <h2 id="tools">8. 工具注入 (Function Calling) 与定时任务</h2>
-    <pre><code class="language-javascript">export default function setup(ctx) {
-  // 1. 注册 Function Calling 工具给预设模型
+    <div class="card">
+      <h3>Tool 工具注入与定时任务</h3>
+      <pre><code class="language-javascript">export default function setup(ctx) {
+  // 1. 注册 Function Calling 工具给预设模型使用
   ctx.registerTool({
     name: 'query_inventory',
     description: '查询某样物品的当前库存数量',
@@ -474,75 +528,74 @@ await ctx.storage.delete('user_level_' + e.userId)
     return { stock: 42, item: args.itemName }
   })
 
-  // 2. 定时任务（插件重载或禁用时自动安全注销）
+  // 2. 定时任务调度（插件重载或卸载时自动安全注销 Job）
   ctx.cron('0 8 * * *', async () => {
-    ctx.logger.info('早上 8 点整定时播报触发！')
-  })
-}
-</code></pre>
-
-    <!-- 9. 戳一戳与协议直通 -->
-    <h2 id="poke-actions">9. 戳一戳事件与底层协议动作直通</h2>
-    <div class="card">
-      <p>无需手写底层协议监听，系统自动捕获 OneBot 戳一戳通知，并在 <code>ChaiteEvent</code> 中注入动作调用能力：</p>
-      <pre><code class="language-javascript">export default function setup(ctx) {
-  // 1. 极简注册戳一戳响应
-  ctx.onPoke(async (e) => {
-    if (e.isSelfPoke) {
-      await e.reply('别戳啦，再戳要生气啦！(ง •_•)ง')
-      return true // 拦截事件
-    }
-  })
-
-  // 2. 原生协议动作调用 (彻底告别全局变量)
-  ctx.registerCommand('#群名片列表', async (e) => {
-    if (!e.isGroup) return
-    // 原生便捷群成员查询
-    const members = await e.getMemberList()
-    // 或直接直通底层 OneBot 任意动作 (callAction)
-    const groupInfo = await e.callAction('get_group_info', { group_id: e.groupId })
-    await e.reply(`当前群: ${groupInfo?.data?.group_name}，成员数: ${members.length}`)
-    return true
+    ctx.logger.info('早上 8:00 定时广播触发！')
   })
 }</code></pre>
     </div>
 
-    <!-- 10. 渲染总线与 Shotium -->
-    <h2 id="service-renderer">10. 渲染服务总线与 Shotium 本地原生引擎</h2>
     <div class="card">
-      <p>
-        Chaite 提倡 <strong>Service Provider（服务提供者模式）</strong>：业务插件（如表情包、动态卡片、榜单）不硬编码绑定任何 Chromium 或 Puppeteer，只需调用抽象方法 <code>ctx.render({ html, url })</code>。底层的渲染能力由独立插件 <code>service-renderer</code> 提供并动态切换。
-      </p>
-      <h3>Shotium 本地原生引擎优势 (@pixel.js/shotium)</h3>
+      <h3>动态时限拉黑与自动解黑</h3>
       <ul>
-        <li><strong>无端口、无微服务</strong>：纯本地进程内引擎，无需启动任何 HTTP 端口或 Docker 容器；</li>
-        <li><strong>剔除臃肿</strong>：剥离 V8 JS 引擎与浏览器 DevTools，只保留 Blink 排版与 Skia 绘图，内存占用极低；</li>
-        <li><strong>秒级冷启动</strong>：毫秒级直出 PNG / JPEG / WebP 字节流，完美杜绝 Chromium 僵尸进程；</li>
-        <li><strong>免终端一键安装</strong>：在配置面板中提供声明式 <code>type: "button"</code>，点击即可自动执行 npm 安装或卸载。</li>
+        <li><strong>管理员快捷指令：</strong> <code>#拉黑 @群友 10m</code>、<code>#拉黑 123456 1h</code>、<code>#拉黑群 7890 2h</code>（未带时长则为永久黑名单）；</li>
+        <li><strong>大模型自发管控：</strong> 全局暴露 <code>globalThis.banManager.banTarget(uid, 'user', 600000)</code>，模型可通过 Tool 自主临时禁言不听话的群友并在到期后由系统自动无感解黑。</li>
       </ul>
-      <pre><code class="language-javascript">// 业务插件中使用渲染服务极简范例：
-ctx.registerCommand('#生成卡片', async (e) => {
-  const html = `
-    &lt;div style="background:#0f172a;color:#fff;padding:24px;border-radius:12px;font-family:sans-serif;"&gt;
-      &lt;h2 style="color:#38bdf8;margin:0 0 8px;"&gt;🚀 智能体状态卡片&lt;/h2&gt;
-      &lt;p&gt;用户: ${e.sender.nickname || e.userId}&lt;/p&gt;
-      &lt;p&gt;时间: ${new Date().toLocaleString()}&lt;/p&gt;
-    &lt;/div&gt;
-  `
-  // 直接调用系统渲染总线，无论底层是 Shotium 还是 Puppeteer 均完美出图
-  const imageBuf = await ctx.render({ html, format: 'png' })
-  const base64 = Buffer.isBuffer(imageBuf) ? imageBuf.toString('base64') : String(imageBuf)
-  await e.reply({
-    text: '渲染完成：',
-    images: [`base64://${base64}`]
-  })
-  return true
-})</code></pre>
     </div>
   </main>
 
   <script>
+    // 1. 初始化代码高亮
     hljs.highlightAll();
+
+    // 2. 主题切换与持久化逻辑
+    const htmlEl = document.documentElement;
+    const themeBtn = document.getElementById('themeToggleBtn');
+    const themeIcon = document.getElementById('themeIcon');
+    const themeLabel = document.getElementById('themeLabel');
+    const hljsLight = document.getElementById('hljs-light');
+    const hljsDark = document.getElementById('hljs-dark');
+
+    function applyTheme(theme) {
+      htmlEl.setAttribute('data-theme', theme);
+      localStorage.setItem('chaite_docs_theme', theme);
+      if (theme === 'dark') {
+        themeIcon.textContent = '🌙';
+        themeLabel.textContent = '深色';
+        hljsLight.disabled = true;
+        hljsDark.disabled = false;
+      } else {
+        themeIcon.textContent = '☀️';
+        themeLabel.textContent = '浅色';
+        hljsLight.disabled = false;
+        hljsDark.disabled = true;
+      }
+    }
+
+    // 优先读取本地存储，默认浅色
+    const savedTheme = localStorage.getItem('chaite_docs_theme') || 'light';
+    applyTheme(savedTheme);
+
+    themeBtn.addEventListener('click', () => {
+      const current = htmlEl.getAttribute('data-theme') || 'light';
+      applyTheme(current === 'light' ? 'dark' : 'light');
+    });
+
+    // 3. 侧边栏当前激活链接滚动高亮
+    const navLinks = document.querySelectorAll('.nav-link');
+    window.addEventListener('scroll', () => {
+      let currentSection = '';
+      const sections = document.querySelectorAll('h2[id]');
+      sections.forEach(sec => {
+        const top = sec.getBoundingClientRect().top;
+        if (top <= 120) currentSection = sec.getAttribute('id');
+      });
+      if (currentSection) {
+        navLinks.forEach(link => {
+          link.classList.toggle('active', link.getAttribute('href') === `#${currentSection}`);
+        });
+      }
+    });
   </script>
 </body>
 </html>
