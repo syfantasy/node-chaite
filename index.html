@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chaite 插件开发手册 - Sy-Bot / Chaite Plugin Docs</title>
+  <title>Chaite 插件开发手册 - Chaite Plugin Docs</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
@@ -139,8 +139,9 @@
       <li class="nav-item"><a href="#event-api" class="nav-link">3. ChaiteEvent API</a></li>
       <li class="nav-item"><a href="#config-schema" class="nav-link">4. 配置与 Schema</a></li>
       <li class="nav-item"><a href="#ai-capabilities" class="nav-link">5. 直调 AI & 上下文</a></li>
-      <li class="nav-item"><a href="#storage" class="nav-link">6. 轻量持久化 KV</a></li>
-      <li class="nav-item"><a href="#tools" class="nav-link">7. 工具与定时任务</a></li>
+      <li class="nav-item"><a href="#media-ref" class="nav-link">6. 多媒体 Ref 体系</a></li>
+      <li class="nav-item"><a href="#storage" class="nav-link">7. 轻量持久化 KV</a></li>
+      <li class="nav-item"><a href="#tools" class="nav-link">8. 工具与定时任务</a></li>
     </ul>
   </aside>
 
@@ -329,8 +330,107 @@ ctx.registerCommand('#总结讨论', async (e) => {
 })
 </code></pre>
 
-    <!-- 6. 轻量持久化 KV -->
-    <h2 id="storage">6. 轻量持久化 KV 存储</h2>
+    <!-- 6. 多媒体与资源引用体系 (Ref Specification) -->
+    <h2 id="media-ref">6. 多媒体与资源引用体系 (Media Ref Specification)</h2>
+    <p>
+      在聊天场景中，图片、视频、语音、文件及合并转发消息体量庞大且异构。Chaite 统一采用 <strong>Ref 引用体系 (<code>mediaRefStore</code>)</strong> 对非纯文本媒体进行轻量化占位抽象，避免上下文和网关 Payload 爆破，同时允许插件和大模型按需延迟解析。
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>媒体类别</th>
+          <th>文本占位符格式</th>
+          <th>Ref 前缀</th>
+          <th>核心元数据与扩展能力</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>图片 (Image)</strong></td>
+          <td><code>[图片 ref:img_xxxx]</code></td>
+          <td><code>img_</code></td>
+          <td>包含图片直链/本地文件、Base64 缓存与 MIME。具备双水位线防爆与 GIF 三级动态压缩。支持 <code>mediaRefStore.resolveImage(ref)</code>。</td>
+        </tr>
+        <tr>
+          <td><strong>聊天记录 (Forward)</strong></td>
+          <td><code>[聊天记录:共 N 条记录 摘要:... ref:fwd_xxxx]</code></td>
+          <td><code>fwd_</code></td>
+          <td>包含合并转发 ID (<code>forwardId</code>) 与前 10 条消息图文摘要预览 (<code>previewMessages</code>)，大模型无需读取庞大原始 JSON 即可理解上下文对话脉络。</td>
+        </tr>
+        <tr>
+          <td><strong>视频 (Video)</strong></td>
+          <td><code>[视频:xxx.mp4 ref:vid_xxxx]</code></td>
+          <td><code>vid_</code></td>
+          <td>包含视频名称、后缀 (<code>ext</code>)、字节大小 (<code>fileSize</code>)。支持 <code>mediaRefStore.resolveMedia(ref)</code> 异步解析临时下载直链与本地缓存。</td>
+        </tr>
+        <tr>
+          <td><strong>语音 (Voice)</strong></td>
+          <td><code>[语音 (5秒) ref:voice_xxxx]</code></td>
+          <td><code>voice_</code></td>
+          <td>包含语音精确时长 (<code>duration</code>) 及 Silk/Amr 资源路径，插件可结合外部语音识别服务进行 STT 文本转录。</td>
+        </tr>
+        <tr>
+          <td><strong>文件 (File)</strong></td>
+          <td><code>[文件:文档.pdf (3.5MB) ref:file_xxxx]</code></td>
+          <td><code>file_</code></td>
+          <td>包含文件名、大小与群文件 ID (<code>fileId</code>)。支持 <code>mediaRefStore.resolveMedia(ref)</code> 自动获取群文件直链下载地址。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card" style="margin-top: 16px;">
+      <h3>插件中提取与解析 Ref 示例</h3>
+      <pre><code class="language-javascript">// 全系列媒体 Ref 提取与按需解析示例
+import { mediaRefStore } from 'chaite' // 或直接读取 globalThis.mediaRefStore
+
+export default function setup(ctx) {
+  ctx.on('message', async (e) => {
+    const raw = e.rawText || ''
+
+    // 匹配消息中包含的任意多媒体 Ref
+    // 覆盖格式：[视频:... ref:vid_xxx]、[文件:... ref:file_xxx]、[语音 ref:voice_xxx]、[聊天记录 ref:fwd_xxx]、[图片 ref:img_xxx]
+    const refMatch = raw.match(/\[(?:视频|文件|语音|聊天记录|图片)[^\]]*ref:([a-z0-9_]+)\]/)
+    if (!refMatch) return
+
+    const ref = refMatch[1]
+    const item = mediaRefStore.get(ref)
+    if (!item) return
+
+    switch (item.type) {
+      case 'file': {
+        // 自动解析群文件/私聊文件的下载直链或本地缓存
+        const resolved = await mediaRefStore.resolveMedia(ref, globalThis.onebotClient)
+        if (resolved?.url) {
+          await e.reply(`已捕获文件: ${item.name} (${item.fileSize ? Math.round(item.fileSize / 1024) + 'KB' : '未知大小'})\n直链解析成功！`)
+        }
+        break
+      }
+      case 'video': {
+        const resolved = await mediaRefStore.resolveMedia(ref, globalThis.onebotClient)
+        console.log(`收到视频: ${item.name}，格式: ${item.ext}，直链: ${resolved?.url || '本地缓存'}`)
+        break
+      }
+      case 'voice': {
+        console.log(`收到语音: 时长 ${item.duration || 0} 秒，资源定位: ${item.file || item.url}`)
+        break
+      }
+      case 'forward': {
+        console.log(`收到聊天记录: ${item.summary}，前置预览条数: ${item.previewMessages?.length || 0}`)
+        break
+      }
+      case 'image': {
+        const img = await mediaRefStore.resolveImage(ref, globalThis.onebotClient)
+        console.log(`图片 MIME: ${img?.mimeType}，Base64 字符数: ${img?.base64?.length || 0}`)
+        break
+      }
+    }
+  })
+}</code></pre>
+    </div>
+
+    <!-- 7. 轻量持久化 KV -->
+    <h2 id="storage">7. 轻量持久化 KV 存储</h2>
     <pre><code class="language-javascript">// 存储数据（自动 JSON 序列化）
 await ctx.storage.set('user_level_' + e.userId, 5)
 
@@ -341,8 +441,8 @@ const level = await ctx.storage.get('user_level_' + e.userId, 1)
 await ctx.storage.delete('user_level_' + e.userId)
 </code></pre>
 
-    <!-- 7. 工具与定时任务 -->
-    <h2 id="tools">7. 工具注入 (Function Calling) 与定时任务</h2>
+    <!-- 8. 工具与定时任务 -->
+    <h2 id="tools">8. 工具注入 (Function Calling) 与定时任务</h2>
     <pre><code class="language-javascript">export default function setup(ctx) {
   // 1. 注册 Function Calling 工具给预设模型
   ctx.registerTool({
