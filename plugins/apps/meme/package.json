@@ -1,9 +1,0 @@
-{
-  "name": "chaite-plugin-meme",
-  "version": "1.0.0",
-  "description": "基于 meme-generator API 的表情包生成插件",
-  "main": "index.js",
-  "type": "module",
-  "author": "Chaite",
-  "dependencies": {}
-}
