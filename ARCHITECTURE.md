@@ -115,8 +115,8 @@
 2. **Part 2 (Text)**: `<chat_members>` 群成员花名册与系统认证角标；
 3. **Part 3 (Text)**: `<group_messages>` 流动序号流水记录；
 4. **Part 4 (Text)**: `<attached_images>` 多模态附图索引清单（明确说明附图 1~N 与上下文中 `[图片 ref:xxx]` 及发言人的对应关系）；
-5. **Part 5 (Text)**: 提问者本轮真实输入的 Prompt；
-6. **Part 6+ (Text + Image Interleaved)**: **图文交错紧密配对**。在每张真实图像二进制前紧贴一个引导 Text Part（`【下方附图 N 对应 ...】：\n`），使得大模型的视觉编码器（Vision Encoder）与文本 Token 产生强力的 Cross-Attention 绑定，杜绝任何视觉顺序混淆。
+5. **Part 5+ (Text + Image Interleaved)**: **图文交错紧密配对**。在每张真实图像二进制前紧贴一个引导 Text Part（`【下方附图 N 对应 ...】：\n`），使得大模型的视觉编码器（Vision Encoder）与文本 Token 产生强力的 Cross-Attention 绑定，杜绝任何视觉顺序混淆；
+6. **Final Part (Text)**: **提问者本轮真实输入的原始 Prompt**。沉于全局最末尾，享受最强末尾注意力（Recency Bias）；完全保持用户输入原貌，不加任何易被攻击者伪造利用的人造标题标签（如 `### 当前提问` 等），彻底阻断 Prompt 注入攻击。
 7. **纯文本模型安全分流**: 若预设模型不支持视觉能力，系统在进入前置流程时即自动剥离 Base64，降级为 `[图片 ref:xxx]` 纯文本传输，模型需要时自发调用 `ask_about_image` 二级识图，零报错、零浪费。
 
 ### 2. 双水位线动态滑动窗口 (Dual-Watermark Window)
