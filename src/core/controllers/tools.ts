@@ -59,8 +59,12 @@ router.post('/:id/test', (req: Request<{ id: string }, object, { args?: Record<s
     const instanceName = extractClassName(dto.code || '') || dto.name
     const tool = instanceName ? await mgr.getInstance(instanceName) : undefined
     if (!tool) throw new Error(`工具“${dto.name}”尚未被运行时加载`)
+    const toolConfig = dto.config || (dto.extraData as any)?.config || {}
+    ;(tool as any).config = toolConfig
+
     const context = new ChaiteContext(chaite.getLogger())
     context.setChaite(chaite)
+    ;(context as any).toolConfig = toolConfig
     context.setEvent({
       sender: { user_id: req.body.userId || 'console-test', nickname: 'Console Test' },
       group: req.body.groupId ? { group_id: req.body.groupId } : undefined,

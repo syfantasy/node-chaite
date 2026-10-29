@@ -86,6 +86,54 @@ export default function setup(ctx) {
   })
 }
 `
+
+const sampleCodeRef = `// 全系列媒体 Ref 提取与按需解析示例
+import { mediaRefStore } from 'chaite' // 或直接读取 globalThis.mediaRefStore
+
+export default function setup(ctx) {
+  ctx.on('message', async (e) => {
+    const raw = e.rawText || ''
+
+    // 匹配消息中包含的任意多媒体 Ref
+    // 格式覆盖：[视频:... ref:vid_xxx]、[文件:... ref:file_xxx]、[语音 ref:voice_xxx]、[聊天记录 ref:fwd_xxx]、[图片 ref:img_xxx]
+    const refMatch = raw.match(/\\[(?:视频|文件|语音|聊天记录|图片)[^\\]]*ref:([a-z0-9_]+)\\]/)
+    if (!refMatch) return
+
+    const ref = refMatch[1]
+    const item = mediaRefStore.get(ref)
+    if (!item) return
+
+    switch (item.type) {
+      case 'file': {
+        // 自动解析群文件/私聊文件的下载直链或本地缓存
+        const resolved = await mediaRefStore.resolveMedia(ref, globalThis.onebotClient)
+        if (resolved?.url) {
+          await e.reply(\`已捕获文件: \${item.name} (\${item.fileSize ? Math.round(item.fileSize / 1024) + 'KB' : '未知大小'})\\n直链解析成功！\`)
+        }
+        break
+      }
+      case 'video': {
+        const resolved = await mediaRefStore.resolveMedia(ref, globalThis.onebotClient)
+        console.log(\`收到视频: \${item.name}，格式: \${item.ext}，直链: \${resolved?.url || '本地缓存'}\`)
+        break
+      }
+      case 'voice': {
+        console.log(\`收到语音: 时长 \${item.duration || 0} 秒，资源定位: \${item.file || item.url}\`)
+        break
+      }
+      case 'forward': {
+        console.log(\`收到聊天记录: \${item.summary}，前置预览条数: \${item.previewMessages?.length || 0}\`)
+        break
+      }
+      case 'image': {
+        const img = await mediaRefStore.resolveImage(ref, globalThis.onebotClient)
+        console.log(\`图片 MIME: \${img?.mimeType}，Base64 字符数: \${img?.base64?.length || 0}\`)
+        break
+      }
+    }
+  })
+}
+`
 </script>
 
 <template>
@@ -117,24 +165,24 @@ export default function setup(ctx) {
 
       <!-- 2. 插件形式与文件结构 -->
       <section class="doc-card">
-        <h2>2. 两种插件规格</h2>
+        <h2>2. 插件文件结构规范</h2>
         <div class="spec-grid">
           <div class="spec-item">
-            <h3>单文件 JS 插件 (Single-File)</h3>
+            <h3>单文件 / 脚本插件 (Single-File)</h3>
             <ul>
-              <li>存放位置：<code>runner/plugins/xxx.js</code></li>
-              <li>开箱即用，无需编译</li>
-              <li>可在 Web 后台在线查看、修改源码并<strong>免重启实时热重载</strong></li>
-              <li>适合轻量指令、小工具、群互动与游戏</li>
+              <li>统一目录：<code>plugins/&lt;plugin-id&gt;/index.js</code>（支持直接放置 <code>plugins/&lt;name&gt;.js</code> 自动归档）</li>
+              <li>开箱即用，无需复杂构建</li>
+              <li>可在 Web 控制台在线查看、修改源码并<strong>免重启实时重载</strong></li>
+              <li>适合轻量指令、小工具、群互动与娱乐功能</li>
             </ul>
           </div>
           <div class="spec-item">
             <h3>工程目录包插件 (Directory Package)</h3>
             <ul>
-              <li>存放位置：<code>runner/plugins/my-plugin/</code></li>
-              <li>包含 <code>package.json</code>、入口文件 <code>index.js</code></li>
-              <li>静态配置位于同级 <code>config.json</code>，配置随插件走，便携迁移</li>
-              <li>适合复杂业务逻辑、多文件模块与多功能套件</li>
+              <li>统一目录：<code>plugins/&lt;plugin-id&gt;/</code></li>
+              <li>包含 <code>package.json</code> 与入口文件（<code>index.js</code>）</li>
+              <li>专属静态配置保存在同级 <code>config.json</code>，拷贝即迁移</li>
+              <li>适合复杂业务逻辑、多模块拆分或引入第三方 npm 依赖的完整套件</li>
             </ul>
           </div>
         </div>
@@ -218,9 +266,64 @@ export default function setup(ctx) {
         </div>
       </section>
 
-      <!-- 6. 存储机制 -->
+      <!-- 6. 多媒体与资源引用体系 (Ref Specification) -->
       <section class="doc-card">
-        <h2>6. 存储最佳实践</h2>
+        <h2>6. 多媒体与资源引用体系 (Media Ref Specification)</h2>
+        <p>
+          在聊天流中，图片、视频、语音、文档与合并转发消息体积大且格式各异。Chaite 统一采用 <strong>Ref 引用模式</strong> 进行轻量化占位抽象，避免上下文和网关 Payload 爆破，同时允许插件和大模型按需延迟解析。
+        </p>
+
+        <table class="api-table" style="margin-top: 12px;">
+          <thead>
+            <tr>
+              <th>媒体类别</th>
+              <th>文本占位符格式</th>
+              <th>Ref 前缀</th>
+              <th>核心元数据与能力说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>图片 (Image)</strong></td>
+              <td><code>[图片 ref:img_xxxx]</code></td>
+              <td><code>img_</code></td>
+              <td>包含图片直链/本地文件、Base64 缓存与 MIME。具备双水位线防爆与 GIF 三级动态压缩。支持 <code>mediaRefStore.resolveImage(ref)</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>聊天记录 (Forward)</strong></td>
+              <td><code>[聊天记录:共N条记录 摘要:... ref:fwd_xxxx]</code></td>
+              <td><code>fwd_</code></td>
+              <td>包含合并转发 ID (<code>forwardId</code>) 与前 10 条图文消息摘要预览 (<code>previewMessages</code>)，大模型无需读取庞大原始 JSON 即可理解上下文对话脉络。</td>
+            </tr>
+            <tr>
+              <td><strong>视频 (Video)</strong></td>
+              <td><code>[视频:xxx.mp4 ref:vid_xxxx]</code></td>
+              <td><code>vid_</code></td>
+              <td>包含视频名称、后缀 (<code>ext</code>)、字节大小 (<code>fileSize</code>)。支持 <code>mediaRefStore.resolveMedia(ref)</code> 异步解析临时下载直链与本地缓存。</td>
+            </tr>
+            <tr>
+              <td><strong>语音 (Voice)</strong></td>
+              <td><code>[语音 (5秒) ref:voice_xxxx]</code></td>
+              <td><code>voice_</code></td>
+              <td>包含语音精确时长 (<code>duration</code>) 及 Silk/Amr 资源路径，插件可结合外部语音识别服务进行 STT 文本转录。</td>
+            </tr>
+            <tr>
+              <td><strong>文件 (File)</strong></td>
+              <td><code>[文件:文档.pdf (3.5MB) ref:file_xxxx]</code></td>
+              <td><code>file_</code></td>
+              <td>包含文件名、大小与群文件 ID (<code>fileId</code>)。支持 <code>mediaRefStore.resolveMedia(ref)</code> 自动获取群文件直链下载地址。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="code-wrapper" style="margin-top: 16px;">
+          <NCode :code="sampleCodeRef" language="javascript" />
+        </div>
+      </section>
+
+      <!-- 7. 存储机制 -->
+      <section class="doc-card">
+        <h2>7. 存储最佳实践</h2>
         <div class="storage-box">
           <p><strong>• 静态配置 (ctx.config)</strong>：</p>
           <p>随插件目录存放的 <code>config.json</code>，用于存放指令前缀、开关、API Key 等静态设置。插拔拷贝插件时配置直接随走，干净无残留。</p>
@@ -236,9 +339,9 @@ export default function setup(ctx) {
         </div>
       </section>
 
-      <!-- 7. 工具与定时任务扩展 -->
+      <!-- 8. 工具与定时任务扩展 -->
       <section class="doc-card">
-        <h2>7. 工具扩展 (Function Calling) 与定时任务</h2>
+        <h2>8. 工具扩展 (Function Calling) 与定时任务</h2>
         <p>插件可以随时向系统大模型暴露自定义工具（Function Tool）：</p>
         <div class="code-wrapper">
           <NCode :code="sampleCodeTool" language="javascript" />

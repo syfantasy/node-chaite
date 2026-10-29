@@ -42,6 +42,8 @@ const toolRules = {
   },
 }
 const lang: LanguageSupport = javascript()
+const configJson = ref('')
+
 // Form data
 const addTool = ref<Partial<Shareable.ToolModel>>({
   description: '',
@@ -51,31 +53,38 @@ const addTool = ref<Partial<Shareable.ToolModel>>({
     + '  name = \'example\'\n'
     + '  function = {\n'
     + '    name: \'example\',\n'
-    + '    description: \'example\',\n'
+    + '    description: \'演示工具\',\n'
     + '    parameters: {\n'
     + '      type: \'object\',\n'
     + '      properties: {\n'
     + '        example: {\n'
     + '          type: \'string\',\n'
-    + '          description: \'example\'\n'
+    + '          description: \'输入参数\'\n'
     + '        }\n'
     + '      },\n'
     + '      required: [\'example\']\n'
     + '    }\n'
     + '  }\n'
     + '\n'
-    + '  async run (args) {\n'
-    + '    return args.example\n'
+    + '  async run (args, context) {\n'
+    + '    // 可通过 this.config 或 context.toolConfig 获取在控制台配置的专属参数\n'
+    + '    const apiKey = this.config?.apiKey || context?.toolConfig?.apiKey\n'
+    + '    return `收到参数: ${args.example}`\n'
     + '  }\n'
     + '}\n'
     + '\n'
     + 'export default new ExampleTool()\n',
   modelType: 'executable',
 })
+
 // Initialize form when in edit mode
 watch(() => props.initialData, (newVal) => {
   if (props.editMode && newVal) {
     addTool.value = { ...newVal }
+    const cfg = (newVal as any).config || (newVal as any).extraData?.config
+    configJson.value = cfg && Object.keys(cfg).length > 0 ? JSON.stringify(cfg, null, 2) : ''
+  } else {
+    configJson.value = ''
   }
 }, { immediate: true })
 
@@ -86,6 +95,21 @@ function handleAddChannel() {
       console.error(errors)
       return
     }
+
+    let parsedConfig: Record<string, any> = {}
+    if (configJson.value.trim()) {
+      try {
+        parsedConfig = JSON.parse(configJson.value.trim())
+      } catch (e: any) {
+        alert(`工具专属配置必须为合法的 JSON 格式: ${e.message}`)
+        return
+      }
+    }
+
+    ;(addTool.value as any).config = parsedConfig
+    if (!addTool.value.extraData) addTool.value.extraData = {}
+    ;(addTool.value.extraData as any).config = parsedConfig
+
     emit('submit', addTool.value)
     showModal.value = false
   })
@@ -139,6 +163,17 @@ watch(showModal, (val) => {
             <!-- 工具描述 -->
             <NFormItemGridItem span="24" label="描述" path="description">
               <NInput v-model:value="addTool.description" type="textarea" placeholder="请输入工具描述" />
+            </NFormItemGridItem>
+
+            <!-- 工具专属配置 (JSON) -->
+            <NFormItemGridItem span="24" label="工具专属配置 (JSON，选填)" path="config">
+              <NInput
+                v-model:value="configJson"
+                type="textarea"
+                :autosize="{ minRows: 2, maxRows: 6 }"
+                placeholder='选填，请输入 JSON 配置（如: {"apiKey": "sk-xxx", "timeout": 5000}），可在工具内通过 this.config 读取'
+                style="font-family: monospace;"
+              />
             </NFormItemGridItem>
 
             <!-- 代码编辑器 -->

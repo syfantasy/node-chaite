@@ -91,22 +91,83 @@
 
 ---
 
-## 三、 多模态视觉（Vision）架构与网关防爆
+## 三、 多媒体与资源引用体系（MediaRefStore & Ref 规范）
 
-上游网关对单次 POST 请求通常有严格的 Payload 限制（超出直接报 Payload Too Large）。
+在聊天场景中，图片、视频、语音、文件及合并转发消息体积庞大且异构。Chaite 统一采用 **Ref 引用系统 (`mediaRefStore`)** 对非纯文本媒体进行轻量化占位抽象，既避免了上游大模型上下文和网关 Payload 爆破，又赋予了大模型和插件按需延迟反查与解析能力。
 
-### 1. 原生多模态注入
-- 扫描最近的 `maxRecentImages`（默认 3 张）图片；
-- 通过 `mediaRefStore.resolveImage` 解析并转化为 `{ type: 'image', image: base64, mimeType }`；
-- 上下文总 Base64 字符上限硬限制为 **3.2MB**，超出自动略过，杜绝网关拒绝。
+### 1. 全系列 Ref 占位规范
 
-### 2. 动图渐进式三级压缩策略 (Progressive GIF Optimization)
-1. **Tier 1 (原图放行)**: 文件 <= 1.2MB 时，直接保留原始二进制；
-2. **Tier 2 (Gifsicle 动态压缩)**: 文件 > 1.2MB 时，调用系统已安装的 `gifsicle` 进行缩放（最大 360x360）、有损量化、减色与跳帧压缩，**尽可能保留动画动态**；
-3. **Tier 3 (首帧静态降级)**: 若压缩后仍超限或解析报错，纯 JS 降级提取首帧静态 GIF（约 200KB），保证基础视觉可用。
+所有媒体进入消息流时，均由 `mediaRefStore` 分配一个带类型前缀的全局唯一短 ID（TTL 2小时）：
 
-### 3. 日志 Base64 脱敏
-- 存入 `operation_logs.db` 的 payload 会自动对 base64 数据进行截断表示（`[base64: ... (N chars)]`），防止数据库体积膨胀。
+| 媒体类型 | 消息流中的文本占位符 | 生成前缀 | 存储元数据与扩展属性 |
+|---|---|---|---|
+| **图片** | `[图片 ref:img_xxxx]` | `img_` | 原图 URL / 本地文件路径、Base64 缓存、MIME 类型、宽高尺寸 |
+| **合并转发** | `[聊天记录:共 N 条记录 摘要: 用户A: xxx; 用户B: yyy... ref:fwd_xxxx]` | `fwd_` | 合并转发 ID (`forwardId`)、前 10 条消息图文预览 (`previewMessages`)、记录总数 |
+| **视频** | `[视频:文件名.mp4 ref:vid_xxxx]` | `vid_` | 视频名称、格式后缀 (`ext`)、字节大小 (`fileSize`)、文件 ID / URL |
+| **语音** | `[语音 (N秒) ref:voice_xxxx]` | `voice_` | 语音时长 (`duration`)、Silk/Amr 资源定位文件与直链 |
+| **文件** | `[文件:文档.pdf (3.5MB) ref:file_xxxx]` | `file_` | 文件名、文件大小、后缀 (`ext`)、群文件 ID (`fileId`)、下载直链 |
+
+---
+
+### 2. 详细媒体类型处理规范
+
+#### ① 图片引用 (`img_xxxx`) & 视觉防爆
+- **原生多模态注入**:
+  - 扫描最近的 `maxRecentImages`（默认 3 张）图片；
+  - 通过 `mediaRefStore.resolveImage` 解析并转化为 `{ type: 'image', image: base64, mimeType }`；
+  - 上下文总 Base64 字符上限硬限制为 **3.2MB**，超出自动略过，杜绝网关拒绝。
+- **动图渐进式三级压缩策略 (Progressive GIF Optimization)**:
+  1. *Tier 1 (原图放行)*: 文件 <= 1.2MB 时，直接保留原始二进制；
+  2. *Tier 2 (Gifsicle 动态压缩)*: 文件 > 1.2MB 时，调用系统已安装的 `gifsicle` 进行缩放（最大 360x360）、有损量化、减色与跳帧压缩，**尽可能保留动画动态**；
+  3. *Tier 3 (首帧静态降级)*: 若压缩后仍超限或解析报错，纯 JS 降级提取首帧静态 GIF（约 200KB），保证基础视觉可用。
+- **纯文本模型自适应**:
+  - 若模型渠道未开启 `visual` 能力，自动剥离 Base64 降级为 `[图片 ref:img_xxxx]`，主模型可通过内置的 `ask_about_image` 工具委派视觉模型二级解读。
+
+#### ② 聊天记录与合并转发 (`fwd_xxxx`)
+- 当群友发送聊天记录合并转发卡片或在引用中引用合并转发时：
+  - 系统异步触发 OneBot `get_forward_msg` 解析内部消息树；
+  - 自动提取前 10 条记录的发送人昵称和文字摘要拼接为轻量预览：`[聊天记录:共 18 条记录 摘要: 张三: 明天开会; 李四: 收到... ref:fwd_1a2b3c4d]`；
+  - 大模型无需吃进几千行完整的富文本 JSON，即可理解上下文话题；插件可通过 `mediaRefStore.get(ref)` 获取完整转发 ID 进行深度拉取。
+
+#### ③ 视频引用 (`vid_xxxx`)
+- 视频在消息中转换为 `[视频:demo.mp4 ref:vid_xxxx]`；
+- 插件或工具可通过 `await mediaRefStore.resolveMedia(ref, onebotClient)` 自动调用 OneBot `get_file` 解析出视频的临时直链下载地址或本地缓存绝对路径，方便对接视频抽帧、音轨转录或文件审查。
+
+#### ④ 语音引用 (`voice_xxxx`)
+- 语音转换为 `[语音 (5秒) ref:voice_xxxx]`，并在元数据中记录准确的时长与音频资源；
+- 支持挂载语音识别插件（如 Whisper、本地语音服务），通过 Ref 提取语音原始音频进行 STT 转写后回填给模型或处理流程。
+
+#### ⑤ 文件引用 (`file_xxxx`)
+- 文件转换为 `[文件:需求文档.docx (2.1MB) ref:file_xxxx]`；
+- 调用 `await mediaRefStore.resolveMedia(ref, onebotClient)` 时，系统会自动区分私聊文件与群文件，优先调用 `get_group_file_url` 或 `get_file` 获得高可用直链下载地址，供知识库文档提取或代码插件执行。
+
+---
+
+### 3. 代码中使用 Ref 的标准范式
+
+在自定义插件、工具（Tools）或处理器（Processors）中，可直接调用全局对象 `mediaRefStore`：
+
+```typescript
+import { mediaRefStore } from 'chaite' // 或 globalThis.mediaRefStore
+
+// 1. 查询引用元数据
+const item = mediaRefStore.get('file_a1b2c3d4')
+if (item && item.type === 'file') {
+  console.log(`收到文件: ${item.name}, 大小: ${item.fileSize}`)
+}
+
+// 2. 异步解析直链或本地文件（视频 / 文件）
+const resolved = await mediaRefStore.resolveMedia('vid_98765432', globalThis.onebotClient)
+if (resolved?.url) {
+  console.log(`视频下载地址: ${resolved.url}`)
+}
+
+// 3. 异步解析图片为 Base64
+const img = await mediaRefStore.resolveImage('img_12345678', globalThis.onebotClient)
+if (img) {
+  console.log(`图片 MIME: ${img.mimeType}, Base64 长度: ${img.base64.length}`)
+}
+```
 
 ---
 

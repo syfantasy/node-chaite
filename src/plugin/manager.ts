@@ -20,21 +20,11 @@ export class PluginManager {
   private stateFilePath: string
   private kvStorage?: PluginKVStorage
 
-  readonly scriptsDir: string
-  readonly appsDir: string
   readonly cacheDir: string
 
   constructor(private pluginsDir: string, driver?: any) {
-    this.scriptsDir = path.join(pluginsDir, 'scripts')
-    this.appsDir = path.join(pluginsDir, 'apps')
     this.cacheDir = path.join(pluginsDir, '.cache', 'runtime')
 
-    if (!fs.existsSync(this.scriptsDir)) {
-      fs.mkdirSync(this.scriptsDir, { recursive: true })
-    }
-    if (!fs.existsSync(this.appsDir)) {
-      fs.mkdirSync(this.appsDir, { recursive: true })
-    }
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true })
     }
@@ -73,38 +63,33 @@ export class PluginManager {
     this.plugins.clear()
     const state = this.loadState()
 
-    // 1. 扫描单 JS 脚本插件 (scripts/<id>/)
-    if (fs.existsSync(this.scriptsDir)) {
-      const scriptEntries = fs.readdirSync(this.scriptsDir, { withFileTypes: true })
-      for (const entry of scriptEntries) {
-        if (entry.name.startsWith('.')) continue
-        const fullPath = path.join(this.scriptsDir, entry.name)
+    const ignoredNames = new Set(['.cache', '.git', 'node_modules', '.plugins_state.json'])
+
+    if (fs.existsSync(this.pluginsDir)) {
+      const entries = fs.readdirSync(this.pluginsDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || ignoredNames.has(entry.name)) continue
+        const fullPath = path.join(this.pluginsDir, entry.name)
 
         if (entry.isDirectory()) {
           const pluginId = entry.name
-          await this.loadScriptPluginDir(pluginId, fullPath, state[pluginId]?.enabled ?? true)
+          const hasPackageJson = fs.existsSync(path.join(fullPath, 'package.json'))
+          const isEnabled = state[pluginId]?.enabled ?? true
+
+          if (hasPackageJson) {
+            await this.loadDirectoryPlugin(pluginId, fullPath, isEnabled)
+          } else {
+            await this.loadScriptPluginDir(pluginId, fullPath, isEnabled)
+          }
         } else if (entry.isFile() && (entry.name.endsWith('.js') || entry.name.endsWith('.mjs'))) {
-          // 兼容直接扔单文件的场景：自动建子文件夹归整
+          // 兼容根目录直接丢单个 .js 插件：自动归档为独立子目录
           const pluginId = path.parse(entry.name).name
-          const targetDir = path.join(this.scriptsDir, pluginId)
+          const targetDir = path.join(this.pluginsDir, pluginId)
           if (!fs.existsSync(targetDir)) {
             fs.mkdirSync(targetDir, { recursive: true })
             fs.renameSync(fullPath, path.join(targetDir, 'index.js'))
           }
           await this.loadScriptPluginDir(pluginId, targetDir, state[pluginId]?.enabled ?? true)
-        }
-      }
-    }
-
-    // 2. 扫描目录工程包插件 (apps/<id>/)
-    if (fs.existsSync(this.appsDir)) {
-      const appEntries = fs.readdirSync(this.appsDir, { withFileTypes: true })
-      for (const entry of appEntries) {
-        if (entry.name.startsWith('.')) continue
-        const fullPath = path.join(this.appsDir, entry.name)
-        if (entry.isDirectory()) {
-          const pluginId = entry.name
-          await this.loadDirectoryPlugin(pluginId, fullPath, state[pluginId]?.enabled ?? true)
         }
       }
     }
@@ -490,7 +475,7 @@ export class PluginManager {
       filePath = plugin.meta.entryPath
       pluginDir = path.dirname(filePath)
     } else {
-      pluginDir = path.join(this.scriptsDir, id)
+      pluginDir = path.join(this.pluginsDir, id)
       if (!fs.existsSync(pluginDir)) {
         fs.mkdirSync(pluginDir, { recursive: true })
       }
@@ -581,7 +566,7 @@ export class PluginManager {
 
     if (targetType === 'single-file' && !isZip) {
       // 单纯上传了 .js 文件
-      const targetDir = path.join(this.scriptsDir, pluginId)
+      const targetDir = path.join(this.pluginsDir, pluginId)
       if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
       fs.writeFileSync(path.join(targetDir, 'index.js'), buffer)
       const cfgPath = path.join(targetDir, 'config.json')
@@ -591,10 +576,7 @@ export class PluginManager {
       return { id: pluginId, overwritten: wasOverwritten }
     }
 
-    const destDir =
-      targetType === 'directory'
-        ? path.join(this.appsDir, pluginId)
-        : path.join(this.scriptsDir, pluginId)
+    const destDir = path.join(this.pluginsDir, pluginId)
 
     if (fs.existsSync(destDir)) {
       fs.rmSync(destDir, { recursive: true, force: true })

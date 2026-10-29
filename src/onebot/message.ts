@@ -271,6 +271,24 @@ export async function oneBotToUserMessage(
                 fileSize: Number((qSeg as any).data?.file_size || (qSeg as any).data?.size || 0) || undefined,
               })
               quotedText += ` [视频:${displayLabel} ref:${ref}] `
+            } else if (qSeg.type === 'record') {
+              const file = (qSeg as any).data?.file || (qSeg as any).data?.url || ''
+              const url = (qSeg as any).data?.url
+              const duration = Number((qSeg as any).data?.duration || (qSeg as any).data?.seconds || 0)
+              const ref = mediaRefStore.saveVoice({
+                file,
+                url: typeof url === 'string' && url.startsWith('http') ? url : undefined,
+                duration: duration || undefined,
+              })
+              const durStr = duration > 0 ? ` (${duration}秒)` : ''
+              quotedText += ` [语音${durStr} ref:${ref}] `
+            } else if (qSeg.type === 'forward') {
+              const forwardId = (qSeg as any).data?.id || ''
+              const ref = mediaRefStore.saveForward({
+                forwardId,
+                summary: '合并转发聊天记录',
+              })
+              quotedText += ` [聊天记录 ref:${ref}] `
             } else if (qSeg.type === 'file') {
               const name = (qSeg as any).data?.name || (qSeg as any).data?.file_name || ''
               const file = (qSeg as any).data?.file || ''
@@ -359,6 +377,45 @@ export async function oneBotToUserMessage(
         messageId: event.message_id,
       })
       rawText += ` [文件:${displayLabel}${sizeStr} ref:${ref}] `
+    } else if (seg.type === 'record') {
+      const file = (seg as any).data?.file || (seg as any).data?.url || ''
+      const url = (seg as any).data?.url
+      const duration = Number((seg as any).data?.duration || (seg as any).data?.seconds || 0)
+      const ref = mediaRefStore.saveVoice({
+        file,
+        url: typeof url === 'string' && url.startsWith('http') ? url : undefined,
+        duration: duration || undefined,
+        groupId: event.group_id,
+        senderId: event.user_id,
+        messageId: event.message_id,
+      })
+      const durStr = duration > 0 ? ` (${duration}秒)` : ''
+      rawText += ` [语音${durStr} ref:${ref}] `
+    } else if (seg.type === 'forward') {
+      const forwardId = (seg as any).data?.id || ''
+      let summary = '合并转发聊天记录'
+      let previewMessages: any[] = []
+      if (forwardId && options.onebot) {
+        try {
+          const fwdRes = await options.onebot.callAction('get_forward_msg', { id: forwardId })
+          const list = fwdRes?.data?.messages || []
+          previewMessages = list.slice(0, 10).map((m: any) => ({
+            senderName: m.sender?.nickname || m.sender?.name || '用户',
+            text: Array.isArray(m.message) ? m.message.map((s: any) => s.data?.text || '').join('') : (typeof m.message === 'string' ? m.message : ''),
+          }))
+          summary = `共 ${list.length} 条记录`
+        } catch {}
+      }
+      const ref = mediaRefStore.saveForward({
+        forwardId,
+        summary,
+        previewMessages,
+        groupId: event.group_id,
+        senderId: event.user_id,
+        messageId: event.message_id,
+      })
+      const previewStr = previewMessages.length > 0 ? ` 摘要: ${previewMessages.slice(0, 3).map((p: any) => `${p.senderName}: ${p.text}`).join('; ')}...` : ''
+      rawText += ` [聊天记录:${summary}${previewStr} ref:${ref}] `
     }
   }
 

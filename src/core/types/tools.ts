@@ -39,10 +39,14 @@ export class ToolDTO extends AbstractShareable<ToolDTO> {
     this.modelType = 'executable'
     this.permission = params.permission || 'private'
     this.status = params.status || 'enabled'
+    this.extraData = params.extraData
+    this.config = params.config || params.extraData?.config || {}
   }
 
   status: 'enabled' | 'disabled'
   public permission: 'public' | 'private' | 'onetime'
+  public extraData?: Record<string, any>
+  public config?: Record<string, any>
 
   toFormatedString(_verbose?: boolean): string {
     let base = `ID: ${this.id}\n工具名称：${this.name}`
@@ -135,6 +139,7 @@ export abstract class CustomTool implements Tool {
   }
 
   type = 'function' as const
+  config?: Record<string, any>
   function: Function = {
     name: '',
     description: '',
