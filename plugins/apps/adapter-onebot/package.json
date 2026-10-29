@@ -1,7 +1,0 @@
-{
-  "name": "adapter-onebot",
-  "version": "1.0.0",
-  "description": "OneBot v11 通用适配器插件（支持 SnowLuma, NapCat, LLOneBot 等协议端）",
-  "author": "syfantasy",
-  "main": "index.js"
-}

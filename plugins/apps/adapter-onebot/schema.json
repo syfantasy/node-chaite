@@ -1,5 +1,0 @@
-[
-  { "key": "wsUrl", "label": "WebSocket 协议端地址", "type": "string", "default": "ws://127.0.0.1:3001" },
-  { "key": "token", "label": "Access Token 鉴权令牌 (可选)", "type": "string", "default": "" },
-  { "key": "reconnectInterval", "label": "断线重连间隔 (毫秒)", "type": "number", "default": 3000 }
-]

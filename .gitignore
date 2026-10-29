@@ -14,7 +14,8 @@ plugins/**/config.json
 plugins/**/.tmp_*
 plugins/.cache/
 archive/
-# 插件目录：仅运行时本地加载，未来走插件市场分发
-plugins/apps/meme/
-plugins/apps/sample-bot/
-plugins/scripts/echo/
+# 插件目录：纯外挂插槽，走外部/市场按需安装，主仓库仅保留目录结构
+plugins/apps/*
+!plugins/apps/.gitkeep
+plugins/scripts/*
+!plugins/scripts/.gitkeep

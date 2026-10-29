@@ -1,8 +1,0 @@
-{
-  "name": "service-renderer",
-  "version": "1.0.0",
-  "description": "Chaite 通用图片与页面渲染服务提供者 (支持 Shotium / Puppeteer 驱动)",
-  "type": "module",
-  "main": "index.js",
-  "author": "Chaite Team"
-}
