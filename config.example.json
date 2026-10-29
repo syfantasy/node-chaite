@@ -1,9 +1,4 @@
 {
-  "onebot": {
-    "url": "ws://127.0.0.1:3001/",
-    "accessToken": "",
-    "botUin": 0
-  },
   "web": {
     "host": "0.0.0.0",
     "port": 48370,
@@ -29,14 +24,6 @@
     "defaultModel": "",
     "defaultChatPresetId": "",
     "enableGroupContext": true
-  },
-  "bym": {
-    "enable": false,
-    "hit": [],
-    "probability": 0.02,
-    "speakingMode": "reply",
-    "defaultPreset": "",
-    "presetMap": []
   },
   "groupContext": {
     "minMessages": 20,

@@ -7,10 +7,10 @@ const CONFIG_PATH = path.resolve(__dirname, '../config.json')
 const EXAMPLE_PATH = path.resolve(__dirname, '../config.example.json')
 
 export interface AppConfig {
-  onebot: {
-    url: string
-    accessToken: string
-    botUin: number
+  onebot?: {
+    url?: string
+    accessToken?: string
+    botUin?: number
   }
   web: {
     host: string
@@ -39,10 +39,10 @@ export interface AppConfig {
     enableGroupContext?: boolean
     [key: string]: any
   }
-  bym: {
-    enable: boolean
-    hit: string[]
-    probability: number
+  bym?: {
+    enable?: boolean
+    hit?: string[]
+    probability?: number
     speakingMode?: 'reply' | 'contextual'
     contextualPrompt?: string
     defaultPreset?: string
@@ -82,11 +82,6 @@ export interface AppConfig {
 }
 
 const DEFAULT_CONFIG: AppConfig = {
-  onebot: {
-    url: 'ws://127.0.0.1:3001/',
-    accessToken: '',
-    botUin: 0,
-  },
   web: {
     host: '0.0.0.0',
     port: 48370,
@@ -112,14 +107,6 @@ const DEFAULT_CONFIG: AppConfig = {
     defaultModel: '',
     defaultChatPresetId: '',
     enableGroupContext: true,
-  },
-  bym: {
-    enable: false,
-    hit: [],
-    probability: 0.02,
-    speakingMode: 'reply',
-    defaultPreset: '',
-    presetMap: [],
   },
   groupContext: {
     minMessages: 20,
@@ -175,10 +162,12 @@ export function loadConfig(): AppConfig {
         },
         chat: { ...DEFAULT_CONFIG.chat, ...parsed.chat },
         llm: { ...DEFAULT_CONFIG.llm, ...parsed.llm },
-        bym: { ...DEFAULT_CONFIG.bym, ...parsed.bym },
         groupContext: { ...DEFAULT_CONFIG.groupContext, ...parsed.groupContext },
         logging: { ...DEFAULT_CONFIG.logging, ...parsed.logging },
         vision: { ...DEFAULT_CONFIG.vision, ...parsed.vision },
+        maintenance: { ...DEFAULT_CONFIG.maintenance, ...parsed.maintenance },
+        ...(parsed.onebot ? { onebot: parsed.onebot } : {}),
+        ...(parsed.bym ? { bym: parsed.bym } : {}),
       }
     }
   } catch (err) {

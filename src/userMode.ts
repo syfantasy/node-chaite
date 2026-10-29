@@ -42,17 +42,7 @@ export class StandaloneUserModeSelector extends AbstractUserModeSelector {
       }
     }
 
-    // 3. Check default preset from config.bym
-    if (config.bym?.defaultPreset) {
-      try {
-        const bymPreset = await this.presetManager.getInstance(config.bym.defaultPreset)
-        if (bymPreset) return bymPreset
-      } catch (err) {
-        console.warn(`[UserModeSelector] Failed to get bym defaultPreset:`, err)
-      }
-    }
-
-    // 4. Fallback to first available preset in database
+    // 3. Fallback to first available preset in database
     try {
       const all = await this.presetManager.getAllPresets()
       if (all && all.length > 0) {
@@ -63,7 +53,7 @@ export class StandaloneUserModeSelector extends AbstractUserModeSelector {
       console.warn('[UserModeSelector] Failed to query preset storage:', err)
     }
 
-    // 5. Hard fallback placeholder
+    // 4. Hard fallback placeholder
     return new ChatPreset({
       id: 'default',
       name: '默认预设',

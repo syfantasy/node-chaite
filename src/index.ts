@@ -129,7 +129,7 @@ async function handleMessage(
   }
 
   // 2. Convert message to Chaite format
-  const botUin = (onebotAdapter?.getSelfId ? onebotAdapter.getSelfId() : config.onebot.botUin) || 0
+  const botUin = (onebotAdapter?.getSelfId ? onebotAdapter.getSelfId() : config.onebot?.botUin) || 0
   const { userMessage, isAtBot, cleanText } = await oneBotToUserMessage(rawEvent, {
     botUin,
     maxRecentImages: config.vision?.maxRecentImages,
@@ -584,7 +584,7 @@ async function handleMessage(
     if (shouldOutputThinking && reasoningText) {
       try {
         const botName = preset?.name || 'Bot'
-        const curBotUin = config.onebot.botUin || botUin || 10001000
+        const curBotUin = config.onebot?.botUin || botUin || 10001000
         const chunkSize = 1500
         const nodes: any[] = []
         for (let i = 0; i < reasoningText.length; i += chunkSize) {
@@ -643,7 +643,7 @@ async function handleMessage(
       ?.join('\n')
     if (rawEvent.message_type === 'group' && rawEvent.group_id && botReplyText) {
       groupHistoryBuffer.recordBotMessage(rawEvent.group_id, {
-        botUin: config.onebot.botUin || botUin,
+        botUin: config.onebot?.botUin || botUin,
         name: preset?.name || 'Bot',
         text: botReplyText,
         messageId: response?.id,
