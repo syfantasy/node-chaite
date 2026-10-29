@@ -460,6 +460,8 @@ ctx.registerCommand('#总结讨论', async (e) => {
       <ul>
         <li><strong>&lt;chat_environment&gt;（环境与时间元信息）：</strong> 注入当前精确北京时间（CST/UTC+8 精确到秒与星期）、Bot 自身 QQ、管理员/主人列表、当前提问者身份与本轮触发方式（<code>@你提问</code> / <code>命中触发词</code> / <code>随机唤醒 (自动插话)</code>），从根源上消除了大模型在群聊中的时间幻觉与身份混淆。</li>
         <li><strong>&lt;group_messages&gt;（流动序号流水）：</strong> 流水记录格式为 <code>[#1 20:29] 名字: 内容</code>，剥离冗长无语义的随机整数 <code>msgId</code>，大幅节省上下文 Token。针对群昵称为空或全角空白的用户自动使用 <code>QQ &lt;QQ号&gt;</code> 标识；当群内存在重名用户时自动在流水名字后追加 <code>(QQ号)</code> 消除歧义；合并转发记录中空白昵称自动提取 QQ 号或回退为 <code>用户1/用户2</code>。</li>
+        <li><strong>&lt;attached_images&gt;（图文交错锚定）：</strong> 针对 Google Gemini、Anthropic Claude、OpenAI 与 DeepSeek 多模态（如 <code>deepseek-flash</code>）协议规范，采用“清单索引 + 图文交错紧密配对”机制。在每张 Base64 图像前紧贴 <code>【下方附图 N 对应 ...】：</code> 引导文本，让视觉 Encoder 与文本 Token 强力绑定，彻底避免多图场景下的无名图与视觉顺序混淆。</li>
+        <li><strong>&lt;attached_images&gt; 与图文交错锚定（Interleaved Vision Anchoring）：</strong> 针对群聊多张图片并存时上游协议 <code>inlineData</code> / <code>image_url</code> 无法携带自定义属性的问题，系统自动生成 <code>&lt;attached_images&gt;</code> 映射索引，并在每张真实图像 Part 前紧贴引导文本 <code>【下方附图 N 对应 ...】：</code>，完美兼容 Google Gemini、Anthropic Claude、OpenAI 及 DeepSeek 多模态模型（如 <code>deepseek-flash</code>），彻底消除多图视觉张冠李戴。</li>
         <li><strong>流动虚拟短引用（<code>groupMessageRefStore</code>）：</strong> 随每轮抓取将 <code>#1 ~ #N</code> 动态注册到内存字典中。下一轮唤醒时字典自动随新流水刷新覆盖；后续开发任何操作特定消息的工具（如引用、撤回、查详情）只需接收入参 <code>target: 1</code> 或 <code>"#1"</code>，调用 <code>groupMessageRefStore.resolve(groupId, target)</code> 即可瞬时逆向解析出真实的 <code>messageId</code>、发言人与元数据，兼具极佳的 Token 效益与 100% 调用准确率。</li>
       </ul>
       <pre><code class="language-javascript">import { groupMessageRefStore } from 'chaite'
