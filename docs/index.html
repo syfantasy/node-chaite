@@ -620,6 +620,33 @@ await ctx.storage.delete('user_level_' + e.userId)</code></pre>
     </div>
 
     <div class="card">
+      <h3>Agent 技能系统 (Skill & 按需动态挂载)</h3>
+      <p>
+        <strong>区别于底层原子 Tool</strong>，Skill 是高级业务意图与执行守卫层。平时普通聊天时，大模型<strong>不加载</strong>任何多余工具（<strong>0 额外 Token 消耗</strong>）；只有用户意图命中指定关键词且通过场景守卫时，系统才会把绑定的本地 Tool 或 MCP 工具动态挂载进当轮对话中。
+      </p>
+      <pre><code class="language-javascript">export default function setup(ctx) {
+  // 动态注册 Skill（插件卸载或重载时会自动清理）
+  ctx.registerSkill({
+    name: '群文件管理专家',
+    description: '帮助群友搜索、直链提取或下载群内共享文件',
+    keywords: ['群文件', '下载文件', '发我群文件', '找文件'],
+    // 动态挂载的工具名单（本地 Tool 名字或 MCP 远程工具名）
+    allowedTools: ['get_group_file_url'],
+    // 针对 MCP 服务的按需唤醒（无需每轮对话塞入数十个 MCP Schema）
+    mcpServer: 'sqlite-tools',
+    mcpTools: ['read_query', 'describe_table'],
+    // 引导 System Prompt，指导模型如何严谨执行本技能
+    instructions: '当用户要求获取群文件时，调用工具获取直链并排版输出，禁止捏造链接。',
+    // 场景/权限前置守卫：仅群聊或白名单群可见，私聊不触发，彻底杜绝误触
+    validate: (e) => e.isGroup === true
+  })
+}</code></pre>
+      <p>
+        <strong>文件式 Skill (data/skills/&lt;name&gt;/SKILL.md)</strong>：支持标准 YAML Frontmatter（包含 <code>name</code>, <code>description</code>, <code>keywords</code>, <code>allowedTools</code>, <code>mcpServer</code>, <code>executionMode</code> 等）及随附的 Markdown 深度引导词。
+      </p>
+    </div>
+
+    <div class="card">
       <h3>系统内置管理与运维指令速查</h3>
       <table>
         <thead>
