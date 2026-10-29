@@ -400,13 +400,19 @@ export class GroupHistoryBuffer {
               const fwdData = resp?.data?.messages || resp?.data
               if (Array.isArray(fwdData)) {
                 msgCount = fwdData.length
-                const sampleMsgs = fwdData.slice(0, 3).map((m: any) => {
-                  const sName = m.sender?.nickname || m.nickname || '群友'
+                const sampleMsgs = fwdData.slice(0, 3).map((m: any, i: number) => {
+                  const uid = m.sender?.user_id || m.user_id || m.sender?.uin || m.uin
+                  const rawName = (m.sender?.card || m.sender?.nickname || m.nickname || '').replace(/[\s\u3000]+/g, ' ').trim()
+                  let sName = rawName
+                  if (!sName) {
+                    sName = uid ? `QQ ${uid}` : `用户${i + 1}`
+                  }
                   let sText = ''
                   if (typeof m.message === 'string') sText = m.message
                   else if (Array.isArray(m.message)) {
                     sText = m.message.map((s: any) => s.data?.text || (s.type === 'image' ? '[图片]' : '')).join('')
                   }
+                  sText = (sText || '').replace(/\r\n|\r|\n/g, ' ').trim()
                   return `${sName}: ${sText.slice(0, 40)}`
                 })
                 preview = sampleMsgs.join('; ')
@@ -528,9 +534,18 @@ export class GroupHistoryBuffer {
     const botUin = String(config?.onebot?.botUin || '')
 
     // Sanitize speaker name and strip fake system badges
-    const getSafeSpeakerName = (card?: string, nickname?: string): string => {
-      const raw = (card && card.trim() !== '') ? card : (nickname || '群友')
-      return raw.replace(/\r\n|\r|\n/g, ' ').replace(/\[(主人|群主|群管|群主\/主人|群管\/主人|机器人|Admin|Bot)\]/gi, '').trim() || '群友'
+    const getSafeSpeakerName = (card?: string, nickname?: string, userId?: string | number): string => {
+      const cleanCard = (card || '').replace(/[\s\u3000]+/g, ' ').trim()
+      const cleanNick = (nickname || '').replace(/[\s\u3000]+/g, ' ').trim()
+      let raw = cleanCard !== '' ? cleanCard : cleanNick
+      if (!raw) {
+        return userId ? `QQ ${userId}` : '群友'
+      }
+      const stripped = raw
+        .replace(/\r\n|\r|\n/g, ' ')
+        .replace(/\[(主人|群主|群管|群主\/主人|群管\/主人|机器人|Admin|Bot)\]/gi, '')
+        .trim()
+      return stripped || (userId ? `QQ ${userId}` : '群友')
     }
 
     const memberMap = new Map<
@@ -585,7 +600,7 @@ export class GroupHistoryBuffer {
         roleTitle = '群管'
       }
 
-      const displayName = getSafeSpeakerName(m.card, m.nickname)
+      const displayName = getSafeSpeakerName(m.card, m.nickname, m.userId)
       const meta = this.memberMetaCache.get(`${gid}:${uidStr}`)
 
       if (!memberMap.has(uidStr)) {
@@ -603,7 +618,7 @@ export class GroupHistoryBuffer {
         const existing = memberMap.get(uidStr)!
         if (!existing.card && m.card) {
           existing.card = m.card
-          existing.displayName = getSafeSpeakerName(m.card, existing.nickname)
+          existing.displayName = getSafeSpeakerName(m.card, existing.nickname, uidStr)
         }
         if (!existing.nickname && m.nickname) existing.nickname = m.nickname
         if (meta?.title) existing.title = meta.title
@@ -644,11 +659,21 @@ export class GroupHistoryBuffer {
     const messageLines: string[] = []
     const recentImageRefs: string[] = []
 
+    // 统计展示名称频次，用于在发言流中对重名群友加注 QQ 唯一消歧
+    const nameCounts = new Map<string, number>()
+    for (const item of memberMap.values()) {
+      const count = nameCounts.get(item.displayName) || 0
+      nameCounts.set(item.displayName, count + 1)
+    }
+
     const ephemeralList: EphemeralGroupMessage[] = []
     for (let idx = 0; idx < effectiveSlice.length; idx++) {
       const msg = effectiveSlice[idx]
       const userMeta = memberMap.get(msg.userId)
-      const speakerName = userMeta ? userMeta.displayName : getSafeSpeakerName(msg.card, msg.nickname)
+      let speakerName = userMeta ? userMeta.displayName : getSafeSpeakerName(msg.card, msg.nickname, msg.userId)
+      if ((nameCounts.get(speakerName) || 0) > 1 && msg.userId && !speakerName.startsWith('QQ ')) {
+        speakerName = `${speakerName}(${msg.userId})`
+      }
       const badgeStr = userMeta?.roleBadge ? ` ${userMeta.roleBadge}` : ''
 
       const seq = idx + 1
