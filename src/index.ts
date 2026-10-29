@@ -660,10 +660,10 @@ async function handleMessage(
           '</chat_environment>',
         ]
 
-        contextParts.push({
+        const envPart: TextContent = {
           type: 'text',
           text: envLines.join('\n'),
-        })
+        }
 
         // 2. 注入群聊上下文流水与花名册
         const presetGroupCtxSetting = (preset as any)?.groupContext || 'use_system'
@@ -723,8 +723,8 @@ async function handleMessage(
                       }
                       visualAttachments.push({
                         seq: visualAttachments.length + 1,
-                        desc: `上下文中的 [图片 ref:${ref}]`,
-                        detail: `对应上下文中的 [图片 ref:${ref}]${senderNote}`,
+                        desc: `群聊发言流水记录中的 [图片 ref:${ref}]`,
+                        detail: `对应群聊发言流水记录中的 [图片 ref:${ref}]${senderNote}`,
                         mimeType: resolved.mimeType || 'image/jpeg',
                         base64: resolved.base64,
                       })
@@ -749,6 +749,7 @@ async function handleMessage(
               }
             }
 
+            // 1. 先推入相对稳定的花名册与历史流水，最大化提升大模型 KV Cache Prefix Caching 命中率
             if (membersBlock) {
               contextParts.push({
                 type: 'text',
@@ -761,6 +762,11 @@ async function handleMessage(
                 text: `### 最近群聊发言流水记录（[#1] 至 [#N] 为当前轮次动态流动序号，对话与工具中均可直接用 '#1' 或 '1' 索引目标消息）：\n${messagesBlock}`,
               })
             }
+
+            // 2. 紧接着推入本轮动态的会话环境与时间戳（后置下移，避免每秒变化的时间戳击穿头部缓存）
+            contextParts.push(envPart)
+
+            // 3. 推入多模态附图索引清单
             if (visualAttachments.length > 0) {
               const imageIndexLines = visualAttachments.map(
                 (att) => `- 附图 ${att.seq}: ${att.detail}`
@@ -799,6 +805,12 @@ async function handleMessage(
             if (originalUserParts.length > 0) {
               userMessage.content.push(...originalUserParts)
             }
+          }
+        } else {
+          // 未启用群聊历史上下文时，直接注入基础会话环境
+          contextParts.push(envPart)
+          if (contextParts.length > 0) {
+            userMessage.content.unshift(...contextParts)
           }
         }
       } catch (err: any) {

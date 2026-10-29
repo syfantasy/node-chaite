@@ -111,10 +111,10 @@
 
 ### 1.1 多段独立 Text Parts 与图文交错锚定 (Single-Turn Interleaved Multi-Parts)
 为严格遵循 Google Gemini、Anthropic Claude、OpenAI 以及 DeepSeek 多模态（如 `deepseek-flash`）的官方 API 规范（避免连续相同 role 的 turn 引发 HTTP 400 InvalidArgument，并解决多图场景下无名图、张冠李戴的业界通病），上下文在单个 `user` turn 内采用严格的图文分段与交错锚定：
-1. **Part 1 (Text)**: `<chat_environment>` 会话环境、北京时间（到秒）、自身 QQ、主人列表与触发源；
-2. **Part 2 (Text)**: `<chat_members>` 群成员花名册与系统认证角标；
-3. **Part 3 (Text)**: `<group_messages>` 流动序号流水记录；
-4. **Part 4 (Text)**: `<attached_images>` 多模态附图索引清单（明确说明附图 1~N 与上下文中 `[图片 ref:xxx]` 及发言人的对应关系）；
+1. **Part 1 (Text)**: `<chat_members>` 群成员花名册与系统认证角标（**稳定头部前缀**，多轮对话中高度复用，最大化吃满主流大模型的 KV Cache Prefix Caching）；
+2. **Part 2 (Text)**: `<group_messages>` 流动序号发言流水记录（前缀稳定沉淀，仅尾部递增，最大化命中缓存）；
+3. **Part 3 (Text)**: `<chat_environment>` 会话环境、北京时间（到秒）、自身 QQ、主人列表、当前提问者身份与触发源（**后置动态环境**，让每秒变化的时间戳下移，彻底解决动态时间击穿前缀缓存的顽疾）；
+4. **Part 4 (Text)**: `<attached_images>` 多模态附图索引清单（明确说明附图 1~N 与流水记录中的 `[图片 ref:xxx]` 及发言人的对应关系）；
 5. **Part 5+ (Text + Image Interleaved)**: **图文交错紧密配对**。在每张真实图像二进制前紧贴一个引导 Text Part（`【下方附图 N 对应 ...】：\n`），使得大模型的视觉编码器（Vision Encoder）与文本 Token 产生强力的 Cross-Attention 绑定，杜绝任何视觉顺序混淆；
 6. **Final Part (Text)**: **提问者本轮真实输入的原始 Prompt**。沉于全局最末尾，享受最强末尾注意力（Recency Bias）；完全保持用户输入原貌，不加任何易被攻击者伪造利用的人造标题标签（如 `### 当前提问` 等），彻底阻断 Prompt 注入攻击。
 7. **纯文本模型安全分流**: 若预设模型不支持视觉能力，系统在进入前置流程时即自动剥离 Base64，降级为 `[图片 ref:xxx]` 纯文本传输，模型需要时自发调用 `ask_about_image` 二级识图，零报错、零浪费。
