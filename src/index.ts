@@ -804,7 +804,13 @@ async function handleMessage(
             // 3. 构建提问者真实输入：采用与 <group_messages> 流水完全统一的 [#N HH:mm] 发送者(身份): 格式
             // 既能让大模型感知统一的流动序号与提问者身份（彻底防串用户），又能让该消息被虚拟短引用系统注册
             const currentSeq = (groupContextResult?.messageCount || 0) + 1
-            const currentMsgTime = cstTimeStr.slice(11, 16)
+            const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+              timeZone: 'Asia/Shanghai',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            })
+            const currentMsgTime = timeFormatter.format(now)
 
             const uidStr = String(event.userId)
             const isBot = uidStr === String(config?.onebot?.botUin || '')

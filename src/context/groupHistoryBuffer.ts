@@ -249,7 +249,12 @@ export class GroupHistoryBuffer {
     if (!messageText.trim()) return
 
     const date = new Date((event.time || Math.floor(Date.now() / 1000)) * 1000)
-    const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    const timeStr = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date)
 
     const tokens = estimateTokens(messageText)
 
@@ -763,7 +768,12 @@ export class GroupHistoryBuffer {
     if (!data.text?.trim()) return
     const gid = String(groupId)
     const date = new Date()
-    const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    const timeStr = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date)
     const tokens = estimateTokens(data.text)
 
     const buffered: BufferedMessage = {
