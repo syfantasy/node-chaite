@@ -46,10 +46,26 @@ export function reloadPlugin(id: string) {
   return request.Post<{ code: number; message: string }>(`/api/plugins/${id}/reload`)
 }
 
-export function importPlugin(type: 'single-file' | 'directory', filename: string, base64: string) {
-  return request.Post<{ code: number; data: { id: string }; message: string }>('/api/plugins/import', {
+export function importPlugin(
+  type: 'single-file' | 'directory',
+  filename: string,
+  base64: string,
+  overwrite?: boolean,
+  customId?: string
+) {
+  return request.Post<{ code: number; data: { id: string; overwritten?: boolean }; message: string }>('/api/plugins/import', {
     type,
     filename,
     base64,
+    overwrite,
+    customId,
   })
+}
+
+export function deletePlugin(id: string, keepConfig: boolean = true) {
+  return request.Post<{ code: number; message: string }>(`/api/plugins/${id}/delete`, { keepConfig })
+}
+
+export function resetPluginConfig(id: string) {
+  return request.Post<{ code: number; data: { config: Record<string, any> }; message: string }>(`/api/plugins/${id}/reset-config`)
 }

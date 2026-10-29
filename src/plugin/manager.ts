@@ -560,11 +560,24 @@ export class PluginManager {
   async importPlugin(
     targetType: 'single-file' | 'directory',
     filename: string,
-    buffer: Buffer
-  ): Promise<string> {
+    buffer: Buffer,
+    options?: { overwrite?: boolean; customId?: string }
+  ): Promise<{ id: string; overwritten?: boolean }> {
     const isZip = filename.endsWith('.zip')
-    const rawId = path.parse(filename).name.replace(/[^a-zA-Z0-9_-]/g, '')
-    const pluginId = rawId || `imported_${Date.now()}`
+    const rawId = (options?.customId || path.parse(filename).name).replace(/[^a-zA-Z0-9_-]/g, '')
+    let pluginId = rawId || `imported_${Date.now()}`
+
+    // 检查是否存在同名插件
+    if (this.plugins.has(pluginId) && !options?.overwrite) {
+      throw new Error(`PLUGIN_CONFLICT:${pluginId}`)
+    }
+
+    const wasOverwritten = this.plugins.has(pluginId)
+    if (wasOverwritten) {
+      // 覆盖前先释放旧实例资源
+      const oldPlugin = this.plugins.get(pluginId)
+      if (oldPlugin) this.clearInstanceResources(oldPlugin)
+    }
 
     if (targetType === 'single-file' && !isZip) {
       // 单纯上传了 .js 文件
@@ -575,7 +588,7 @@ export class PluginManager {
       if (!fs.existsSync(cfgPath)) fs.writeFileSync(cfgPath, '{}', 'utf-8')
 
       await this.loadScriptPluginDir(pluginId, targetDir, true)
-      return pluginId
+      return { id: pluginId, overwritten: wasOverwritten }
     }
 
     const destDir =
@@ -643,7 +656,108 @@ export class PluginManager {
       await this.loadScriptPluginDir(pluginId, destDir, true)
     }
 
-    return pluginId
+    return { id: pluginId, overwritten: wasOverwritten }
+  }
+
+  // 删除插件
+  async deletePlugin(id: string, keepConfig: boolean = true): Promise<boolean> {
+    const plugin = this.plugins.get(id)
+    if (!plugin) return false
+
+    console.log(`[PluginManager] Deleting plugin "${id}", keepConfig = ${keepConfig}`)
+
+    // 1. 释放运行时资源（定时器、事件总线、指令等）
+    this.clearInstanceResources(plugin)
+
+    // 2. 移除内存映射
+    this.plugins.delete(id)
+
+    // 3. 保存启用状态记录
+    const state = this.loadState()
+    if (state[id]) {
+      delete state[id]
+      this.saveState(state)
+    }
+
+    // 4. 清理影子运行时目录
+    const runtimeShadowDir = path.join(this.cacheDir, 'runtime', id)
+    if (fs.existsSync(runtimeShadowDir)) {
+      try {
+        fs.rmSync(runtimeShadowDir, { recursive: true, force: true })
+      } catch (e: any) {
+        console.warn(`[PluginManager] Failed to clean runtime cache for ${id}:`, e.message)
+      }
+    }
+
+    // 5. 处理物理目录与配置保存
+    const pluginDir = path.dirname(plugin.meta.entryPath)
+    if (fs.existsSync(pluginDir)) {
+      try {
+        if (keepConfig) {
+          const cfgPath = path.join(pluginDir, 'config.json')
+          if (fs.existsSync(cfgPath) && this.kvStorage) {
+            try {
+              const fileCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'))
+              const scoped = this.kvStorage.createScopedClient(id)
+              for (const [k, v] of Object.entries(fileCfg)) {
+                await scoped.set(k, v)
+              }
+            } catch {}
+          }
+        }
+        fs.rmSync(pluginDir, { recursive: true, force: true })
+      } catch (e: any) {
+        console.error(`[PluginManager] Failed to remove plugin directory "${pluginDir}":`, e)
+      }
+    }
+
+    // 6. 不保留配置时，彻底清空持久化数据库
+    if (!keepConfig && this.kvStorage) {
+      try {
+        await this.kvStorage.createScopedClient(id).clear()
+        console.log(`[PluginManager] Cleared stored configuration in DB for plugin "${id}"`)
+      } catch (e: any) {
+        console.warn(`[PluginManager] Failed to clear KV storage for ${id}:`, e.message)
+      }
+    }
+
+    return true
+  }
+
+  // 重置插件配置为初始默认值
+  async resetPluginConfig(id: string): Promise<Record<string, any>> {
+    const plugin = this.plugins.get(id)
+    if (!plugin) throw new Error(`插件 "${id}" 不存在`)
+
+    // 1. 清空 KV Storage
+    if (this.kvStorage) {
+      await this.kvStorage.createScopedClient(id).clear()
+    }
+
+    // 2. 从 schema 中提取默认值
+    const schema = plugin.meta.configSchema || []
+    const defaultConfig: Record<string, any> = {}
+    for (const item of schema) {
+      if (item && item.key && item.default !== undefined) {
+        defaultConfig[item.key] = item.default
+      }
+    }
+
+    // 3. 写入文件系统 config.json
+    const pluginDir = path.dirname(plugin.meta.entryPath)
+    const configPath = path.join(pluginDir, 'config.json')
+    fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2), 'utf-8')
+
+    // 4. 更新内存中的 config
+    plugin.meta.config = { ...defaultConfig }
+
+    // 5. 若已启用则热重载
+    if (plugin.meta.enabled) {
+      await this.initPluginModule(plugin, plugin.meta.entryPath, defaultConfig)
+    }
+
+    console.log(`[PluginManager] Reset configuration for plugin "${id}" to defaults`)
+    return defaultConfig
   }
 
   private messagePipelineHandler?: (event: ChaiteEvent) => Promise<void>

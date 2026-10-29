@@ -234,10 +234,30 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
         res.status(200).json(ok ? ChaiteResponse.ok({ success: true }) : ChaiteResponse.fail(null, 'Failed to save plugin'))
       })
 
+      // 重载插件
       expressApp.post('/api/plugins/:id/reload', async (req: any, res: any) => {
         const { id } = req.params
         const ok = await pluginManager.reloadPlugin(id)
         res.status(200).json(ok ? ChaiteResponse.ok({ success: true }) : ChaiteResponse.fail(null, 'Plugin not found'))
+      })
+
+      // 删除插件（支持是否保留配置）
+      expressApp.post('/api/plugins/:id/delete', async (req: any, res: any) => {
+        const { id } = req.params
+        const keepConfig = req.body?.keepConfig !== false
+        const ok = await pluginManager.deletePlugin(id, keepConfig)
+        res.status(200).json(ok ? ChaiteResponse.ok({ success: true }) : ChaiteResponse.fail(null, 'Plugin not found'))
+      })
+
+      // 重置插件配置为初始默认值
+      expressApp.post('/api/plugins/:id/reset-config', async (req: any, res: any) => {
+        try {
+          const { id } = req.params
+          const defaultConfig = await pluginManager.resetPluginConfig(id)
+          res.status(200).json(ChaiteResponse.ok({ config: defaultConfig }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || 'Failed to reset plugin config'))
+        }
       })
 
       // 导出插件
@@ -259,14 +279,21 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
       // 导入插件
       expressApp.post('/api/plugins/import', async (req: any, res: any) => {
         try {
-          const { type, filename, base64 } = req.body || {}
+          const { type, filename, base64, overwrite, customId } = req.body || {}
           if (!filename || !base64) {
             return res.status(400).json(ChaiteResponse.fail(null, '缺少文件数据'))
           }
           const buf = Buffer.from(base64, 'base64')
-          const pluginId = await pluginManager.importPlugin(type || 'single-file', filename, buf)
-          res.status(200).json(ChaiteResponse.ok({ id: pluginId }))
+          const result = await pluginManager.importPlugin(type || 'single-file', filename, buf, {
+            overwrite: Boolean(overwrite),
+            customId,
+          })
+          res.status(200).json(ChaiteResponse.ok(result))
         } catch (err: any) {
+          if (err?.message?.startsWith('PLUGIN_CONFLICT:')) {
+            const conflictId = err.message.split(':')[1]
+            return res.status(409).json(ChaiteResponse.fail({ conflictId }, '已存在同名插件'))
+          }
           res.status(500).json(ChaiteResponse.fail(null, err?.message || '导入失败'))
         }
       })
