@@ -176,7 +176,8 @@ async function handleMessage(
       '──────────────────',
       `• ${cmdPrefix}chaite / ${cmdPrefix}帮助`,
       `• ${cmdPrefix}结束对话 / ${cmdPrefix}重置对话`,
-      `• ${cmdPrefix}结束全部对话 / ${cmdPrefix}清空全部会话`,
+      `• ${cmdPrefix}清空群上下文 / ${cmdPrefix}重置群聊 (主人)`,
+      `• ${cmdPrefix}结束全部对话 / ${cmdPrefix}清空全部会话 (主人)`,
       `• ${cmdPrefix}预设列表 / ${cmdPrefix}查看预设`,
       `• ${cmdPrefix}状态 / ${cmdPrefix}ping`,
       `• ${cmdPrefix}拉黑群 [群号] / ${cmdPrefix}解黑群 [群号]`,
@@ -207,6 +208,20 @@ async function handleMessage(
     return
   }
 
+  if (matchCmd('清空群上下文') || matchCmd('重置群聊') || matchCmd('清空群聊上下文')) {
+    if (!event.isGroup) {
+      await event.reply('❌ 该指令仅在群聊中可用。')
+      return
+    }
+    if (!isMaster) {
+      await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
+      return
+    }
+    groupHistoryBuffer.clear(event.groupId)
+    await event.reply('🧹 已成功清空本群当前的群聊消息流水与上下文缓冲。')
+    return
+  }
+
   if (matchCmd('结束全部对话') || matchCmd('重置全部对话') || matchCmd('清空全部会话') || matchCmd('resetall')) {
     if (!isMaster) {
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
@@ -215,7 +230,8 @@ async function handleMessage(
     try {
       const historyDriver = drivers.get('history')
       await historyDriver.run(`DELETE FROM messages`)
-      await event.reply('🧹 已成功结束并清空所有用户与所有群聊的全部预设对话上下文。')
+      groupHistoryBuffer.clearAll()
+      await event.reply('🧹 已成功结束并清空所有用户与所有群聊的全部预设对话上下文，并重置群聊流水缓冲。')
     } catch (err: any) {
       console.error('[Runner] Error clearing all conversations:', err)
       await event.reply('清空全部会话失败，请稍后重试。')
@@ -520,6 +536,11 @@ async function handleMessage(
       ? `conv_group_${event.groupId}_${event.userId}_${targetPresetId}`
       : `conv_private_${event.userId}_${targetPresetId}`
 
+    const effectiveToolCallLimit = preset?.sendMessageOption?.toolCallLimit || {
+      maxConsecutiveCalls: config.llm?.maxConsecutiveCalls !== undefined ? Number(config.llm.maxConsecutiveCalls) : 10,
+      maxConsecutiveIdenticalCalls: config.llm?.maxConsecutiveIdenticalCalls !== undefined ? Number(config.llm.maxConsecutiveIdenticalCalls) : 3,
+    }
+
     const sendOptions = Object.assign(
       {},
       preset?.sendMessageOption || {},
@@ -527,6 +548,7 @@ async function handleMessage(
         conversationId,
         presetId: targetPresetId,
         customOptions: preset?.customOptions,
+        toolCallLimit: effectiveToolCallLimit,
       }
     )
 
@@ -535,6 +557,40 @@ async function handleMessage(
     if (isBym) {
       sendOptions.conversationId = conversationId
       sendOptions.stream = false
+    }
+
+    // 注入群聊上下文流 (Group Context Stream)
+    if (event.isGroup && event.groupId && config.llm?.enableGroupContext !== false) {
+      try {
+        const groupContext = await groupHistoryBuffer.buildContext(
+          event.groupId,
+          {
+            minMessages: config.groupContext?.minMessages ?? 20,
+            minTokens: config.groupContext?.minTokens ?? 2000,
+            maxMessages: config.groupContext?.maxMessages ?? 100,
+            maxTokens: config.groupContext?.maxTokens ?? 10000,
+            enableRichCards: config.groupContext?.enableRichCards ?? true,
+            enableForwardParse: config.groupContext?.enableForwardParse ?? true,
+            maxForwardMessages: config.groupContext?.maxForwardMessages ?? 15,
+          },
+          rawEvent.message_id,
+          onebotAdapter
+        )
+        if (groupContext) {
+          const groupContextBlock = [
+            '<!-- BEGIN_GROUP_CONTEXT -->',
+            '### 当前群聊成员花名册与最近发言流水记录：',
+            groupContext,
+            '<!-- END_GROUP_CONTEXT -->',
+          ].join('\n')
+          const baseSystemOverride = sendOptions.systemOverride || preset?.sendMessageOption?.systemOverride || ''
+          sendOptions.systemOverride = [baseSystemOverride, groupContextBlock]
+            .filter(Boolean)
+            .join('\n\n')
+        }
+      } catch (err: any) {
+        console.warn('[Runner] Failed to build group context:', err?.message || err)
+      }
     }
 
     // Skill intent matching & dynamic activation
@@ -619,6 +675,37 @@ async function handleMessage(
             ? `${shortUser} -> [Error] ${errorCaught.message || "Execution failed"}`
             : `${shortUser} -> ${shortResp || "OK"}`
 
+          // 清理记录到日志的 Options，剔除下划线私有内部状态与重复项
+          const cleanOptionsForLog = (opts: any) => {
+            if (!opts || typeof opts !== "object") return {}
+            const res: Record<string, any> = {}
+            for (const [k, v] of Object.entries(opts)) {
+              if (k.startsWith("_")) continue
+              if (k === "customOptions" && v && typeof v === "object") {
+                const sub: Record<string, any> = {}
+                for (const [sk, sv] of Object.entries(v as Record<string, any>)) {
+                  if (!sk.startsWith("_") && opts[sk] === undefined) {
+                    sub[sk] = sv
+                  }
+                }
+                if (Object.keys(sub).length > 0) res.customOptions = sub
+                continue
+              }
+              res[k] = v
+            }
+            return res
+          }
+
+          const respParams: Record<string, any> = {
+            id: response?.id,
+            model: response?.model,
+            finishReason: (response as any)?.finishReason || (response as any)?.candidates?.[0]?.finishReason,
+            usage: response?.usage,
+            toolCalls: response?.toolCalls,
+            channelId: chanId,
+            channelName: chanName,
+          }
+
           storageCtx.operationLogManager.addSync({
             type: "llm.call",
             level: errorCaught ? "error" : "info",
@@ -643,12 +730,15 @@ async function handleMessage(
               status: errorCaught ? 500 : 200,
               requestPayload: {
                 userMessage,
-                sendOptions,
+                sendOptions: cleanOptionsForLog(sendOptions),
               },
               responsePayload: errorCaught ? null : {
                 contents: response?.contents,
                 usage: response?.usage,
                 model: response?.model,
+                toolCalls: response?.toolCalls,
+                finishReason: (response as any)?.finishReason,
+                params: respParams,
               },
               error: errorCaught ? {
                 message: errorCaught.message,

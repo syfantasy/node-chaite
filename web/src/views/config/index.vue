@@ -174,6 +174,8 @@ const config = reactive({
     blockStrategy: 'full',
     blockWordMask: '**',
     enableGroupContext: true,
+    maxConsecutiveCalls: 10,
+    maxConsecutiveIdenticalCalls: 3,
   },
   groupContext: {
     enable: true,
@@ -769,6 +771,42 @@ onMounted(async () => {
                         filterable
                         placeholder="选择默认对话预设"
                         clearable
+                      />
+                    </NFormItemGridItem>
+                  </NGrid>
+                </NForm>
+              </NCard>
+
+              <NCard class="inner-card mb-4">
+                <template #header>
+                  <div class="card-header">
+                    <div class="card-title">
+                      工具调用熔断限制 (Tool Call Limits)
+                    </div>
+                    <div class="card-subtitle">
+                      防止模型在单轮对话中陷入死循环无限调用工具。设为 0 表示不限制调用次数。
+                    </div>
+                  </div>
+                </template>
+                <NForm label-placement="left" label-width="auto" :model="config.llm">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                    <NFormItemGridItem span="24 s:24 m:12" label="单轮最大连续调用次数" path="maxConsecutiveCalls">
+                      <NInputNumber
+                        v-model:value="config.llm.maxConsecutiveCalls"
+                        :min="0"
+                        :max="100"
+                        placeholder="默认 10 (0 为不限制)"
+                        style="width: 100%"
+                      />
+                    </NFormItemGridItem>
+
+                    <NFormItemGridItem span="24 s:24 m:12" label="相同参数连续调用限制" path="maxConsecutiveIdenticalCalls">
+                      <NInputNumber
+                        v-model:value="config.llm.maxConsecutiveIdenticalCalls"
+                        :min="0"
+                        :max="50"
+                        placeholder="默认 3 (0 为不限制)"
+                        style="width: 100%"
                       />
                     </NFormItemGridItem>
                   </NGrid>

@@ -584,6 +584,13 @@ export class GroupHistoryBuffer {
   clear(groupId: string | number): void {
     this.buffers.delete(String(groupId))
   }
+
+  /**
+   * Clear all group message buffers
+   */
+  clearAll(): void {
+    this.buffers.clear()
+  }
 }
 
 export const groupHistoryBuffer = new GroupHistoryBuffer()

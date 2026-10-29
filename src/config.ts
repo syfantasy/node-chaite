@@ -37,6 +37,8 @@ export interface AppConfig {
     defaultModel?: string
     defaultChatPresetId?: string
     enableGroupContext?: boolean
+    maxConsecutiveCalls?: number
+    maxConsecutiveIdenticalCalls?: number
     [key: string]: any
   }
   bym?: {
@@ -107,6 +109,8 @@ const DEFAULT_CONFIG: AppConfig = {
     defaultModel: '',
     defaultChatPresetId: '',
     enableGroupContext: true,
+    maxConsecutiveCalls: 10,
+    maxConsecutiveIdenticalCalls: 3,
   },
   groupContext: {
     minMessages: 20,

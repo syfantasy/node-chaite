@@ -17,7 +17,6 @@ export const staticRoutes: AppRoute.RowRoute[] = [
 
   { name: 'observability', path: '/observability', title: '运行与记录', requiresAuth: true, icon: 'icon-park-outline:chart-line', menuType: 'dir', componentPath: null, id: 30, pid: null },
   { name: 'logs', path: '/logs', title: '使用记录', requiresAuth: true, icon: 'icon-park-outline:list-view', menuType: 'page', componentPath: '/logs/index.vue', id: 31, pid: 30 },
-  { name: 'tasks', path: '/tasks', title: '任务监控', requiresAuth: true, icon: 'icon-park-outline:time', menuType: 'page', componentPath: '/agent/tasks.vue', id: 32, pid: 30 },
 
   // 配置由左侧栏固定到底部渲染
   { name: 'config', path: '/config', title: '配置', requiresAuth: true, icon: 'icon-park-outline:setting-config', menuType: 'page', componentPath: '/config/index.vue', id: 41, pid: null },

@@ -84,6 +84,12 @@ const responseContents = computed(() => {
   return []
 })
 
+const toolCalls = computed(() => {
+  const tc = respPayload.value?.toolCalls || (respPayload.value?.params as any)?.toolCalls
+  if (Array.isArray(tc)) return tc
+  return []
+})
+
 const foldedRawJson = computed(() => {
   if (!props.log) return ''
   const clone = JSON.parse(JSON.stringify(props.log))
@@ -248,6 +254,27 @@ const foldedRawJson = computed(() => {
               <span>总 Token: {{ respPayload.usage.totalTokens }}</span>
               <span v-if="respPayload.usage.reasoningTokens"> · 思考 Token: {{ respPayload.usage.reasoningTokens }}</span>
             </div>
+
+            <!-- Tool Calls Section -->
+            <div v-if="toolCalls.length > 0" class="mt-3">
+              <div style="font-size: 12px; font-weight: 600; color: #2563eb; margin-bottom: 6px;">
+                🛠️ 工具调用参数 (Tool Calls):
+              </div>
+              <div v-for="(tc, tcIdx) in toolCalls" :key="tcIdx" class="p-2 border rounded bg-blue-50/30 dark:bg-blue-950/20 mb-2 text-xs">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <NTag size="small" type="primary">{{ tc.function?.name || tc.name || '工具调用' }}</NTag>
+                  <span v-if="tc.id" style="color: #888;">ID: {{ tc.id }}</span>
+                </div>
+                <pre class="bg-gray-100 dark:bg-gray-900 p-2 rounded overflow-x-auto text-xs font-mono">{{ typeof tc.function?.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function?.arguments || tc.args || {}, null, 2) }}</pre>
+              </div>
+            </div>
+
+            <!-- Response Parameters & Metadata -->
+            <NCollapse v-if="respPayload" class="mt-4">
+              <NCollapseItem title="模型返回参数与元数据 (Parameters)" name="respParams">
+                <pre class="text-xs bg-gray-50 p-2 rounded overflow-x-auto">{{ JSON.stringify(respPayload.params || { model: respPayload.model, finishReason: respPayload.finishReason, usage: respPayload.usage }, null, 2) }}</pre>
+              </NCollapseItem>
+            </NCollapse>
           </div>
         </NTabPane>
 
