@@ -2,36 +2,22 @@
 
 独立高性能 AI 智能体接入服务与管理控制台。
 
-## 安装与启动
+## 安装与快速启动
 
-### 1. 克隆仓库
-
-```bash
-git clone https://github.com/syfantasy/node-chaite.git chaite
-cd chaite
-```
-
-### 2. 安装依赖
+### 1. 克隆仓库与安装依赖
 
 推荐使用 Node.js 20+ 环境：
 
 ```bash
+git clone https://github.com/syfantasy/node-chaite.git chaite
+cd chaite
 npm install
-# 或使用 pnpm
-pnpm install
+# 或使用 pnpm install
 ```
 
-### 3. 配置初始化
+### 2. 运行服务
 
-复制示例配置文件：
-
-```bash
-cp config.example.json config.json
-```
-
-编辑 `config.json`，设置你的管理员密钥（`adminToken`）及监听端口（默认 `48370`）。
-
-### 4. 运行服务
+直接启动服务（无需手动复制配置文件，程序启动时会自动检测并完成初始化配置）：
 
 ```bash
 # 开发模式（代码变动自动重载）
@@ -41,7 +27,25 @@ npm run dev
 npm start
 ```
 
-启动后在浏览器打开 `http://localhost:48370`，输入 `adminToken` 即可进入 Web 控制台。
+### 3. 访问控制台与首次设密
+
+- 服务默认运行于端口 **`48370`**。
+- 启动后打开浏览器访问：**`http://localhost:48370`**。
+- **首次登录**：系统会自动检测未设置密码状态，直接在界面输入你想要设置的管理密码，点击即可完成初始化并登入控制台。
+
+---
+
+## 常用指令
+
+在群聊或私聊中向机器人发送以下基础指令：
+
+- `#帮助`
+- `#状态`
+- `#重置对话`
+- `#重置全部对话`
+- `#预设列表`
+
+*(触发前缀默认为 `#`，可在 Web 控制台或配置中自定义)*
 
 ---
 
@@ -59,7 +63,7 @@ npm start
 ## 目录速览
 
 - **Web 控制台**: 默认端口 `48370`
-- **配置文件**: `config.json`（参考 `config.example.json`）
+- **配置文件**: `config.json`（首次运行自动生成）
 - **数据目录**: `data/`（自动生成的 SQLite 数据库及媒体缓存）
 - **插件目录**: `plugins/`
 - **运行日志**: `bot.log`

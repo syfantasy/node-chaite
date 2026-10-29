@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CONFIG_PATH = path.resolve(__dirname, '../config.json')
+const EXAMPLE_PATH = path.resolve(__dirname, '../config.example.json')
 
 export interface AppConfig {
   onebot: {
@@ -89,10 +90,10 @@ const DEFAULT_CONFIG: AppConfig = {
   web: {
     host: '0.0.0.0',
     port: 48370,
-    adminToken: 'admin',
+    adminToken: '',
   },
   management: {
-    whiteGroups: [748098456],
+    whiteGroups: [],
     blackGroups: [],
     whiteUsers: [],
     blackUsers: [],
@@ -147,6 +148,16 @@ let currentConfig: AppConfig = { ...DEFAULT_CONFIG }
 
 export function loadConfig(): AppConfig {
   try {
+    if (!fs.existsSync(CONFIG_PATH)) {
+      if (fs.existsSync(EXAMPLE_PATH)) {
+        fs.copyFileSync(EXAMPLE_PATH, CONFIG_PATH)
+        console.log('[Config] config.json 不存在，已自动从 config.example.json 复制初始化')
+      } else {
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8')
+        console.log('[Config] config.json 不存在，已自动创建默认配置文件')
+      }
+    }
+
     if (fs.existsSync(CONFIG_PATH)) {
       const raw = fs.readFileSync(CONFIG_PATH, 'utf-8')
       const parsed = JSON.parse(raw)
@@ -156,7 +167,7 @@ export function loadConfig(): AppConfig {
         onebot: { ...DEFAULT_CONFIG.onebot, ...parsed.onebot },
         web: { ...DEFAULT_CONFIG.web, ...parsed.web },
         management: {
-          whiteGroups: (parsed.management?.whiteGroups ?? [748098456]).map(Number),
+          whiteGroups: (parsed.management?.whiteGroups || []).map(Number),
           blackGroups: (parsed.management?.blackGroups || []).map(Number),
           whiteUsers: (parsed.management?.whiteUsers || []).map(Number),
           blackUsers: (parsed.management?.blackUsers || []).map(Number),
@@ -169,9 +180,6 @@ export function loadConfig(): AppConfig {
         logging: { ...DEFAULT_CONFIG.logging, ...parsed.logging },
         vision: { ...DEFAULT_CONFIG.vision, ...parsed.vision },
       }
-    } else {
-      currentConfig = { ...DEFAULT_CONFIG }
-      saveConfig(currentConfig)
     }
   } catch (err) {
     console.error('[Config] Failed to load config.json, using defaults:', err)

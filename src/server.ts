@@ -271,12 +271,44 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
         }
       })
 
-      // Enhanced login route: supports configured adminToken as well as dynamic tokens
+      // Auth status check: allows frontend to know whether initial password setup is required
+      expressApp.get('/api/auth/status', async (_req: any, res: any) => {
+        const adminToken = (getConfig().web.adminToken || '').trim()
+        res.status(200).json(
+          ChaiteResponse.ok({
+            isInitialized: Boolean(adminToken),
+          })
+        )
+      })
+
+      // Enhanced login route: supports initial password setting and verification
       expressApp.post('/api/auth/login', async (req: any, res: any) => {
         const body = req.body || {}
         const inputToken = String(body.token || '').trim()
-        const expectedToken = getConfig().web.adminToken
+        const curConfig = getConfig()
+        const expectedToken = (curConfig.web.adminToken || '').trim()
         const authHandler = Chaite.getInstance().getFrontendAuthHandler()
+
+        // 首次登录：未设置管理员密码时，将用户输入的密码初始化为管理员密码
+        if (!expectedToken) {
+          if (!inputToken) {
+            return res.status(400).json(ChaiteResponse.fail(null, '首次登录请输入您要设置的管理密码'))
+          }
+          curConfig.web.adminToken = inputToken
+          saveConfig(curConfig)
+          Chaite.getInstance().setFrontendAuthHandler(new CustomAuthHandler(inputToken))
+          console.log('[Server] 首次登录成功：已将管理密码初始化并保存至 config.json')
+
+          const authKey = globalConfig.getAuthKey() || 'chaite-key'
+          const token = FrontEndAuthHandler.generateJWT(authKey)
+          return res.status(200).json(
+            ChaiteResponse.ok({
+              token,
+              expiresIn: 7 * 24 * 60 * 60,
+              isFirstSetup: true,
+            })
+          )
+        }
 
         const isDynamicValid = authHandler ? authHandler.validateToken(inputToken) : false
         const isStaticValid = expectedToken && inputToken === expectedToken
@@ -291,7 +323,7 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
             })
           )
         } else {
-          res.status(401).json(ChaiteResponse.fail(null, 'Invalid admin token'))
+          res.status(401).json(ChaiteResponse.fail(null, '密码错误，请输入正确的管理密码'))
         }
       })
     },
@@ -299,8 +331,10 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
   )
 
   const server = app.listen(config.web.port, config.web.host, () => {
-    console.log(`[Server] Chaite Web Dashboard running at http://${config.web.host}:${config.web.port}`)
-    console.log(`[Server] Admin Token: "${config.web.adminToken}"`)
+    console.log(`[Server] Chaite Web 控制台已启动: http://${config.web.host}:${config.web.port}`)
+    if (!config.web.adminToken) {
+      console.log('[Server] 提示: 当前尚未设置管理密码，首次访问控制台时直接输入即可完成初始设置。')
+    }
   })
 
   return { app, server }

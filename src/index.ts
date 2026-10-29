@@ -172,53 +172,16 @@ async function handleMessage(
 
   if (matchCmd('chaite') || matchCmd('帮助') || matchCmd('help') || matchCmd('gpt帮助')) {
     const helpText = [
-      '🤖 Chaite 交互指令表',
+      '🤖 Chaite 指令表',
       '──────────────────',
-      `• ${cmdPrefix}chaite / ${cmdPrefix}帮助`,
-      '  查看交互指令表',
-      `• ${cmdPrefix}管理面板 / ${cmdPrefix}后台管理`,
-      '  获取 Web 控制台临时登录链接与 Token（仅管理员可用）',
-      `• ${cmdPrefix}结束对话 / ${cmdPrefix}重置对话`,
-      '  结束并清空你所有的预设对话上下文（所有人可用）',
-      `• ${cmdPrefix}结束全部对话 / ${cmdPrefix}清空全部会话`,
-      '  清空所有用户、所有群的全部预设对话（仅管理员可用）',
-      `• ${cmdPrefix}预设列表 / ${cmdPrefix}查看预设`,
-      '  查看当前已配置的可用预设及触发关键词',
-      `• ${cmdPrefix}状态 / ${cmdPrefix}ping`,
-      '  查看服务与渠道连接状态',
-      `• ${cmdPrefix}拉黑群 [群号] / ${cmdPrefix}解黑群 [群号]`,
-      '  将指定群（或当前群）加入/移出全局黑名单（仅管理员）',
-      `• ${cmdPrefix}拉黑 [@某人/QQ] / ${cmdPrefix}解黑 [@某人/QQ]`,
-      '  将指定用户加入/移出全局黑名单（仅管理员）',
-      '──────────────────',
-      '💡 触发说明：',
-      '• 在消息中包含预设的前缀词（如“小誓约”），即可直接唤醒对应预设；',
-      '• 若开启了 @ 触发，直接 @ 机器人亦可开启对话。',
+      `${cmdPrefix}帮助`,
+      `${cmdPrefix}状态`,
+      `${cmdPrefix}重置对话`,
+      `${cmdPrefix}重置全部对话`,
+      `${cmdPrefix}预设列表`,
     ].join('\n')
 
     await event.reply(helpText)
-    return
-  }
-
-  if (matchCmd('管理面板') || matchCmd('后台管理') || matchCmd('管理') || matchCmd('admin') || matchCmd('gpt管理') || matchCmd('chaite管理')) {
-    if (!isMaster) {
-      await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
-      return
-    }
-    const authHandler = Chaite.getInstance().getFrontendAuthHandler()
-    const tempToken = authHandler ? authHandler.generateToken(300) : config.web.adminToken
-    const host = config.web.host === '0.0.0.0' || config.web.host === '::' ? '127.0.0.1' : config.web.host
-    const replyText = [
-      '🔑 Chaite 管理控制台',
-      '──────────────────',
-      `控制台地址: http://${host}:${config.web.port}`,
-      `临时 Token (5分钟有效): ${tempToken}`,
-      `静态管理员密钥: ${config.web.adminToken}`,
-      '──────────────────',
-      '可在后台配置模型渠道、预设词、插件管理及权限列表。',
-    ].join('\n')
-
-    await event.reply(replyText)
     return
   }
 
@@ -689,7 +652,7 @@ async function handleMessage(
   } catch (err: any) {
     console.error('[Runner] Failed to send message to Chaite:', err.message)
     if (err.message && err.message.includes('No available channels')) {
-      const tip = '⚠️ Chaite 尚未配置可用模型渠道。\n请主人在管理面板配置模型 API 渠道（输入 #gpt管理 获取后台入口）。'
+      const tip = '⚠️ Chaite 尚未配置可用模型渠道，请前往 Web 控制台配置模型 API 渠道。'
       await event.reply(tip)
     } else {
       await event.reply(`⚠️ 请求处理失败: ${err.message}`)
