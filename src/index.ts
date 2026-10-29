@@ -533,9 +533,10 @@ async function handleMessage(
       return
     }
 
-    const hasImages = userMessage.content.some((c: any) => c.type === 'image')
-    if (hasImages) {
-      const isVisual = await isModelVisualCapable(preset)
+    const isVisual = await isModelVisualCapable(preset)
+    const currentImages: any[] = []
+
+    if (userMessage.content.some((c: any) => c.type === 'image')) {
       if (!isVisual) {
         const imageParts = userMessage.content.filter((c: any) => c.type === 'image')
         const refPlaceholders = imageParts
@@ -548,6 +549,10 @@ async function handleMessage(
         } else {
           userMessage.content.push({ type: 'text', text: refPlaceholders })
         }
+      } else {
+        // 视觉模型：暂存当前发送的图片，稍后与上下文历史图片统一进行图文交错锚定
+        currentImages.push(...userMessage.content.filter((c: any) => c.type === 'image'))
+        userMessage.content = userMessage.content.filter((c: any) => c.type !== 'image')
       }
     }
 
@@ -675,23 +680,55 @@ async function handleMessage(
           if (groupContextResult) {
             const { membersBlock, messagesBlock, recentImageRefs } = groupContextResult
 
-            // 群聊上下文中的历史图片：自动提取最近 maxRecentImages 张的 Base64 附带到当前请求中
-            const maxRecentImages = config.vision?.maxRecentImages ?? 3
-            if (recentImageRefs && recentImageRefs.length > 0 && maxRecentImages > 0) {
-              const imagesToFetch = recentImageRefs.slice(-maxRecentImages)
-              for (const ref of imagesToFetch) {
-                try {
-                  const resolved = await mediaRefStore.resolveImage(ref, onebotAdapter)
-                  if (resolved?.base64) {
-                    userMessage.content.push({
-                      type: 'image',
-                      mimeType: resolved.mimeType || 'image/jpeg',
-                      image: resolved.base64,
-                    } as ImageContent)
+            // 待发送视觉附件列表
+            interface VisualAttachmentItem {
+              seq: number
+              desc: string
+              detail: string
+              mimeType: string
+              base64: string
+            }
+            const visualAttachments: VisualAttachmentItem[] = []
+
+            // 1. 若当前模型具备视觉能力，收集并解析群历史图片
+            if (isVisual && recentImageRefs && recentImageRefs.length > 0) {
+              const maxRecentImages = config.vision?.maxRecentImages ?? 3
+              if (maxRecentImages > 0) {
+                const imagesToFetch = recentImageRefs.slice(-maxRecentImages)
+                for (const ref of imagesToFetch) {
+                  try {
+                    const resolved = await mediaRefStore.resolveImage(ref, onebotAdapter)
+                    if (resolved?.base64) {
+                      const refMeta = mediaRefStore.get(ref)
+                      let senderNote = ''
+                      if (refMeta?.senderId) {
+                        senderNote = ` (由 QQ ${refMeta.senderId} 发送)`
+                      }
+                      visualAttachments.push({
+                        seq: visualAttachments.length + 1,
+                        desc: `上下文中的 [图片 ref:${ref}]`,
+                        detail: `对应上下文中的 [图片 ref:${ref}]${senderNote}`,
+                        mimeType: resolved.mimeType || 'image/jpeg',
+                        base64: resolved.base64,
+                      })
+                    }
+                  } catch (imgErr: any) {
+                    console.warn(`[Runner] Failed to resolve group context image ${ref}:`, imgErr?.message || imgErr)
                   }
-                } catch (imgErr: any) {
-                  console.warn(`[Runner] Failed to resolve group context image ${ref}:`, imgErr?.message || imgErr)
                 }
+              }
+            }
+
+            // 2. 将提问者当前轮次直接发送的图片加入待发送列表
+            if (isVisual && currentImages.length > 0) {
+              for (const img of currentImages) {
+                visualAttachments.push({
+                  seq: visualAttachments.length + 1,
+                  desc: '当前提问者最新发送的图片',
+                  detail: '对应当前提问者最新发送的图片',
+                  mimeType: img.mimeType || 'image/jpeg',
+                  base64: img.image,
+                })
               }
             }
 
@@ -707,6 +744,34 @@ async function handleMessage(
                 text: `### 最近群聊发言流水记录（[#1] 至 [#N] 为当前轮次动态流动序号，对话与工具中均可直接用 '#1' 或 '1' 索引目标消息）：\n${messagesBlock}`,
               })
             }
+            if (visualAttachments.length > 0) {
+              const imageIndexLines = visualAttachments.map(
+                (att) => `- 附图 ${att.seq}: ${att.detail}`
+              )
+              contextParts.push({
+                type: 'text',
+                text: `### 本轮会话附带的多模态图像索引（按顺序严格对应下方图文交错附图）：\n<attached_images>\n${imageIndexLines.join('\n')}\n</attached_images>`,
+              })
+            }
+
+            if (contextParts.length > 0) {
+              userMessage.content.unshift(...contextParts)
+            }
+
+            // 3. 将所有视觉附件以图文交错的形式追加到 UserMessage 尾部
+            if (visualAttachments.length > 0) {
+              for (const att of visualAttachments) {
+                userMessage.content.push({
+                  type: 'text',
+                  text: `【下方附图 ${att.seq} 对应 ${att.desc}】：\n`,
+                })
+                userMessage.content.push({
+                  type: 'image',
+                  mimeType: att.mimeType,
+                  image: att.base64,
+                } as ImageContent)
+              }
+            }
           }
         }
 
@@ -716,6 +781,9 @@ async function handleMessage(
       } catch (err: any) {
         console.warn('[Runner] Failed to build group context:', err?.message || err)
       }
+    } else if (!event.isGroup && isVisual && currentImages.length > 0) {
+      // 私聊场景下直接恢复当前发送的图片
+      userMessage.content.push(...currentImages)
     }
 
     // Skill intent matching & dynamic activation
