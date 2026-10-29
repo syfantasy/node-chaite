@@ -259,6 +259,9 @@ watch(() => props.initialData, (newVal) => {
     if (!data.sendMessageOption.toolMountMode) {
       data.sendMessageOption.toolMountMode = 'basic'
     }
+    if (data.sendMessageOption.toolMountMode === 'basic' && (!Array.isArray(data.sendMessageOption.toolGroupId) || data.sendMessageOption.toolGroupId.length === 0)) {
+      data.sendMessageOption.toolGroupId = ['default_local']
+    }
     if (!Array.isArray(data.sendMessageOption.mcpServerIds)) {
       data.sendMessageOption.mcpServerIds = []
     }

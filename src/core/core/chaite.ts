@@ -305,12 +305,12 @@ export class Chaite extends EventEmitter {
 
         const newOptions = {
           ...preset.sendMessageOption,
-          model: realModel,
           builtinToolCategories: preset.builtinToolCategories,
           ...Object.fromEntries(
             Object.entries(options)
               .filter(([_, value]) => value !== undefined),
           ),
+          model: realModel,
         }
 
         if (options.skillName && this.skillRegistry) {

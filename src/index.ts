@@ -483,7 +483,26 @@ async function handleMessage(
     }
   }
 
-  // 4.3 指令前缀只由插件消费，不再作为对话触发词。对话唤醒仅认预设前缀与 @ 触发。
+  // 4.3 Check Random Auto Trigger Probability (群聊随机唤醒 / 自动插话)
+  if (!isTriggered && event.isGroup) {
+    try {
+      const allPresets = await storageCtx.presetManager.listInstances()
+      for (const p of allPresets) {
+        if (p.autoTriggerProbability && p.autoTriggerProbability > 0) {
+          if (Math.random() < p.autoTriggerProbability) {
+            isTriggered = true
+            matchedPreset = p
+            triggerReason = 'random_probability'
+            break
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Runner] Failed checking autoTriggerProbability:', err.message)
+    }
+  }
+
+  // 4.4 指令前缀只由插件消费，不再作为对话触发词。对话唤醒仅认预设前缀、@ 触发或概率唤醒。
   if (!isTriggered) {
     return
   }
@@ -561,76 +580,137 @@ async function handleMessage(
       sendOptions.stream = false
     }
 
-    // 注入群聊上下文流 (Group Context Stream)
-    const presetGroupCtxSetting = (preset as any)?.groupContext || 'use_system'
-    const shouldInjectGroupContext = presetGroupCtxSetting === 'enabled'
-      || (presetGroupCtxSetting === 'use_system' && config.llm?.enableGroupContext !== false)
-
-    if (event.isGroup && event.groupId && shouldInjectGroupContext) {
+    // 注入群聊环境与上下文 (Group Environment & History Stream)
+    if (event.isGroup && event.groupId) {
       try {
-        const groupContextResult = await groupHistoryBuffer.buildContext(
-          event.groupId,
-          {
-            minMessages: config.groupContext?.minMessages ?? 20,
-            minTokens: config.groupContext?.minTokens ?? 2000,
-            maxMessages: config.groupContext?.maxMessages ?? 100,
-            maxTokens: config.groupContext?.maxTokens ?? 10000,
-            enableRichCards: config.groupContext?.enableRichCards ?? true,
-            enableForwardParse: config.groupContext?.enableForwardParse ?? true,
-            maxForwardMessages: config.groupContext?.maxForwardMessages ?? 15,
-            currentSender: {
-              userId: event.userId,
-              nickname: event.sender?.nickname,
-              card: event.sender?.card,
-              role: event.sender?.role,
-              title: event.sender?.title,
-              level: event.sender?.level,
-            },
-          },
-          rawEvent.message_id,
-          onebotAdapter
-        )
-        if (groupContextResult) {
-          const { membersBlock, messagesBlock, recentImageRefs } = groupContextResult
+        const contextParts: TextContent[] = []
 
-          // 1. 群聊上下文中的历史图片：自动提取最近 maxRecentImages 张的 Base64 附带到当前请求中
-          const maxRecentImages = config.vision?.maxRecentImages ?? 3
-          if (recentImageRefs && recentImageRefs.length > 0 && maxRecentImages > 0) {
-            const imagesToFetch = recentImageRefs.slice(-maxRecentImages)
-            for (const ref of imagesToFetch) {
-              try {
-                const resolved = await mediaRefStore.resolveImage(ref, onebotAdapter)
-                if (resolved?.base64) {
-                  userMessage.content.push({
-                    type: 'image',
-                    mimeType: resolved.mimeType || 'image/jpeg',
-                    image: resolved.base64,
-                  } as ImageContent)
-                }
-              } catch (imgErr: any) {
-                console.warn(`[Runner] Failed to resolve group context image ${ref}:`, imgErr?.message || imgErr)
-              }
+        // 1. 构建当前会话环境元信息 (时间具体到秒、自身身份、主人列表、提问者、触发方式)
+        const now = new Date()
+        const cstFormatter = new Intl.DateTimeFormat('zh-CN', {
+          timeZone: 'Asia/Shanghai',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          weekday: 'long',
+          hour12: false,
+        })
+        const cstTimeStr = cstFormatter.format(now).replace(/\//g, '-')
+
+        const mastersList: string[] = []
+        if (Array.isArray(config.management?.masterUsers)) {
+          for (const m of config.management.masterUsers) {
+            if (!mastersList.includes(String(m))) {
+              mastersList.push(String(m))
             }
           }
+        }
+        const mastersStr = mastersList.length > 0 ? mastersList.join(', ') : '无配置'
 
-          // 2. 将花名册与流水拆分为独立的 text parts 前置插入到 UserMessage 中
-          const contextParts: TextContent[] = []
-          if (membersBlock) {
-            contextParts.push({
-              type: 'text',
-              text: `### 当前群聊成员花名册：\n${membersBlock}`,
-            })
-          }
-          if (messagesBlock) {
-            contextParts.push({
-              type: 'text',
-              text: `### 最近群聊发言流水记录：\n${messagesBlock}`,
-            })
-          }
+        let triggerWay = '常规对话'
+        if (triggerReason === 'random_probability') {
+          triggerWay = '随机唤醒 (自动插话)'
+        } else if (triggerReason === 'at_bot') {
+          triggerWay = '@你提问'
+        } else if (triggerReason?.startsWith('preset_prefix')) {
+          triggerWay = `命中触发词 (${triggerReason.replace('preset_prefix', '').trim()})`
+        } else if (triggerReason) {
+          triggerWay = triggerReason
+        }
 
-          if (contextParts.length > 0) {
-            userMessage.content.unshift(...contextParts)
+        const senderCard = event.sender?.card ? ` (群名片: "${event.sender.card}")` : ''
+        const senderNick = event.sender?.nickname ? ` (昵称: "${event.sender.nickname}")` : ''
+        const senderStr = `QQ ${event.userId}${senderCard}${senderNick}`
+
+        const envLines = [
+          '### 当前群聊会话环境与时间：',
+          '<chat_environment>',
+          `- 会话场景: QQ 群聊 (群号: ${event.groupId})`,
+          `- 当前时间: ${cstTimeStr} (北京时间 CST/UTC+8)`,
+          `- 你的身份: QQ ${botUin || '未知'}`,
+          `- 管理员/主人: QQ ${mastersStr} (拥有最高管理权限)`,
+          `- 当前提问者: ${senderStr}`,
+          `- 触发方式: ${triggerWay}`,
+          '</chat_environment>',
+        ]
+
+        contextParts.push({
+          type: 'text',
+          text: envLines.join('\n'),
+        })
+
+        // 2. 注入群聊上下文流水与花名册
+        const presetGroupCtxSetting = (preset as any)?.groupContext || 'use_system'
+        const shouldInjectGroupContext = presetGroupCtxSetting === 'enabled'
+          || (presetGroupCtxSetting === 'use_system' && config.llm?.enableGroupContext !== false)
+
+        if (shouldInjectGroupContext) {
+          const groupContextResult = await groupHistoryBuffer.buildContext(
+            event.groupId,
+            {
+              minMessages: config.groupContext?.minMessages ?? 20,
+              minTokens: config.groupContext?.minTokens ?? 2000,
+              maxMessages: config.groupContext?.maxMessages ?? 100,
+              maxTokens: config.groupContext?.maxTokens ?? 10000,
+              enableRichCards: config.groupContext?.enableRichCards ?? true,
+              enableForwardParse: config.groupContext?.enableForwardParse ?? true,
+              maxForwardMessages: config.groupContext?.maxForwardMessages ?? 15,
+              currentSender: {
+                userId: event.userId,
+                nickname: event.sender?.nickname,
+                card: event.sender?.card,
+                role: event.sender?.role,
+                title: event.sender?.title,
+                level: event.sender?.level,
+              },
+            },
+            rawEvent.message_id,
+            onebotAdapter
+          )
+
+          if (groupContextResult) {
+            const { membersBlock, messagesBlock, recentImageRefs } = groupContextResult
+
+            // 群聊上下文中的历史图片：自动提取最近 maxRecentImages 张的 Base64 附带到当前请求中
+            const maxRecentImages = config.vision?.maxRecentImages ?? 3
+            if (recentImageRefs && recentImageRefs.length > 0 && maxRecentImages > 0) {
+              const imagesToFetch = recentImageRefs.slice(-maxRecentImages)
+              for (const ref of imagesToFetch) {
+                try {
+                  const resolved = await mediaRefStore.resolveImage(ref, onebotAdapter)
+                  if (resolved?.base64) {
+                    userMessage.content.push({
+                      type: 'image',
+                      mimeType: resolved.mimeType || 'image/jpeg',
+                      image: resolved.base64,
+                    } as ImageContent)
+                  }
+                } catch (imgErr: any) {
+                  console.warn(`[Runner] Failed to resolve group context image ${ref}:`, imgErr?.message || imgErr)
+                }
+              }
+            }
+
+            if (membersBlock) {
+              contextParts.push({
+                type: 'text',
+                text: `### 当前群聊成员花名册：\n${membersBlock}`,
+              })
+            }
+            if (messagesBlock) {
+              contextParts.push({
+                type: 'text',
+                text: `### 最近群聊发言流水记录：\n${messagesBlock}`,
+              })
+            }
           }
+        }
+
+        if (contextParts.length > 0) {
+          userMessage.content.unshift(...contextParts)
         }
       } catch (err: any) {
         console.warn('[Runner] Failed to build group context:', err?.message || err)

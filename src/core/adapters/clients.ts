@@ -135,6 +135,10 @@ export class AbstractClient implements IClient {
     const toolsGroupManager = this.context.chaite.getToolsGroupManager()
     const toolManager = this.context.chaite.getToolsManager()
     const groupIds = toolGroupIds ? [...toolGroupIds] : []
+    const mountMode = (this.context.getOptions() as any)?.toolMountMode || 'basic'
+    if (mountMode === 'basic' && groupIds.length === 0) {
+      groupIds.push('default_local')
+    }
     const builtinCategories = new Set(this.context.getOptions()?.builtinToolCategories ?? [])
     // These compact MCP discovery tools are only mounted when MCP servers are configured or active.
     const presetOptions = this.context.getOptions()
