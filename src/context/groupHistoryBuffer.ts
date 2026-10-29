@@ -27,6 +27,8 @@ export interface GroupContextResult {
   messagesBlock: string | null
   recentImageRefs: string[]
   fullText: string
+  messageCount: number
+  estimatedTokens: number
 }
 
 export interface EphemeralGroupMessage {
@@ -68,6 +70,24 @@ export class GroupMessageRefStore {
     }
     this.turnRefs.set(gid, seqMap)
     this.idRefs.set(gid, idMap)
+  }
+
+  public appendMessage(groupId: string | number, message: EphemeralGroupMessage) {
+    const gid = String(groupId)
+    let seqMap = this.turnRefs.get(gid)
+    let idMap = this.idRefs.get(gid)
+    if (!seqMap) {
+      seqMap = new Map()
+      this.turnRefs.set(gid, seqMap)
+    }
+    if (!idMap) {
+      idMap = new Map()
+      this.idRefs.set(gid, idMap)
+    }
+    seqMap.set(message.seq, message)
+    if (message.messageId !== undefined && message.messageId !== null && message.messageId !== '') {
+      idMap.set(String(message.messageId), message)
+    }
   }
 
   /**
@@ -723,6 +743,8 @@ export class GroupHistoryBuffer {
       messagesBlock,
       recentImageRefs,
       fullText: fullParts.join('\n\n'),
+      messageCount: effectiveSlice.length,
+      estimatedTokens: selectedTokens,
     }
   }
 

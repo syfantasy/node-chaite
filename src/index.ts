@@ -801,7 +801,69 @@ async function handleMessage(
               }
             }
 
-            // 3. 提问者真实输入沉底（最末尾），拥有最强末尾注意力，且不带人造标签防止 Prompt 注入
+            // 3. 构建提问者真实输入：采用与 <group_messages> 流水完全统一的 [#N HH:mm] 发送者(身份): 格式
+            // 既能让大模型感知统一的流动序号与提问者身份（彻底防串用户），又能让该消息被虚拟短引用系统注册
+            const currentSeq = (groupContextResult?.messageCount || 0) + 1
+            const currentMsgTime = cstTimeStr.slice(11, 16)
+
+            const uidStr = String(event.userId)
+            const isBot = uidStr === String(config?.onebot?.botUin || '')
+            let roleBadge = ''
+            if (isBot) {
+              roleBadge = '[机器人]'
+            } else if (isMaster) {
+              if (event.sender?.role === 'owner') {
+                roleBadge = '[群主/主人]'
+              } else if (event.sender?.role === 'admin') {
+                roleBadge = '[群管/主人]'
+              } else {
+                roleBadge = '[主人]'
+              }
+            } else if (event.sender?.role === 'owner') {
+              roleBadge = '[群主]'
+            } else if (event.sender?.role === 'admin') {
+              roleBadge = '[群管]'
+            }
+
+            const cleanCard = (event.sender?.card || '').replace(/[\s\u3000]+/g, ' ').trim()
+            const cleanNick = (event.sender?.nickname || '').replace(/[\s\u3000]+/g, ' ').trim()
+            let speakerName = cleanCard || cleanNick || (event.userId ? `QQ ${event.userId}` : '群友')
+            speakerName = speakerName
+              .replace(/\r\n|\r|\n/g, ' ')
+              .replace(/\[(主人|群主|群管|群主\/主人|群管\/主人|机器人|Admin|Bot)\]/gi, '')
+              .trim() || (event.userId ? `QQ ${event.userId}` : '群友')
+
+            const badgeStr = roleBadge ? ` ${roleBadge}` : ''
+            const speakerHeader = `[#${currentSeq} ${currentMsgTime}] ${speakerName}${badgeStr}: `
+
+            // 注册当前消息至短期虚拟引用池，便于后续多轮对话或工具通过序号精准定位
+            groupMessageRefStore.appendMessage(String(event.groupId), {
+              seq: currentSeq,
+              messageId: event.messageId,
+              userId: String(event.userId),
+              rawTime: Math.floor(Date.now() / 1000),
+              timeStr: currentMsgTime,
+              nickname: event.sender?.nickname,
+              card: event.sender?.card,
+              role: event.sender?.role,
+              text: currentText,
+              imageRefs: [],
+            })
+
+            const firstTextIndex = originalUserParts.findIndex((p: any) => p.type === 'text')
+            if (firstTextIndex >= 0) {
+              const originText = (originalUserParts[firstTextIndex] as any).text || ''
+              originalUserParts[firstTextIndex] = {
+                type: 'text',
+                text: `${speakerHeader}${originText}`,
+              }
+            } else {
+              originalUserParts.unshift({
+                type: 'text',
+                text: speakerHeader,
+              })
+            }
+
             if (originalUserParts.length > 0) {
               userMessage.content.push(...originalUserParts)
             }
