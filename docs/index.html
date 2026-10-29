@@ -310,6 +310,16 @@ export default function setup(ctx) {
           <td><code>e.text</code> 已剥离机器人的 @ 与指令前缀，<code>rawText</code> 为纯原始文本</td>
         </tr>
         <tr>
+          <td><code>e.command / e.args</code></td>
+          <td><code>string</code></td>
+          <td><code>e.command</code> 为命中的指令名；<code>e.args</code> 为指令后面的纯入参文本（已自动 trim）</td>
+        </tr>
+        <tr>
+          <td><code>e.eventType</code></td>
+          <td><code>string</code></td>
+          <td>事件类别：<code>message</code>、<code>poke</code>、<code>member_join</code>、<code>member_leave</code>、<code>request</code>、<code>recall</code></td>
+        </tr>
+        <tr>
           <td><code>e.sender</code></td>
           <td><code>SenderInfo</code></td>
           <td>发送者元数据：<code>{ nickname, card, role, level }</code></td>
@@ -325,6 +335,16 @@ export default function setup(ctx) {
           <td>跨协议多功能回复（支持纯文本、艾特、图片数组、引用或无引用）</td>
         </tr>
         <tr>
+          <td><code>await e.approve(remark?) / e.reject(reason?)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>一键快速审批加好友或加群请求（仅在 <code>request</code> 申请事件中生效）</td>
+        </tr>
+        <tr>
+          <td><code>await e.deleteMsg(msgId?)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>快捷撤回指定消息（若未传参则默认撤回当前事件所在消息）</td>
+        </tr>
+        <tr>
           <td><code>await e.getMemberList()</code></td>
           <td><code>Promise&lt;any[]&gt;</code></td>
           <td>群聊场景原生查询完整群成员列表</td>
@@ -338,23 +358,43 @@ export default function setup(ctx) {
     </table>
 
     <div class="card">
-      <h3>戳一戳 (Poke) 响应与底层直通范例</h3>
+      <h3>全生命周期事件监听范例</h3>
       <pre><code class="language-javascript">export default function setup(ctx) {
-  // 1. 极简监听群友戳一戳
+  // 1. 便捷指令入参读取 (e.args 自动剥除指令头)
+  ctx.registerCommand('#echo', async (e) => {
+    if (!e.args) return e.reply('请输入要复读的内容')
+    await e.reply(`复读: ${e.args}`)
+    return true
+  })
+
+  // 2. 群成员变动感知 (入群欢迎 & 离群播报)
+  ctx.onMemberJoin(async (e) => {
+    await e.reply({ text: `🎉 欢迎新群友 [@${e.userId}] 加入本群！`, at: e.userId })
+    return true
+  })
+  ctx.onMemberLeave(async (e) => {
+    ctx.logger.info(`群成员 ${e.userId} 已离开群聊 ${e.groupId} (原因: ${e.subType})`)
+  })
+
+  // 3. 申请审核自动化 (自动同意指定暗号申请)
+  ctx.onRequest(async (e) => {
+    if (e.comment?.includes('Chaite开发者')) {
+      await e.approve('欢迎加入 Chaite 开发者交流圈')
+      return true
+    }
+  })
+
+  // 4. 撤回感知与防撤回留证
+  ctx.onRecall(async (e) => {
+    ctx.logger.warn(`检测到消息撤回: 消息ID=${e.messageId}, 操作人=${e.operatorId}, 原作者=${e.userId}`)
+  })
+
+  // 5. 戳一戳响应
   ctx.onPoke(async (e) => {
     if (e.isSelfPoke) {
       await e.reply('别戳我啦，再戳要生气啦！(ง •_•)ง')
       return true
     }
-  })
-
-  // 2. 原生调用底层协议动作 (彻底解耦全局变量)
-  ctx.registerCommand('#群名片列表', async (e) => {
-    if (!e.isGroup) return true
-    const members = await e.getMemberList()
-    const info = await e.callAction('get_group_info', { group_id: e.groupId })
-    await e.reply(`群名称: ${info?.data?.group_name || ''}\n成员数: ${members.length}`)
-    return true
   })
 }</code></pre>
     </div>
@@ -463,7 +503,31 @@ ctx.registerCommand('#总结讨论', async (e) => {
       </tbody>
     </table>
 
-    <!-- 6. 服务总线与原生渲染 (Shotium 与 Service Provider) -->
+    <div class="card" style="margin-top: 16px;">
+      <h3>提取群文件下载直链与多媒体按需解析范例</h3>
+      <pre><code class="language-javascript">import { mediaRefStore } from 'chaite' // 或直接读取 globalThis.mediaRefStore
+
+export default function setup(ctx) {
+  ctx.registerCommand('#下载直链', async (e) => {
+    // 匹配消息或回复中的文件 Ref: [文件:xxx.pdf (3.5MB) ref:file_xxxx]
+    const match = e.rawText.match(/ref:(file_[a-z0-9_]+)/)
+    if (!match) return e.reply('请引用或发送文件卡片并附带 #下载直链 指令')
+
+    const fileRef = match[1]
+    const item = mediaRefStore.get(fileRef)
+    if (!item) return e.reply('文件引用已过期或不存在')
+
+    // 自动调用底层协议获取群文件或私聊文件的下载直链
+    const resolved = await mediaRefStore.resolveMedia(fileRef, globalThis.onebotClient)
+    if (resolved?.url) {
+      await e.reply(`📄 文件名: ${item.name}\n大小: ${item.fileSize ? Math.round(item.fileSize / 1024) + ' KB' : '未知'}\n直链地址: ${resolved.url}`)
+    } else {
+      await e.reply('直链解析失败，该文件可能已过期。')
+    }
+    return true
+  })
+}</code></pre>
+    </div>
     <h2 id="renderer-service">6. 服务总线与原生渲染 (Shotium)</h2>
     <div class="card">
       <p>
@@ -494,6 +558,26 @@ ctx.registerCommand('#生成卡片', async (e) => {
   })
   return true
 })</code></pre>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <h3>通用服务总线 (Service Provider Pattern)</h3>
+      <p>
+        Chaite 提供了轻量级的微内核服务总线机制：插件不仅可以使用现有的渲染服务，还可以向系统暴露通用服务，实现跨插件解耦调用。
+      </p>
+      <pre><code class="language-javascript">// 1. 服务提供方 (如 plugins/apps/service-translate/index.js)
+ctx.registerService('translator', {
+  async translate(text, targetLang = 'en') {
+    // 执行本地模型或远程翻译接口
+    return `[${targetLang}] ${text}`
+  }
+})
+
+// 2. 服务消费方 (在其他任意插件中无感调用)
+const translator = ctx.getService('translator')
+if (translator) {
+  const result = await translator.translate('你好世界')
+}</code></pre>
     </div>
 
     <!-- 7. 存储、工具与时限管理 (合并：KV 存储、Tool、Cron 与时限拉黑) -->
@@ -536,11 +620,63 @@ await ctx.storage.delete('user_level_' + e.userId)</code></pre>
     </div>
 
     <div class="card">
-      <h3>动态时限拉黑与自动解黑</h3>
-      <ul>
-        <li><strong>管理员快捷指令：</strong> <code>#拉黑 @群友 10m</code>、<code>#拉黑 123456 1h</code>、<code>#拉黑群 7890 2h</code>（未带时长则为永久黑名单）；</li>
-        <li><strong>大模型自发管控：</strong> 全局暴露 <code>globalThis.banManager.banTarget(uid, 'user', 600000)</code>，模型可通过 Tool 自主临时禁言不听话的群友并在到期后由系统自动无感解黑。</li>
-      </ul>
+      <h3>系统内置管理与运维指令速查</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>指令前缀</th>
+            <th>功能说明</th>
+            <th>权限要求</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>#chaite / #帮助</code></td>
+            <td>呼出系统基础指令帮助列表</td>
+            <td>全体用户</td>
+          </tr>
+          <tr>
+            <td><code>#重置对话 / #清空上下文</code></td>
+            <td>清空当前用户在当前群/私聊会话的预设短期对话记忆</td>
+            <td>全体用户</td>
+          </tr>
+          <tr>
+            <td><code>#清空全部会话 / #resetall</code></td>
+            <td>强制清空数据库中所有用户和群聊的全部上下文</td>
+            <td>管理员 (Master)</td>
+          </tr>
+          <tr>
+            <td><code>#预设列表 / #查看预设</code></td>
+            <td>查看当前已加载的所有人设预设及其触发前缀</td>
+            <td>全体用户</td>
+          </tr>
+          <tr>
+            <td><code>#状态 / #ping</code></td>
+            <td>查询智能体系统运行健康状态与渠道数</td>
+            <td>全体用户</td>
+          </tr>
+          <tr>
+            <td><code>#拉黑 @群友 [时长]</code></td>
+            <td>支持时限（如 <code>10m</code>、<code>2h</code>、<code>1d</code>），不填时长则为永久加入黑名单</td>
+            <td>管理员 (Master)</td>
+          </tr>
+          <tr>
+            <td><code>#解黑 @群友</code></td>
+            <td>解除用户的全局黑名单与时限黑名单</td>
+            <td>管理员 (Master)</td>
+          </tr>
+          <tr>
+            <td><code>#拉黑群 [群号] [时长]</code></td>
+            <td>支持时限临时拉黑指定群聊或永久入黑</td>
+            <td>管理员 (Master)</td>
+          </tr>
+          <tr>
+            <td><code>#解黑群 [群号]</code></td>
+            <td>解除群聊的黑名单限制</td>
+            <td>管理员 (Master)</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </main>
 
