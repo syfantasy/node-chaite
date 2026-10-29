@@ -583,8 +583,7 @@ export class GroupHistoryBuffer {
 
       // Keep single line per message, escaping inner linebreaks if necessary
       const inlineText = msg.text.replace(/\r\n|\r|\n/g, ' ')
-      const msgIdTag = msg.messageId ? ` msg:${msg.messageId}` : ''
-      messageLines.push(`[#${idx + 1}${msgIdTag} ${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
+      messageLines.push(`[#${idx + 1} ${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
     }
 
     const membersBlock = memberLines.length > 0 ? `<chat_members>\n${memberLines.join('\n')}\n</chat_members>` : null

@@ -631,7 +631,7 @@ async function handleMessage(
           `- 会话场景: QQ 群聊 (群号: ${event.groupId})`,
           `- 当前时间: ${cstTimeStr} (北京时间 CST/UTC+8)`,
           `- 你的身份: QQ ${botUin || '未知'}`,
-          `- 管理员/主人: QQ ${mastersStr} (拥有最高管理权限)`,
+          `- 管理员/主人: QQ ${mastersStr}`,
           `- 当前提问者: ${senderStr}`,
           `- 触发方式: ${triggerWay}`,
           '</chat_environment>',
