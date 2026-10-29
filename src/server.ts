@@ -260,6 +260,17 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
         }
       })
 
+      // 触发插件自定义动作 (Action)
+      expressApp.post('/api/plugins/:id/action/:action', async (req: any, res: any) => {
+        try {
+          const { id, action } = req.params
+          const result = await pluginManager.triggerAction(id, action, req.body)
+          res.status(200).json(ChaiteResponse.ok(result))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || 'Action execution failed'))
+        }
+      })
+
       // 导出插件
       expressApp.get('/api/plugins/:id/export', async (req: any, res: any) => {
         try {

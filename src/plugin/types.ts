@@ -5,10 +5,14 @@ export type PluginType = 'single-file' | 'directory'
 export interface PluginConfigField {
   key: string
   label: string
-  type: 'string' | 'number' | 'boolean' | 'textarea' | 'select'
+  type: 'string' | 'number' | 'boolean' | 'textarea' | 'select' | 'button'
   default?: any
   description?: string
   options?: Array<{ label: string; value: any }>
+  group?: 'plugin' | 'common'
+  buttonText?: string
+  buttonType?: 'default' | 'primary' | 'info' | 'success' | 'warning' | 'error'
+  action?: string
 }
 
 export interface PluginMeta {
@@ -49,6 +53,62 @@ export type MiddlewareHandler = (ctx: {
   replyText?: string
 }) => Promise<void | boolean>
 
+export interface RenderOptions {
+  html?: string
+  url?: string
+  selector?: string
+  viewport?: { width: number; height: number; deviceScaleFactor?: number }
+  format?: 'png' | 'jpeg' | 'webp'
+  quality?: number
+}
+
+export interface RendererService {
+  render: (options: RenderOptions) => Promise<Buffer | string>
+}
+
+export const COMMON_PLUGIN_SCHEMA_FIELDS: PluginConfigField[] = [
+  {
+    key: 'customPrefix',
+    label: '自定义前缀',
+    type: 'string',
+    default: '',
+    description: '可为该插件指定独立触发前缀（如 ! 或 #），留空遵循默认',
+    group: 'common',
+  },
+  {
+    key: 'whiteGroups',
+    label: '群聊白名单',
+    type: 'string',
+    default: '',
+    description: '仅允许在这些群内响应（多个群号用逗号隔开，留空不限制）',
+    group: 'common',
+  },
+  {
+    key: 'blackGroups',
+    label: '群聊黑名单',
+    type: 'string',
+    default: '',
+    description: '在这些群内不响应（多个群号用逗号隔开）',
+    group: 'common',
+  },
+  {
+    key: 'whiteUsers',
+    label: '用户白名单',
+    type: 'string',
+    default: '',
+    description: '仅允许这些 QQ/用户触发（多个用逗号隔开，留空不限制）',
+    group: 'common',
+  },
+  {
+    key: 'blackUsers',
+    label: '用户黑名单',
+    type: 'string',
+    default: '',
+    description: '屏蔽这些 QQ/用户触发（多个用逗号隔开）',
+    group: 'common',
+  },
+]
+
 export interface PluginContext {
   pluginId: string
   config: Record<string, any>
@@ -64,6 +124,10 @@ export interface PluginContext {
     rule: string | RegExp | CommandRule,
     handler: CommandHandler
   ) => void
+  registerAction: (
+    actionName: string,
+    handler: (payload?: any) => Promise<{ success: boolean; message?: string; data?: any } | void>
+  ) => void
   registerAdapter: (name: string, adapter: any) => void
   registerModelProvider: (name: string, provider: any) => void
   registerMiddleware: (phase: MiddlewarePhase, handler: MiddlewareHandler) => void
@@ -71,17 +135,28 @@ export interface PluginContext {
   cron: (cronExpression: string, handler: () => void | Promise<void>) => () => void
   onDestroy: (cleanupFn: () => void | Promise<void>) => void
   emitMessage: (event: ChaiteEvent) => Promise<boolean>
+  onPoke: (handler: (e: ChaiteEvent) => Promise<boolean | void>) => void
+  getAdapter: (name?: string) => any
+  client: any
+  registerService: (name: string, service: any) => void
+  getService: <T = any>(name: string) => T | undefined
+  registerRenderer: (renderer: RendererService) => void
+  render: (options: RenderOptions) => Promise<Buffer | string>
+  readonly services: Map<string, any>
 }
 
 export interface PluginInstance {
   meta: PluginMeta
   commands: Array<{ rule: CommandRule; handler: CommandHandler }>
+  pokeHandlers: Array<(e: ChaiteEvent) => Promise<boolean | void>>
+  actions: Map<string, (payload?: any) => Promise<any>>
   middlewares: Array<{ phase: MiddlewarePhase; handler: MiddlewareHandler }>
   cronJobs: Array<() => void>
   cleanupFns: Array<() => void | Promise<void>>
   adapters: Map<string, any>
   modelProviders: Map<string, any>
   tools: any[]
+  services: Map<string, any>
   rawModule?: any
 }
 

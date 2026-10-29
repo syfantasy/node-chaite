@@ -1,0 +1,44 @@
+[
+  {
+    "key": "baseUrl",
+    "label": "Meme API 地址",
+    "type": "string",
+    "default": "https://meme-generatoe-sha.onrender.com",
+    "description": "meme-generator 服务的完整基础 URL"
+  },
+  {
+    "key": "forceSharp",
+    "label": "强制井号触发",
+    "type": "boolean",
+    "default": false,
+    "description": "开启后表情包生成必须加 # 前缀（如 #摸、#吃）"
+  },
+  {
+    "key": "reply",
+    "label": "引用回复",
+    "type": "boolean",
+    "default": true,
+    "description": "生成表情包后是否以引用消息的方式回复用户"
+  },
+  {
+    "key": "masterProtectDo",
+    "label": "主人保护机制",
+    "type": "boolean",
+    "default": true,
+    "description": "针对撅、锤等动作，对主人发起时会自动反噬为发起者"
+  },
+  {
+    "key": "maxFileSize",
+    "label": "最大图片体积 (MB)",
+    "type": "number",
+    "default": 10,
+    "description": "允许处理的用户图片最大体积"
+  },
+  {
+    "key": "pageSize",
+    "label": "列表每页数量",
+    "type": "number",
+    "default": 200,
+    "description": "查看表情包列表时每张大图展示的表情数量"
+  }
+]

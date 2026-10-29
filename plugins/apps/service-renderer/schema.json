@@ -1,0 +1,76 @@
+[
+  {
+    "key": "driver",
+    "label": "渲染驱动引擎",
+    "type": "select",
+    "default": "shotium",
+    "description": "首选推荐 Shotium 本地原生引擎（极轻量、毫秒级冷启、内存极低）；或 Puppeteer",
+    "options": [
+      { "label": "Shotium 本地原生引擎 (@pixel.js/shotium)", "value": "shotium" },
+      { "label": "Puppeteer (Chromium/远程CDP)", "value": "puppeteer" },
+      { "label": "禁用渲染服务", "value": "disabled" }
+    ]
+  },
+  {
+    "key": "installShotium",
+    "label": "Shotium 引擎",
+    "type": "button",
+    "buttonText": "📦 一键安装 Shotium",
+    "buttonType": "primary",
+    "action": "installShotium",
+    "description": "自动在插件目录安装 @pixel.js/shotium 本地高性能原生渲染引擎"
+  },
+  {
+    "key": "uninstallShotium",
+    "label": "清理 Shotium",
+    "type": "button",
+    "buttonText": "🗑️ 卸载 Shotium",
+    "buttonType": "warning",
+    "action": "uninstallShotium",
+    "description": "卸载 @pixel.js/shotium 依赖并释放存储空间"
+  },
+  {
+    "key": "installPuppeteer",
+    "label": "Puppeteer 核心",
+    "type": "button",
+    "buttonText": "📦 一键安装 Puppeteer-core",
+    "buttonType": "default",
+    "action": "installPuppeteer",
+    "description": "安装 puppeteer-core 依赖以支持连接本地或远程浏览器"
+  },
+  {
+    "key": "uninstallPuppeteer",
+    "label": "清理 Puppeteer",
+    "type": "button",
+    "buttonText": "🗑️ 卸载 Puppeteer-core",
+    "buttonType": "warning",
+    "action": "uninstallPuppeteer",
+    "description": "卸载 puppeteer-core 依赖"
+  },
+  {
+    "key": "puppeteerWsEndpoint",
+    "label": "Puppeteer CDP 远程端点",
+    "type": "string",
+    "default": "",
+    "description": "可选。远程 Chrome/Browserless 的 ws:// 调试端点，留空则尝试拉起本地 Chromium"
+  },
+  {
+    "key": "format",
+    "label": "图片格式",
+    "type": "select",
+    "default": "png",
+    "description": "默认输出图片格式",
+    "options": [
+      { "label": "PNG (无损推荐)", "value": "png" },
+      { "label": "JPEG (轻量压缩)", "value": "jpeg" },
+      { "label": "WebP (现代高效)", "value": "webp" }
+    ]
+  },
+  {
+    "key": "deviceScaleFactor",
+    "label": "清晰度倍率 (DPI)",
+    "type": "number",
+    "default": 2,
+    "description": "渲染清晰度缩放比，默认 2 (Retina 高清)"
+  }
+]

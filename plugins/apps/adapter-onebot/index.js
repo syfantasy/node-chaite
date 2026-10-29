@@ -180,11 +180,84 @@ export default function setup(ctx) {
       },
       images,
       raw: event,
+      client: {
+        callAction,
+        sendMsg: sendPacket,
+        getSelfId: () => selfId,
+      },
+      callAction: (action, params) => callAction(action, params),
+      getMemberList: async () => {
+        if (!event.group_id) return []
+        try {
+          const res = await callAction('get_group_member_list', { group_id: event.group_id })
+          return Array.isArray(res?.data) ? res.data : []
+        } catch {
+          return []
+        }
+      },
       reply: (content) => sendPacket(event, content),
     }
 
     ctx.emitMessage(chaiteEvent).catch((err) => {
       ctx.logger.error('消息派发异常:', err)
+    })
+  }
+
+  function handleNoticeEvent(event) {
+    const isPoke =
+      event.notice_type === 'poke' ||
+      (event.notice_type === 'notify' && event.sub_type === 'poke')
+
+    if (!isPoke) return
+
+    const userId = event.user_id
+    const targetId = event.target_id
+    const groupId = event.group_id || null
+    const isSelfPoke = String(targetId) === String(selfId)
+
+    const chaiteEvent = {
+      eventType: 'poke',
+      isPoke: true,
+      isSelfPoke,
+      userId,
+      targetId,
+      groupId,
+      isGroup: Boolean(groupId),
+      isPrivate: !groupId,
+      text: '[戳一戳]',
+      rawText: '[戳一戳]',
+      sender: {
+        userId,
+        nickname: '',
+      },
+      images: [],
+      raw: event,
+      client: {
+        callAction,
+        sendMsg: sendPacket,
+        getSelfId: () => selfId,
+      },
+      callAction: (action, params) => callAction(action, params),
+      getMemberList: async () => {
+        if (!groupId) return []
+        try {
+          const res = await callAction('get_group_member_list', { group_id: groupId })
+          return Array.isArray(res?.data) ? res.data : []
+        } catch {
+          return []
+        }
+      },
+      reply: (content) => {
+        if (groupId) {
+          return sendPacket({ message_type: 'group', group_id: groupId }, content)
+        } else {
+          return sendPacket({ message_type: 'private', user_id: userId }, content)
+        }
+      },
+    }
+
+    ctx.emitMessage(chaiteEvent).catch((err) => {
+      ctx.logger.error('戳一戳事件派发异常:', err)
     })
   }
 
@@ -239,6 +312,8 @@ export default function setup(ctx) {
 
         if (payload.post_type === 'message') {
           handleMessageEvent(payload)
+        } else if (payload.post_type === 'notice') {
+          handleNoticeEvent(payload)
         }
       } catch (err) {
         ctx.logger.error('解析 OneBot 数据包失败:', err)

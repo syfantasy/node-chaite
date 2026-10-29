@@ -12,6 +12,9 @@ import {
   MiddlewarePhase,
   MiddlewareHandler,
   ChaiteEvent,
+  COMMON_PLUGIN_SCHEMA_FIELDS,
+  RendererService,
+  RenderOptions,
 } from './types'
 import { PluginKVStorage } from './storage'
 
@@ -23,6 +26,8 @@ export class PluginManager {
   readonly scriptsDir: string
   readonly appsDir: string
   readonly cacheDir: string
+  private adapters: Map<string, any> = new Map()
+  private services: Map<string, any> = new Map()
 
   constructor(private pluginsDir: string, driver?: any) {
     this.scriptsDir = path.join(pluginsDir, 'scripts')
@@ -47,6 +52,21 @@ export class PluginManager {
 
   setDriver(driver: any) {
     this.kvStorage = new PluginKVStorage(driver)
+  }
+
+  getAdapter(name = 'onebot'): any {
+    return this.adapters.get(name) || (globalThis as any).onebotClient
+  }
+
+  registerService(name: string, service: any) {
+    this.services.set(name, service)
+    if (name === 'renderer') {
+      ;(globalThis as any).chaiteRenderer = service
+    }
+  }
+
+  getService<T = any>(name: string): T | undefined {
+    return this.services.get(name)
   }
 
   private loadState(): Record<string, { enabled: boolean }> {
@@ -171,12 +191,15 @@ export class PluginManager {
           config,
         },
         commands: [],
+        pokeHandlers: [],
+        actions: new Map(),
         middlewares: [],
         cronJobs: [],
         cleanupFns: [],
         adapters: new Map(),
         modelProviders: new Map(),
         tools: [],
+        services: new Map(),
       }
 
       if (enabled) {
@@ -234,12 +257,15 @@ export class PluginManager {
           config,
         },
         commands: [],
+        pokeHandlers: [],
+        actions: new Map(),
         middlewares: [],
         cronJobs: [],
         cleanupFns: [],
         adapters: new Map(),
         modelProviders: new Map(),
         tools: [],
+        services: new Map(),
       }
 
       if (enabled) {
@@ -266,8 +292,22 @@ export class PluginManager {
     instance.cleanupFns = []
 
     instance.commands = []
+    instance.pokeHandlers = []
+    instance.actions.clear()
     instance.middlewares = []
+    for (const key of instance.adapters.keys()) {
+      this.adapters.delete(key)
+    }
     instance.adapters.clear()
+
+    for (const key of instance.services.keys()) {
+      this.services.delete(key)
+    }
+    instance.services.clear()
+    if (!this.services.has('renderer')) {
+      delete (globalThis as any).chaiteRenderer
+    }
+
     instance.modelProviders.clear()
     instance.tools = []
   }
@@ -304,6 +344,18 @@ export class PluginManager {
     if (fs.existsSync(originNodeModules) && !fs.existsSync(shadowNodeModules)) {
       try {
         fs.symlinkSync(originNodeModules, shadowNodeModules, 'junction')
+      } catch {}
+    }
+
+    // 自动规范化 package.json：若缺失 type 则自动补齐 "type": "module"，消除 ESM 警告与二次重析
+    const shadowPkgPath = path.join(shadowDir, 'package.json')
+    if (fs.existsSync(shadowPkgPath)) {
+      try {
+        const pkgData = JSON.parse(fs.readFileSync(shadowPkgPath, 'utf-8'))
+        if (!pkgData.type) {
+          pkgData.type = 'module'
+          fs.writeFileSync(shadowPkgPath, JSON.stringify(pkgData, null, 2), 'utf-8')
+        }
       } catch {}
     }
 
@@ -369,8 +421,45 @@ export class PluginManager {
             : rule
         instance.commands.push({ rule: normalizedRule, handler })
       },
+      onPoke: (handler) => {
+        instance.pokeHandlers.push(handler)
+      },
+      registerAction: (actionName, handler) => {
+        instance.actions.set(actionName, handler)
+      },
       registerAdapter: (name, adapter) => {
         instance.adapters.set(name, adapter)
+        this.adapters.set(name, adapter)
+        if (name === 'onebot') {
+          ;(globalThis as any).onebotClient = adapter
+        }
+      },
+      getAdapter: (name = 'onebot') => {
+        return this.getAdapter(name)
+      },
+      get client() {
+        return this.getAdapter('onebot')
+      },
+      registerService: (name, srv) => {
+        instance.services.set(name, srv)
+        this.registerService(name, srv)
+      },
+      getService: (name) => {
+        return this.getService(name)
+      },
+      registerRenderer: (renderer) => {
+        instance.services.set('renderer', renderer)
+        this.registerService('renderer', renderer)
+      },
+      render: async (opts) => {
+        const renderer = this.getService<RendererService>('renderer') || (globalThis as any).chaiteRenderer
+        if (!renderer || typeof renderer.render !== 'function') {
+          throw new Error('当前系统未启用或未注册可用渲染服务 (可启用 service-renderer 插件)')
+        }
+        return renderer.render(opts)
+      },
+      get services() {
+        return this.services
       },
       registerModelProvider: (name, provider) => {
         instance.modelProviders.set(name, provider)
@@ -424,7 +513,18 @@ export class PluginManager {
   }
 
   getPlugins(): PluginMeta[] {
-    return Array.from(this.plugins.values()).map((p) => p.meta)
+    return Array.from(this.plugins.values()).map((p) => {
+      const existingSchema = (Array.isArray(p.meta.configSchema) ? p.meta.configSchema : []).map((f) => ({
+        ...f,
+        group: f.group || 'plugin',
+      }))
+      const existingKeys = new Set(existingSchema.map((f) => f.key))
+      const extraCommonFields = COMMON_PLUGIN_SCHEMA_FIELDS.filter((f) => !existingKeys.has(f.key))
+      return {
+        ...p.meta,
+        configSchema: [...existingSchema, ...extraCommonFields],
+      }
+    })
   }
 
   async togglePlugin(id: string, enabled: boolean): Promise<boolean> {
@@ -798,12 +898,75 @@ export class PluginManager {
     return false
   }
 
+  private parseListConfig(val: any): string[] {
+    if (!val) return []
+    if (Array.isArray(val)) return val.map(String).map((s) => s.trim()).filter(Boolean)
+    if (typeof val === 'string') {
+      return val.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
+    }
+    return []
+  }
+
+  private isBlockedByPluginCommonConfig(plugin: PluginInstance, event: ChaiteEvent): boolean {
+    const cfg = plugin.meta.config || {}
+
+    // 1. 群聊黑白名单判断
+    if (event.isGroup && event.groupId) {
+      const gId = String(event.groupId)
+      const whiteGroups = this.parseListConfig(cfg.whiteGroups)
+      if (whiteGroups.length > 0 && !whiteGroups.includes(gId)) {
+        return true
+      }
+      const blackGroups = this.parseListConfig(cfg.blackGroups)
+      if (blackGroups.length > 0 && blackGroups.includes(gId)) {
+        return true
+      }
+    }
+
+    // 2. 用户黑白名单判断
+    if (event.userId) {
+      const uId = String(event.userId)
+      const whiteUsers = this.parseListConfig(cfg.whiteUsers)
+      if (whiteUsers.length > 0 && !whiteUsers.includes(uId)) {
+        return true
+      }
+      const blackUsers = this.parseListConfig(cfg.blackUsers)
+      if (blackUsers.length > 0 && blackUsers.includes(uId)) {
+        return true
+      }
+    }
+
+    // 3. 自定义前缀判断（若配置了 customPrefix，则仅当输入满足该前缀时触发）
+    if (cfg.customPrefix && typeof cfg.customPrefix === 'string' && cfg.customPrefix.trim()) {
+      const prefix = cfg.customPrefix.trim()
+      if (!event.text.startsWith(prefix)) {
+        return true
+      }
+    }
+
+    return false
+  }
+
   // 消息指令分发
   async dispatchCommand(event: ChaiteEvent): Promise<boolean> {
     const cleanText = event.text
 
     for (const plugin of this.plugins.values()) {
       if (!plugin.meta.enabled) continue
+      if (this.isBlockedByPluginCommonConfig(plugin, event)) continue
+
+      // 优先响应戳一戳专用处理器
+      if (event.isPoke && plugin.pokeHandlers.length > 0) {
+        for (const handler of plugin.pokeHandlers) {
+          try {
+            const intercepted = await handler(event)
+            if (intercepted !== false) return true
+          } catch (err: any) {
+            console.error(`[PluginManager] Poke error in "${plugin.meta.name}":`, err)
+            return true
+          }
+        }
+      }
 
       for (const { rule, handler } of plugin.commands) {
         let matched = false
@@ -850,5 +1013,25 @@ export class PluginManager {
       }
     }
     return true
+  }
+
+  async triggerAction(
+    pluginId: string,
+    actionName: string,
+    payload?: any
+  ): Promise<{ success: boolean; message?: string; data?: any }> {
+    const plugin = this.plugins.get(pluginId)
+    if (!plugin) {
+      throw new Error(`插件 "${pluginId}" 不存在`)
+    }
+    const handler = plugin.actions.get(actionName)
+    if (!handler) {
+      throw new Error(`插件 "${plugin.meta.name}" 未注册动作 "${actionName}"`)
+    }
+    const res = await handler(payload)
+    if (res && typeof res === 'object' && 'success' in res) {
+      return res
+    }
+    return { success: true, message: '执行成功', data: res }
   }
 }

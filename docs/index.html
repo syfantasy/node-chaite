@@ -142,6 +142,8 @@
       <li class="nav-item"><a href="#media-ref" class="nav-link">6. 多媒体 Ref 体系</a></li>
       <li class="nav-item"><a href="#storage" class="nav-link">7. 轻量持久化 KV</a></li>
       <li class="nav-item"><a href="#tools" class="nav-link">8. 工具与定时任务</a></li>
+      <li class="nav-item"><a href="#poke-actions" class="nav-link">9. 戳一戳与协议直通</a></li>
+      <li class="nav-item"><a href="#service-renderer" class="nav-link">10. 渲染总线与 Shotium</a></li>
     </ul>
   </aside>
 
@@ -292,10 +294,23 @@ await e.reply({
       <pre><code class="language-json">[
   { "key": "apiKey", "label": "第三方 API 密钥", "type": "string" },
   { "key": "prefix", "label": "自定义指令唤醒词", "type": "string", "default": "#打招呼" },
-  { "key": "enableAt", "label": "回复时是否艾特", "type": "boolean", "default": true }
+  { "key": "enableAt", "label": "回复时是否艾特", "type": "boolean", "default": true },
+  {
+    "key": "installEngine",
+    "label": "引擎管理",
+    "type": "button",
+    "buttonText": "📦 一键安装核心组件",
+    "buttonType": "primary",
+    "action": "installEngine",
+    "description": "点击即可在控制台免终端一键自动下载并配置核心依赖"
+  }
 ]
 </code></pre>
-      <p>支持字段类型：<code>string</code>, <code>number</code>, <code>boolean</code>, <code>textarea</code>, <code>select</code>。</p>
+      <p>
+        <strong>支持字段类型：</strong> <code>string</code>, <code>number</code>, <code>boolean</code>, <code>textarea</code>, <code>select</code>, <code>button</code>（声明式交互按钮）。<br/>
+        <strong>按钮类型属性：</strong> <code>buttonText</code>（按钮文案）、<code>buttonType</code>（<code>primary/warning/error/default</code>）、<code>action</code>（触发的动作名）。在插件中通过 <code>ctx.registerAction('installEngine', async () =&gt; { ... })</code> 处理点击事件。<br/>
+        <strong>配置分栏：</strong> 控制台自动拆分为 <code>🔌 插件配置</code>（专有字段）与 <code>⚙️ 通用配置</code>（独立触发前缀与群聊/用户黑白名单拦截）。
+      </p>
     </div>
 
     <!-- 5. 直调 AI & 上下文 -->
@@ -465,6 +480,65 @@ await ctx.storage.delete('user_level_' + e.userId)
   })
 }
 </code></pre>
+
+    <!-- 9. 戳一戳与协议直通 -->
+    <h2 id="poke-actions">9. 戳一戳事件与底层协议动作直通</h2>
+    <div class="card">
+      <p>无需手写底层协议监听，系统自动捕获 OneBot 戳一戳通知，并在 <code>ChaiteEvent</code> 中注入动作调用能力：</p>
+      <pre><code class="language-javascript">export default function setup(ctx) {
+  // 1. 极简注册戳一戳响应
+  ctx.onPoke(async (e) => {
+    if (e.isSelfPoke) {
+      await e.reply('别戳啦，再戳要生气啦！(ง •_•)ง')
+      return true // 拦截事件
+    }
+  })
+
+  // 2. 原生协议动作调用 (彻底告别全局变量)
+  ctx.registerCommand('#群名片列表', async (e) => {
+    if (!e.isGroup) return
+    // 原生便捷群成员查询
+    const members = await e.getMemberList()
+    // 或直接直通底层 OneBot 任意动作 (callAction)
+    const groupInfo = await e.callAction('get_group_info', { group_id: e.groupId })
+    await e.reply(`当前群: ${groupInfo?.data?.group_name}，成员数: ${members.length}`)
+    return true
+  })
+}</code></pre>
+    </div>
+
+    <!-- 10. 渲染总线与 Shotium -->
+    <h2 id="service-renderer">10. 渲染服务总线与 Shotium 本地原生引擎</h2>
+    <div class="card">
+      <p>
+        Chaite 提倡 <strong>Service Provider（服务提供者模式）</strong>：业务插件（如表情包、动态卡片、榜单）不硬编码绑定任何 Chromium 或 Puppeteer，只需调用抽象方法 <code>ctx.render({ html, url })</code>。底层的渲染能力由独立插件 <code>service-renderer</code> 提供并动态切换。
+      </p>
+      <h3>Shotium 本地原生引擎优势 (@pixel.js/shotium)</h3>
+      <ul>
+        <li><strong>无端口、无微服务</strong>：纯本地进程内引擎，无需启动任何 HTTP 端口或 Docker 容器；</li>
+        <li><strong>剔除臃肿</strong>：剥离 V8 JS 引擎与浏览器 DevTools，只保留 Blink 排版与 Skia 绘图，内存占用极低；</li>
+        <li><strong>秒级冷启动</strong>：毫秒级直出 PNG / JPEG / WebP 字节流，完美杜绝 Chromium 僵尸进程；</li>
+        <li><strong>免终端一键安装</strong>：在配置面板中提供声明式 <code>type: "button"</code>，点击即可自动执行 npm 安装或卸载。</li>
+      </ul>
+      <pre><code class="language-javascript">// 业务插件中使用渲染服务极简范例：
+ctx.registerCommand('#生成卡片', async (e) => {
+  const html = `
+    &lt;div style="background:#0f172a;color:#fff;padding:24px;border-radius:12px;font-family:sans-serif;"&gt;
+      &lt;h2 style="color:#38bdf8;margin:0 0 8px;"&gt;🚀 智能体状态卡片&lt;/h2&gt;
+      &lt;p&gt;用户: ${e.sender.nickname || e.userId}&lt;/p&gt;
+      &lt;p&gt;时间: ${new Date().toLocaleString()}&lt;/p&gt;
+    &lt;/div&gt;
+  `
+  // 直接调用系统渲染总线，无论底层是 Shotium 还是 Puppeteer 均完美出图
+  const imageBuf = await ctx.render({ html, format: 'png' })
+  const base64 = Buffer.isBuffer(imageBuf) ? imageBuf.toString('base64') : String(imageBuf)
+  await e.reply({
+    text: '渲染完成：',
+    images: [`base64://${base64}`]
+  })
+  return true
+})</code></pre>
+    </div>
   </main>
 
   <script>

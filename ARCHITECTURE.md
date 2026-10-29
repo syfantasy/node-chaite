@@ -228,9 +228,16 @@ npm run check
 - **多前缀匹配**: 预设触发词支持标签数组（`prefixes`），按最长词优先匹配；向下兼容单前缀 `prefix`。
 - **预设专属黑白名单**: 支持为特定预设配置独立的用户与群组黑白名单。
 
-### 3. 动态黑名单管理
-- `#拉黑群 [群号]` / `#解黑群 [群号]`: 将指定群加入或移除全局黑名单并落盘 `config.json`。
-- `#拉黑 [@某人/QQ号]` / `#解黑 [@某人/QQ号]`: 将指定用户加入或移除全局黑名单并落盘 `config.json`。
+### 3. 动态黑名单与时限管理
+- **永久封禁**:
+  - `#拉黑群 [群号]`: 将指定群加入全局黑名单并落盘 `config.json`；
+  - `#解黑群 [群号]`: 将指定群从全局黑名单及临时封禁中移除；
+  - `#拉黑 [@某人/QQ号]`: 将指定用户加入全局永久黑名单并落盘 `config.json`；
+  - `#解黑 [@某人/QQ号]`: 将指定用户从全局黑名单及临时封禁中移除。
+- **时限临时封禁 (支持自动解黑)**:
+  - 语法支持追加时长（如 `10s`、`5m`、`2h`、`1d`）：例如 `#拉黑 @群友 10m` 或 `#拉黑群 123456 1h`；
+  - **模型 Tool 自动封禁直通**: 系统内置暴露全局 `(globalThis as any).banManager`（包含 `banTarget`、`unbanTarget`、`isTargetBanned`、`parseDuration`），大模型可直接作为 Tool 自发调用临时拉黑某群友一段时间并在到期后由系统自动无感解黑。
+  - **管理面板独立**: Web 管理控制台保持展示纯净的永久配置黑名单，不被临时内存时限干扰。
 
 ### 4. 存储与多模态维护
 - **后台日常维护任务**: 启动后及每 24 小时自动触发一次孤儿图片清理与过期聊天历史截断。
@@ -240,15 +247,34 @@ npm run check
 
 ## 八、 插件化与生态演进
 
-### 1. 插件化系统（`src/plugin/`）
+### 1. 插件化系统架构（`src/plugin/`）
 - **轻量单脚本插件（`plugins/scripts/<id>/index.js`）**:
   - 热插拔、极简事件监听；
   - 适合群聊快捷小指令、消息前置改写等。
 - **完整应用级插件（`plugins/apps/<id>/`）**:
   - 具备独立依赖（`package.json`）、声明式配置架构（`schema.json`）；
-  - ESM 动态隔离与 shadow cache 运行时热重载；
+  - **ESM 运行时自愈**：加载时自动检测并补齐 `"type": "module"`，零编译、零 ESM 警告；
+  - **Shadow Cache 运行时隔离**：动态影子版本控制与无感热重载；
+  - **通用拦截控制**：框架层统一注入自定义前缀（`customPrefix`）与群/用户黑白名单（`whiteGroups`、`blackGroups`、`whiteUsers`、`blackUsers`），插件业务代码无需关心权限校验；
+  - **声明式配置操作按钮 (`type: 'button'`)**：支持在 `schema.json` 中定义触发按钮，结合 `ctx.registerAction` 实现管理面板一键执行维护任务（如一键安装/卸载原生引擎、清理缓存等）；
   - 支持 Zip 纯 JS 打包导入/导出及 Zip Slip 安全校验；
   - 支持标准 Cron 定时调度（动态卸载自动注销 Job）。
+
+### 2. 协议能力直通体系与服务总线（Service Provider）
+- **事件级协议能力 (`ChaiteEvent`)**:
+  - `await e.callAction(action, params)`: 直接调用底层协议动作（如 OneBot `get_msg`、`send_group_forward_msg` 等），彻底告别全局变量；
+  - `await e.getMemberList()`: 原生群成员查询；
+  - `await e.render(options)`: 便捷调用已注册渲染服务；
+  - **戳一戳事件 (`e.isPoke` / `e.isSelfPoke`)**: 协议端自动捕获 OneBot Poke 通知事件，群友戳 Bot 时无缝触发。
+- **插件上下文能力 (`PluginContext`)**:
+  - `ctx.onPoke(handler)`: 极简注册戳一戳监听处理器，响应群友动作；
+  - `ctx.registerAction(name, handler)`: 注册自定义动作处理器，响应 Web 控制台按钮点击；
+  - `ctx.client` / `ctx.getAdapter('onebot')`: 动态获取当前在线的协议客户端；
+  - `ctx.registerService(name, srv)` / `ctx.getService(name)`: 插件间标准服务解耦总线；
+  - `ctx.registerRenderer(renderer)` / `ctx.render(options)`: 渲染服务提供者模式（Service Provider Pattern），业务插件只需调用标准 `render({ html, url })`，底层通过外挂插件自由接入 **Shotium 本地原生引擎 (`@pixel.js/shotium`)** 或 **Puppeteer**，彻底杜绝核心进程硬编码 Chromium；
+  - **Shotium 原生架构**：基于剔除了 V8 与外壳的极轻量 Blink/Skia 单进程渲染，无需任何 HTTP/TCP 网络端口，支持在控制台点击按钮一键免命令行安装/卸载。
+- **前端配置呈现**:
+  - 控制台配置弹窗自动分栏为「🔌 插件配置 ｜ ⚙️ 通用配置」，将业务专有参数与通用权限/前缀控制泾渭分明地隔离展示。
 
 ### 2. 生态与协议扩展规划
 1. **协议解耦**: 支持扩充适配器（如飞书、企业微信、Telegram、Discord 等）；

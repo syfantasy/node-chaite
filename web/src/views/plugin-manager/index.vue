@@ -37,6 +37,7 @@ import {
   savePluginCode,
   savePluginConfig,
   togglePlugin,
+  triggerPluginAction,
   type PluginConfigField,
   type PluginMeta,
 } from '@/service/api/pluginManager'
@@ -68,6 +69,25 @@ const configRawJson = ref('')
 const configMode = ref<'form' | 'json' | 'none'>('form')
 const savingConfig = ref(false)
 const resettingConfig = ref(false)
+const actionLoading = ref<Record<string, boolean>>({})
+
+async function handleTriggerAction(actionName: string, field: any) {
+  if (!configPlugin.value || !actionName) return
+  actionLoading.value[actionName] = true
+  try {
+    const res = await triggerPluginAction(configPlugin.value.id, actionName)
+    if (res.code === 0) {
+      message.success(res.data?.message || res.message || '操作成功完成！')
+      await loadList()
+    } else {
+      message.error(res.message || '操作失败')
+    }
+  } catch (err: any) {
+    message.error(`操作异常: ${err.message}`)
+  } finally {
+    actionLoading.value[actionName] = false
+  }
+}
 
 // --- 删除确认弹窗 ---
 const deleteModalVisible = ref(false)
@@ -226,6 +246,16 @@ function hasPluginConfig(plugin: PluginMeta): boolean {
     return Object.keys(cfg).length > 0
   }
   return false
+}
+
+function getPluginFields(plugin: PluginMeta | null) {
+  if (!plugin || !plugin.configSchema) return []
+  return plugin.configSchema.filter((f: any) => f.group !== 'common')
+}
+
+function getCommonFields(plugin: PluginMeta | null) {
+  if (!plugin || !plugin.configSchema) return []
+  return plugin.configSchema.filter((f: any) => f.group === 'common')
 }
 
 function openConfigModal(plugin: PluginMeta) {
@@ -608,37 +638,88 @@ onMounted(() => {
         </div>
 
         <!-- 视图 1: Schema 可视化表单 -->
-        <NForm v-else-if="configMode === 'form'" label-placement="left" label-width="120">
-          <NFormItem
-            v-for="field in configPlugin.configSchema"
-            :key="field.key"
-            :label="field.label"
-            :feedback="field.description"
-          >
-            <template v-if="field.type === 'boolean'">
-              <NSwitch v-model:value="configFormData[field.key]" />
-            </template>
-            <template v-else-if="field.type === 'number'">
-              <NInputNumber v-model:value="configFormData[field.key]" style="width: 100%;" />
-            </template>
-            <template v-else-if="field.type === 'select'">
-              <NSelect
-                v-model:value="configFormData[field.key]"
-                :options="field.options || []"
-              />
-            </template>
-            <template v-else-if="field.type === 'textarea'">
-              <NInput
-                v-model:value="configFormData[field.key]"
-                type="textarea"
-                :autosize="{ minRows: 2, maxRows: 6 }"
-              />
-            </template>
-            <template v-else>
-              <NInput v-model:value="configFormData[field.key]" />
-            </template>
-          </NFormItem>
-        </NForm>
+        <div v-else-if="configMode === 'form'">
+          <NTabs type="segment" size="small" style="margin-bottom: 16px;">
+            <NTabPane name="plugin" tab="🔌 插件配置">
+              <div v-if="getPluginFields(configPlugin).length === 0" style="text-align: center; padding: 24px 16px; color: #888;">
+                本插件无独立专有配置项（遵循默认规则运行）
+              </div>
+              <NForm v-else label-placement="left" label-width="120">
+                <NFormItem
+                  v-for="field in getPluginFields(configPlugin)"
+                  :key="field.key"
+                  :label="field.label"
+                  :feedback="field.description"
+                >
+                  <template v-if="field.type === 'boolean'">
+                    <NSwitch v-model:value="configFormData[field.key]" />
+                  </template>
+                  <template v-else-if="field.type === 'button'">
+                    <NButton
+                      :type="field.buttonType || 'primary'"
+                      :loading="actionLoading[field.action || field.key]"
+                      @click="handleTriggerAction(field.action || field.key, field)"
+                    >
+                      {{ field.buttonText || field.label }}
+                    </NButton>
+                  </template>
+                  <template v-else-if="field.type === 'number'">
+                    <NInputNumber v-model:value="configFormData[field.key]" style="width: 100%;" />
+                  </template>
+                  <template v-else-if="field.type === 'select'">
+                    <NSelect
+                      v-model:value="configFormData[field.key]"
+                      :options="field.options || []"
+                    />
+                  </template>
+                  <template v-else-if="field.type === 'textarea'">
+                    <NInput
+                      v-model:value="configFormData[field.key]"
+                      type="textarea"
+                      :autosize="{ minRows: 2, maxRows: 6 }"
+                    />
+                  </template>
+                  <template v-else>
+                    <NInput v-model:value="configFormData[field.key]" />
+                  </template>
+                </NFormItem>
+              </NForm>
+            </NTabPane>
+            <NTabPane name="common" tab="⚙️ 通用配置">
+              <NForm label-placement="left" label-width="120">
+                <NFormItem
+                  v-for="field in getCommonFields(configPlugin)"
+                  :key="field.key"
+                  :label="field.label"
+                  :feedback="field.description"
+                >
+                  <template v-if="field.type === 'boolean'">
+                    <NSwitch v-model:value="configFormData[field.key]" />
+                  </template>
+                  <template v-else-if="field.type === 'number'">
+                    <NInputNumber v-model:value="configFormData[field.key]" style="width: 100%;" />
+                  </template>
+                  <template v-else-if="field.type === 'select'">
+                    <NSelect
+                      v-model:value="configFormData[field.key]"
+                      :options="field.options || []"
+                    />
+                  </template>
+                  <template v-else-if="field.type === 'textarea'">
+                    <NInput
+                      v-model:value="configFormData[field.key]"
+                      type="textarea"
+                      :autosize="{ minRows: 2, maxRows: 6 }"
+                    />
+                  </template>
+                  <template v-else>
+                    <NInput v-model:value="configFormData[field.key]" />
+                  </template>
+                </NFormItem>
+              </NForm>
+            </NTabPane>
+          </NTabs>
+        </div>
 
         <!-- 视图 2: 原生 JSON 编辑器 -->
         <div v-else>

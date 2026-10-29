@@ -1,7 +1,7 @@
 import { loadConfig, getConfig, saveConfig } from './config'
 import { initChaiteStorage } from './storage'
 import { startWebServer } from './server'
-import { checkPermission } from './guard'
+import { checkPermission, banTarget, unbanTarget, parseDuration } from './guard'
 import { oneBotToUserMessage, formatModelResponse } from './onebot/message'
 import { OneBotMessageEvent } from './onebot/types'
 import { groupHistoryBuffer } from './context/groupHistoryBuffer'
@@ -172,13 +172,16 @@ async function handleMessage(
 
   if (matchCmd('chaite') || matchCmd('帮助') || matchCmd('help') || matchCmd('gpt帮助')) {
     const helpText = [
-      '🤖 Chaite 指令表',
+      ' Chaite 交互指令',
       '──────────────────',
-      `${cmdPrefix}帮助`,
-      `${cmdPrefix}状态`,
-      `${cmdPrefix}重置对话`,
-      `${cmdPrefix}重置全部对话`,
-      `${cmdPrefix}预设列表`,
+      `• ${cmdPrefix}chaite / ${cmdPrefix}帮助`,
+      `• ${cmdPrefix}结束对话 / ${cmdPrefix}重置对话`,
+      `• ${cmdPrefix}结束全部对话 / ${cmdPrefix}清空全部会话`,
+      `• ${cmdPrefix}预设列表 / ${cmdPrefix}查看预设`,
+      `• ${cmdPrefix}状态 / ${cmdPrefix}ping`,
+      `• ${cmdPrefix}拉黑群 [群号] / ${cmdPrefix}解黑群 [群号]`,
+      `• ${cmdPrefix}拉黑 [@某人/QQ] / ${cmdPrefix}解黑 [@某人/QQ]`,
+      '──────────────────',
     ].join('\n')
 
     await event.reply(helpText)
@@ -226,11 +229,24 @@ async function handleMessage(
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
       return
     }
-    const targetGroup = Number(banGroupMatch.arg) || (event.groupId ? Number(event.groupId) : 0)
+    const parts = banGroupMatch.arg.trim().split(/\s+/)
+    const targetGroup = Number(parts[0]) || (event.groupId ? Number(event.groupId) : 0)
+    const durationStr = parts[1] || ''
+
     if (!targetGroup) {
-      await event.reply(`⚠️ 请指定要拉黑的群号，例如: ${cmdPrefix}拉黑群 123456`)
+      await event.reply(`⚠️ 请指定要拉黑的群号，例如: ${cmdPrefix}拉黑群 123456 [时长如 1h]`)
       return
     }
+
+    const durationMs = parseDuration(durationStr)
+    if (durationMs) {
+      const res = banTarget(targetGroup, 'group', durationMs)
+      const expireDate = new Date(res.expireAt!).toLocaleTimeString()
+      await event.reply(`⏳ 已将群聊 [${targetGroup}] 临时加入黑名单 (${durationStr}，将于 ${expireDate} 自动解黑)。`)
+      return
+    }
+
+    banTarget(targetGroup, 'group', null)
     if (!config.management.blackGroups.includes(targetGroup)) {
       config.management.blackGroups.push(targetGroup)
       saveConfig(config)
@@ -245,11 +261,12 @@ async function handleMessage(
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
       return
     }
-    const targetGroup = Number(unbanGroupMatch.arg) || (event.groupId ? Number(event.groupId) : 0)
+    const targetGroup = Number(unbanGroupMatch.arg.trim().split(/\s+/)[0]) || (event.groupId ? Number(event.groupId) : 0)
     if (!targetGroup) {
       await event.reply(`⚠️ 请指定要解除拉黑的群号，例如: ${cmdPrefix}解黑群 123456`)
       return
     }
+    unbanTarget(targetGroup, 'group')
     config.management.blackGroups = config.management.blackGroups.filter(g => g !== targetGroup)
     saveConfig(config)
     await event.reply(`✅ 已成功将群聊 [${targetGroup}] 从全局黑名单移除。`)
@@ -263,19 +280,35 @@ async function handleMessage(
       return
     }
     let targetUser = 0
+    let durationStr = ''
+    const parts = banUserMatch.arg.trim().split(/\s+/).filter(Boolean)
+
     if (Array.isArray(rawEvent.message)) {
       const atSeg = rawEvent.message.find((seg: any) => seg.type === 'at')
       if (atSeg && (atSeg.data as any)?.qq) {
         targetUser = Number((atSeg.data as any).qq)
+        durationStr = parts[0] || ''
       }
     }
-    if (!targetUser) {
-      targetUser = Number(banUserMatch.arg)
+    if (!targetUser && parts.length > 0) {
+      targetUser = Number(parts[0])
+      durationStr = parts[1] || ''
     }
+
     if (!targetUser) {
-      await event.reply(`⚠️ 请指定要拉黑的用户，例如: ${cmdPrefix}拉黑 10001 或 ${cmdPrefix}拉黑 @群友`)
+      await event.reply(`⚠️ 请指定要拉黑的用户，例如: ${cmdPrefix}拉黑 10001 10m 或 ${cmdPrefix}拉黑 @群友 1h`)
       return
     }
+
+    const durationMs = parseDuration(durationStr)
+    if (durationMs) {
+      const res = banTarget(targetUser, 'user', durationMs)
+      const expireDate = new Date(res.expireAt!).toLocaleTimeString()
+      await event.reply(`⏳ 已将用户 [${targetUser}] 临时加入黑名单 (${durationStr}，将于 ${expireDate} 自动解黑)。`)
+      return
+    }
+
+    banTarget(targetUser, 'user', null)
     if (!config.management.blackUsers.includes(targetUser)) {
       config.management.blackUsers.push(targetUser)
       saveConfig(config)
@@ -298,12 +331,13 @@ async function handleMessage(
       }
     }
     if (!targetUser) {
-      targetUser = Number(unbanUserMatch.arg)
+      targetUser = Number(unbanUserMatch.arg.trim().split(/\s+/)[0])
     }
     if (!targetUser) {
       await event.reply(`⚠️ 请指定要解除拉黑的用户，例如: ${cmdPrefix}解黑 10001 或 ${cmdPrefix}解黑 @群友`)
       return
     }
+    unbanTarget(targetUser, 'user')
     config.management.blackUsers = config.management.blackUsers.filter(u => u !== targetUser)
     saveConfig(config)
     await event.reply(`✅ 已成功将用户 [${targetUser}] 从全局黑名单移除。`)

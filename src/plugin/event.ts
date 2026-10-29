@@ -51,6 +51,11 @@ export class ChaiteEvent {
   readonly sender: SenderInfo
   readonly images: ImageAttachment[]
   readonly raw: any
+  readonly client?: any
+  readonly eventType: string
+  readonly isPoke: boolean
+  readonly isSelfPoke: boolean
+  readonly targetId?: number | string
 
   private replyHandler: (content: ReplyContent) => Promise<any>
 
@@ -62,6 +67,11 @@ export class ChaiteEvent {
     sender: SenderInfo
     images?: ImageAttachment[]
     raw: any
+    client?: any
+    eventType?: string
+    isPoke?: boolean
+    isSelfPoke?: boolean
+    targetId?: number | string
     replyHandler: (content: ReplyContent) => Promise<any>
   }) {
     this.userId = params.userId
@@ -71,6 +81,11 @@ export class ChaiteEvent {
     this.sender = params.sender
     this.images = params.images || []
     this.raw = params.raw
+    this.client = params.client
+    this.eventType = params.eventType || 'message'
+    this.isPoke = Boolean(params.isPoke || params.eventType === 'poke')
+    this.isSelfPoke = Boolean(params.isSelfPoke)
+    this.targetId = params.targetId
     this.replyHandler = params.replyHandler
   }
 
@@ -80,6 +95,44 @@ export class ChaiteEvent {
 
   get isPrivate(): boolean {
     return !this.isGroup
+  }
+
+  /**
+   * 快捷调用底层适配器协议动作 (如 OneBot 的 callAction)
+   */
+  async callAction(action: string, params: Record<string, any> = {}): Promise<any> {
+    if (this.client && typeof this.client.callAction === 'function') {
+      return this.client.callAction(action, params)
+    }
+    const globalClient = (globalThis as any).onebotClient
+    if (globalClient && typeof globalClient.callAction === 'function') {
+      return globalClient.callAction(action, params)
+    }
+    throw new Error('当前环境无可用协议客户端 (Client 未就绪)')
+  }
+
+  /**
+   * 快捷获取当前群的成员列表 (仅群聊可用)
+   */
+  async getMemberList(): Promise<any[]> {
+    if (!this.groupId) return []
+    try {
+      const res = await this.callAction('get_group_member_list', { group_id: Number(this.groupId) })
+      return Array.isArray(res?.data) ? res.data : []
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * 调用已注册的渲染服务将 HTML / URL 转换为图片
+   */
+  async render(options: any): Promise<Buffer | string> {
+    const renderer = (globalThis as any).chaiteRenderer
+    if (renderer && typeof renderer.render === 'function') {
+      return renderer.render(options)
+    }
+    throw new Error('当前系统未启用或未注册可用渲染服务 (请检查是否已安装并启用 service-renderer 插件)')
   }
 
   /**

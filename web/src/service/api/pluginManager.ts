@@ -3,10 +3,14 @@ import { request } from '../http'
 export interface PluginConfigField {
   key: string
   label: string
-  type: 'string' | 'number' | 'boolean' | 'textarea' | 'select'
+  type: 'string' | 'number' | 'boolean' | 'textarea' | 'select' | 'button'
   default?: any
   description?: string
   options?: Array<{ label: string; value: any }>
+  buttonText?: string
+  buttonType?: 'default' | 'primary' | 'info' | 'success' | 'warning' | 'error'
+  action?: string
+  group?: 'plugin' | 'common'
 }
 
 export interface PluginMeta {
@@ -68,4 +72,8 @@ export function deletePlugin(id: string, keepConfig: boolean = true) {
 
 export function resetPluginConfig(id: string) {
   return request.Post<{ code: number; data: { config: Record<string, any> }; message: string }>(`/api/plugins/${id}/reset-config`)
+}
+
+export function triggerPluginAction(id: string, action: string, payload?: any) {
+  return request.Post<{ code: number; data?: any; message: string }>(`/api/plugins/${id}/action/${action}`, payload || {})
 }
