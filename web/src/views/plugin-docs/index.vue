@@ -170,7 +170,7 @@ export default function setup(ctx) {
           <div class="spec-item">
             <h3>单文件 / 脚本插件 (Single-File)</h3>
             <ul>
-              <li>统一目录：<code>plugins/&lt;plugin-id&gt;/index.js</code>（支持直接放置 <code>plugins/&lt;name&gt;.js</code> 自动归档）</li>
+              <li>存放目录：<code>plugins/scripts/&lt;plugin-id&gt;/index.js</code>（支持直接丢 <code>plugins/scripts/&lt;name&gt;.js</code> 自动归档）</li>
               <li>开箱即用，无需复杂构建</li>
               <li>可在 Web 控制台在线查看、修改源码并<strong>免重启实时重载</strong></li>
               <li>适合轻量指令、小工具、群互动与娱乐功能</li>
@@ -179,7 +179,7 @@ export default function setup(ctx) {
           <div class="spec-item">
             <h3>工程目录包插件 (Directory Package)</h3>
             <ul>
-              <li>统一目录：<code>plugins/&lt;plugin-id&gt;/</code></li>
+              <li>存放目录：<code>plugins/apps/&lt;plugin-id&gt;/</code></li>
               <li>包含 <code>package.json</code> 与入口文件（<code>index.js</code>）</li>
               <li>专属静态配置保存在同级 <code>config.json</code>，拷贝即迁移</li>
               <li>适合复杂业务逻辑、多模块拆分或引入第三方 npm 依赖的完整套件</li>

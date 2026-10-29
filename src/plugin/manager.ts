@@ -20,11 +20,21 @@ export class PluginManager {
   private stateFilePath: string
   private kvStorage?: PluginKVStorage
 
+  readonly scriptsDir: string
+  readonly appsDir: string
   readonly cacheDir: string
 
   constructor(private pluginsDir: string, driver?: any) {
+    this.scriptsDir = path.join(pluginsDir, 'scripts')
+    this.appsDir = path.join(pluginsDir, 'apps')
     this.cacheDir = path.join(pluginsDir, '.cache', 'runtime')
 
+    if (!fs.existsSync(this.scriptsDir)) {
+      fs.mkdirSync(this.scriptsDir, { recursive: true })
+    }
+    if (!fs.existsSync(this.appsDir)) {
+      fs.mkdirSync(this.appsDir, { recursive: true })
+    }
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true })
     }
@@ -63,33 +73,59 @@ export class PluginManager {
     this.plugins.clear()
     const state = this.loadState()
 
-    const ignoredNames = new Set(['.cache', '.git', 'node_modules', '.plugins_state.json'])
+    // 1. 扫描工程包插件 (plugins/apps/<id>/)
+    if (fs.existsSync(this.appsDir)) {
+      const appEntries = fs.readdirSync(this.appsDir, { withFileTypes: true })
+      for (const entry of appEntries) {
+        if (entry.name.startsWith('.')) continue
+        const fullPath = path.join(this.appsDir, entry.name)
+        if (entry.isDirectory()) {
+          const pluginId = entry.name
+          await this.loadDirectoryPlugin(pluginId, fullPath, state[pluginId]?.enabled ?? true)
+        }
+      }
+    }
 
-    if (fs.existsSync(this.pluginsDir)) {
-      const entries = fs.readdirSync(this.pluginsDir, { withFileTypes: true })
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || ignoredNames.has(entry.name)) continue
-        const fullPath = path.join(this.pluginsDir, entry.name)
+    // 2. 扫描单 JS 脚本插件 (plugins/scripts/<id>/ 或 plugins/scripts/<id>.js)
+    if (fs.existsSync(this.scriptsDir)) {
+      const scriptEntries = fs.readdirSync(this.scriptsDir, { withFileTypes: true })
+      for (const entry of scriptEntries) {
+        if (entry.name.startsWith('.')) continue
+        const fullPath = path.join(this.scriptsDir, entry.name)
 
         if (entry.isDirectory()) {
           const pluginId = entry.name
-          const hasPackageJson = fs.existsSync(path.join(fullPath, 'package.json'))
-          const isEnabled = state[pluginId]?.enabled ?? true
-
-          if (hasPackageJson) {
-            await this.loadDirectoryPlugin(pluginId, fullPath, isEnabled)
-          } else {
-            await this.loadScriptPluginDir(pluginId, fullPath, isEnabled)
-          }
+          await this.loadScriptPluginDir(pluginId, fullPath, state[pluginId]?.enabled ?? true)
         } else if (entry.isFile() && (entry.name.endsWith('.js') || entry.name.endsWith('.mjs'))) {
-          // 兼容根目录直接丢单个 .js 插件：自动归档为独立子目录
+          // 自动建目录归拢
           const pluginId = path.parse(entry.name).name
-          const targetDir = path.join(this.pluginsDir, pluginId)
+          const targetDir = path.join(this.scriptsDir, pluginId)
           if (!fs.existsSync(targetDir)) {
             fs.mkdirSync(targetDir, { recursive: true })
             fs.renameSync(fullPath, path.join(targetDir, 'index.js'))
           }
           await this.loadScriptPluginDir(pluginId, targetDir, state[pluginId]?.enabled ?? true)
+        }
+      }
+    }
+
+    // 3. 根目录兼任（若直接放于 plugins/ 下）
+    const rootIgnored = new Set(['.cache', '.git', 'node_modules', '.plugins_state.json', 'apps', 'scripts'])
+    if (fs.existsSync(this.pluginsDir)) {
+      const entries = fs.readdirSync(this.pluginsDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || rootIgnored.has(entry.name)) continue
+        const fullPath = path.join(this.pluginsDir, entry.name)
+        if (entry.isDirectory()) {
+          const pluginId = entry.name
+          if (this.plugins.has(pluginId)) continue
+          const hasPackageJson = fs.existsSync(path.join(fullPath, 'package.json'))
+          const isEnabled = state[pluginId]?.enabled ?? true
+          if (hasPackageJson) {
+            await this.loadDirectoryPlugin(pluginId, fullPath, isEnabled)
+          } else {
+            await this.loadScriptPluginDir(pluginId, fullPath, isEnabled)
+          }
         }
       }
     }
@@ -475,7 +511,7 @@ export class PluginManager {
       filePath = plugin.meta.entryPath
       pluginDir = path.dirname(filePath)
     } else {
-      pluginDir = path.join(this.pluginsDir, id)
+      pluginDir = path.join(this.scriptsDir, id)
       if (!fs.existsSync(pluginDir)) {
         fs.mkdirSync(pluginDir, { recursive: true })
       }
@@ -565,8 +601,8 @@ export class PluginManager {
     }
 
     if (targetType === 'single-file' && !isZip) {
-      // 单纯上传了 .js 文件
-      const targetDir = path.join(this.pluginsDir, pluginId)
+      // 单纯上传了 .js 文件 -> 存入 scripts/<id>/
+      const targetDir = path.join(this.scriptsDir, pluginId)
       if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
       fs.writeFileSync(path.join(targetDir, 'index.js'), buffer)
       const cfgPath = path.join(targetDir, 'config.json')
@@ -576,7 +612,10 @@ export class PluginManager {
       return { id: pluginId, overwritten: wasOverwritten }
     }
 
-    const destDir = path.join(this.pluginsDir, pluginId)
+    const destDir =
+      targetType === 'directory'
+        ? path.join(this.appsDir, pluginId)
+        : path.join(this.scriptsDir, pluginId)
 
     if (fs.existsSync(destDir)) {
       fs.rmSync(destDir, { recursive: true, force: true })

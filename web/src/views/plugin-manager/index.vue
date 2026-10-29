@@ -472,7 +472,7 @@ onMounted(() => {
 
               <template #action>
                 <NSpace justify="space-between" align="center">
-                  <span class="plugin-id-tag">plugins/{{ plugin.id }}/</span>
+                  <span class="plugin-id-tag">scripts/{{ plugin.id }}/</span>
                   <NSpace size="small">
                     <NButton
                       size="small"
@@ -534,7 +534,7 @@ onMounted(() => {
 
               <template #action>
                 <NSpace justify="space-between" align="center">
-                  <span class="plugin-id-tag">plugins/{{ plugin.id }}/</span>
+                  <span class="plugin-id-tag">apps/{{ plugin.id }}/</span>
                   <NSpace size="small">
                     <NButton
                       size="small"
@@ -580,7 +580,7 @@ onMounted(() => {
       <div v-if="configPlugin">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <span style="font-size: 13px; color: #888;">
-            配置文件：<code>plugins/{{ configPlugin.id }}/config.json</code>
+            配置文件：<code>{{ configPlugin.type === 'directory' ? 'apps' : 'scripts' }}/{{ configPlugin.id }}/config.json</code>
           </span>
           <NRadioGroup v-if="configPlugin.configSchema && configPlugin.configSchema.length > 0" v-model:value="configMode" size="small">
             <NRadio value="form">表单视图</NRadio>
