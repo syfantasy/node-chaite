@@ -771,7 +771,16 @@ async function handleMessage(
               })
             }
 
-            // 将所有视觉附件以图文交错的形式追加到 UserMessage 尾部
+            // 提取提问者原始的用户消息部件（保持原样，放置在最末尾，避免被伪造/注入人造前缀）
+            const originalUserParts = [...userMessage.content]
+            userMessage.content = []
+
+            // 1. 注入群聊环境、花名册、发言流水与附图清单
+            if (contextParts.length > 0) {
+              userMessage.content.push(...contextParts)
+            }
+
+            // 2. 注入图文交错的视觉素材
             if (visualAttachments.length > 0) {
               for (const att of visualAttachments) {
                 userMessage.content.push({
@@ -785,11 +794,12 @@ async function handleMessage(
                 } as ImageContent)
               }
             }
-          }
-        }
 
-        if (contextParts.length > 0) {
-          userMessage.content.unshift(...contextParts)
+            // 3. 提问者真实输入沉底（最末尾），拥有最强末尾注意力，且不带人造标签防止 Prompt 注入
+            if (originalUserParts.length > 0) {
+              userMessage.content.push(...originalUserParts)
+            }
+          }
         }
       } catch (err: any) {
         console.warn('[Runner] Failed to build group context:', err?.message || err)
