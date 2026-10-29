@@ -594,6 +594,8 @@ export class AbstractClient implements IClient {
         model: options.model,
         contents: modelResponse.content,
         usage: modelResponse.usage,
+        rawRequest: (modelResponse as any)?.rawRequest,
+        rawResponse: (modelResponse as any)?.rawResponse,
       } as ModelResponse
     }
     if (!asyncLocalStorage.getStore()) {
@@ -722,7 +724,7 @@ export class AbstractClient implements IClient {
     })))
   }
 
-  _sendMessage(_histories: IMessage[], _apiKey: string, _options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage }> {
+  _sendMessage(_histories: IMessage[], _apiKey: string, _options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage; rawRequest?: any; rawResponse?: any }> {
     throw new Error('Abstract class not implemented')
   }
 

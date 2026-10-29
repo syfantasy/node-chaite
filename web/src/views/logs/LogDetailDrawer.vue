@@ -90,24 +90,40 @@ const toolCalls = computed(() => {
   return []
 })
 
-const foldedRawJson = computed(() => {
-  if (!props.log) return ''
-  const clone = JSON.parse(JSON.stringify(props.log))
-
-  function foldBase64InObject(obj: any) {
-    if (!obj || typeof obj !== 'object') return
-    for (const key of Object.keys(obj)) {
-      const val = obj[key]
-      if (typeof val === 'string') {
-        if (val.startsWith('data:image/') || (val.length > 200 && /^[A-Za-z0-9+/=]+$/.test(val.slice(0, 100)))) {
-          obj[key] = `[🖼️ Base64 Data (${Math.round((val.length / 1024) * 10) / 10} KB) - 在请求选项卡中查看或预览]`
-        }
-      } else if (typeof val === 'object') {
-        foldBase64InObject(val)
+function foldBase64InObject(obj: any) {
+  if (!obj || typeof obj !== 'object') return
+  for (const key of Object.keys(obj)) {
+    const val = obj[key]
+    if (typeof val === 'string') {
+      if (val.startsWith('data:image/') || (val.length > 200 && /^[A-Za-z0-9+/=]+$/.test(val.slice(0, 100)))) {
+        obj[key] = `[🖼️ Base64 Data (${Math.round((val.length / 1024) * 10) / 10} KB) - 在请求选项卡中查看或预览]`
       }
+    } else if (typeof val === 'object') {
+      foldBase64InObject(val)
     }
   }
+}
 
+const rawRequestData = computed(() => {
+  return (props.log?.metadata as any)?.rawRequest || null
+})
+
+const rawResponseData = computed(() => {
+  return (props.log?.metadata as any)?.rawResponse || null
+})
+
+const foldedRawRequest = computed(() => {
+  const target = rawRequestData.value || reqPayload.value
+  if (!target) return ''
+  const clone = JSON.parse(JSON.stringify(target))
+  foldBase64InObject(clone)
+  return JSON.stringify(clone, null, 2)
+})
+
+const foldedRawResponse = computed(() => {
+  const target = rawResponseData.value || respPayload.value
+  if (!target) return ''
+  const clone = JSON.parse(JSON.stringify(target))
   foldBase64InObject(clone)
   return JSON.stringify(clone, null, 2)
 })
@@ -278,19 +294,37 @@ const foldedRawJson = computed(() => {
           </div>
         </NTabPane>
 
-        <!-- Tab 3: 原始元数据 (JSON) -->
-        <NTabPane name="raw" tab="原始报文 (JSON)">
+        <!-- Tab 3: 原始发给 AI 的请求 -->
+        <NTabPane name="rawRequest" tab="原始请求 (AI)">
           <div style="position: relative;">
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
-              <NButton size="tiny" secondary @click="copyText(JSON.stringify(log, null, 2))">
-                复制完整 JSON (含 Base64)
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span class="text-xs text-gray-500">
+                {{ rawRequestData ? '直接发送给大模型 API / SDK 的原生请求报文' : '当前日志未捕获原生 SDK 请求体（显示为插件构造体）' }}
+              </span>
+              <NButton size="tiny" secondary @click="copyText(JSON.stringify(rawRequestData || reqPayload, null, 2))">
+                复制原始请求 JSON
               </NButton>
             </div>
-            <pre class="p-3 bg-gray-900 text-gray-100 rounded text-xs overflow-x-auto max-h-[500px] font-mono leading-relaxed">{{ foldedRawJson }}</pre>
+            <pre class="p-3 bg-gray-900 text-gray-100 rounded text-xs overflow-x-auto max-h-[500px] font-mono leading-relaxed">{{ foldedRawRequest || '暂无请求报文' }}</pre>
           </div>
         </NTabPane>
 
-        <!-- Tab 4: 错误追踪 -->
+        <!-- Tab 4: 原始 AI 返回的响应 -->
+        <NTabPane name="rawResponse" tab="原始响应 (AI)">
+          <div style="position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span class="text-xs text-gray-500">
+                {{ rawResponseData ? '大模型 API / SDK 直接返回的原生完整响应报文' : '当前日志未捕获原生 SDK 响应体（显示为插件提取体）' }}
+              </span>
+              <NButton size="tiny" secondary @click="copyText(JSON.stringify(rawResponseData || respPayload, null, 2))">
+                复制原始响应 JSON
+              </NButton>
+            </div>
+            <pre class="p-3 bg-gray-900 text-gray-100 rounded text-xs overflow-x-auto max-h-[500px] font-mono leading-relaxed">{{ foldedRawResponse || '暂无响应报文' }}</pre>
+          </div>
+        </NTabPane>
+
+        <!-- Tab 5: 错误追踪 -->
         <NTabPane v-if="log.level === 'error' || errorPayload || log.detail" name="error" tab="错误追踪">
           <NAlert type="error" title="执行异常" class="mb-3">
             {{ errorPayload?.message || log.detail || log.summary }}

@@ -7,7 +7,7 @@ import { OneBotMessageEvent } from './onebot/types'
 import { groupHistoryBuffer } from './context/groupHistoryBuffer'
 import { mediaRefStore } from './onebot/refStore'
 import { pluginManager, ChaiteEvent } from './plugin'
-import { Chaite, EventMessage, SendMessageOption, drivers } from './core'
+import { Chaite, EventMessage, SendMessageOption, drivers, TextContent } from './core'
 
 async function bootstrap() {
   console.log('==============================================')
@@ -552,10 +552,12 @@ async function handleMessage(
       }
     )
 
-    const isBym = preset?.isBymMode === true || preset?.presetMode === 'bym'
+    const isBym = preset?.isBymMode === true || preset?.presetMode === 'bym' || preset?.disableConversationContext === true
     sendOptions.isBymMode = isBym
     if (isBym) {
-      sendOptions.conversationId = conversationId
+      sendOptions.conversationId = crypto.randomUUID()
+      sendOptions.disableHistoryRead = true
+      sendOptions.disableHistorySave = true
       sendOptions.stream = false
     }
 
@@ -595,10 +597,17 @@ async function handleMessage(
             groupContext,
             '<!-- END_GROUP_CONTEXT -->',
           ].join('\n')
-          const baseSystemOverride = sendOptions.systemOverride || preset?.sendMessageOption?.systemOverride || ''
-          sendOptions.systemOverride = [baseSystemOverride, groupContextBlock]
-            .filter(Boolean)
-            .join('\n\n')
+
+          // 注入到当前轮次的用户输入顶部，直观且与多模态数据对齐
+          const firstTextPart = userMessage.content?.find((part): part is TextContent => part.type === 'text')
+          if (firstTextPart) {
+            firstTextPart.text = `${groupContextBlock}\n\n${firstTextPart.text}`
+          } else {
+            userMessage.content.unshift({
+              type: 'text',
+              text: groupContextBlock,
+            })
+          }
         }
       } catch (err: any) {
         console.warn('[Runner] Failed to build group context:', err?.message || err)
@@ -740,6 +749,8 @@ async function handleMessage(
               triggerType: isBym ? "bym_mode" : (preset?.prefix ? `preset_prefix (${preset.prefix})` : "direct_chat"),
               isBymMode: isBym,
               status: errorCaught ? 500 : 200,
+              rawRequest: (response as any)?.rawRequest,
+              rawResponse: (response as any)?.rawResponse,
               requestPayload: {
                 userMessage,
                 sendOptions: cleanOptionsForLog(sendOptions),

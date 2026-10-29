@@ -15,7 +15,7 @@ export class ClaudeClient extends AbstractClient {
     this.name = 'claude'
   }
 
-  async _sendMessage(histories: IMessage[], apiKey: string, options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage }> {
+  async _sendMessage(histories: IMessage[], apiKey: string, options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage; rawRequest?: any; rawResponse?: any }> {
     const debug = this.context.chaite.getGlobalConfig()?.getDebug()
     const request = buildClaudeRequest(histories, this.tools, options)
 
@@ -54,6 +54,8 @@ export class ClaudeClient extends AbstractClient {
     return {
       ...rspToSave,
       usage,
+      rawRequest: request,
+      rawResponse: result,
     }
   }
 

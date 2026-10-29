@@ -28,7 +28,7 @@ export class OpenAIClient extends AbstractClient {
     this.name = 'openai'
   }
 
-  async _sendMessage(histories: IMessage[], apiKey: string, options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage }> {
+  async _sendMessage(histories: IMessage[], apiKey: string, options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage; rawRequest?: any; rawResponse?: any }> {
     const debug = this.context.chaite?.getGlobalConfig()?.getDebug()
     const client = new OpenAI({
       apiKey,
@@ -85,6 +85,8 @@ export class OpenAIClient extends AbstractClient {
     return {
       ...result,
       usage,
+      rawRequest: request,
+      rawResponse: chatCompletion,
     }
   }
 

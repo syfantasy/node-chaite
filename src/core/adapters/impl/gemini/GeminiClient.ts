@@ -40,7 +40,7 @@ export class GeminiClient extends AbstractClient {
     this.setToolCallLimitConfig(effectiveLimit)
   }
 
-  async _sendMessage(histories: IMessage[], apiKey: string, options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage }> {
+  async _sendMessage(histories: IMessage[], apiKey: string, options: SendMessageOption): Promise<HistoryMessage & { usage: ModelUsage; rawRequest?: any; rawResponse?: any }> {
     const debug = this.context.chaite.getGlobalConfig()?.getDebug()
     const { request: req, suppressedBuiltinTools, hasEffectiveBuiltinTools } = await buildGeminiRequest(histories, this.tools, options)
     const model = req.model
@@ -88,6 +88,8 @@ export class GeminiClient extends AbstractClient {
     return {
       ...rspToSave,
       usage,
+      rawRequest: req,
+      rawResponse: result,
     }
   }
 

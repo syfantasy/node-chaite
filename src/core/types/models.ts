@@ -155,6 +155,8 @@ export interface ModelResponse {
   model?: string
   contents: MessageContent[]
   usage?: ModelUsage
+  rawRequest?: any
+  rawResponse?: any
 }
 
 export interface ModelUsage {
