@@ -22,6 +22,13 @@ export interface GroupContextOptions {
   }
 }
 
+export interface GroupContextResult {
+  membersBlock: string | null
+  messagesBlock: string | null
+  recentImageRefs: string[]
+  fullText: string
+}
+
 export interface BufferedMessage {
   messageId: string | number
   rawTime: number
@@ -35,6 +42,42 @@ export interface BufferedMessage {
   text: string
   tokens: number
   imageRefs?: string[]
+}
+
+function parseCqMessageToSegments(content: string): Array<{ type: string; data: Record<string, any> }> {
+  const segments: Array<{ type: string; data: Record<string, any> }> = []
+  const cqRegex = /\[CQ:([a-zA-Z0-9_\-]+)(?:,([^\]]*))?\]/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = cqRegex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      const text = content.slice(lastIndex, match.index)
+      if (text) segments.push({ type: 'text', data: { text } })
+    }
+    const type = match[1]
+    const rawParams = match[2] || ''
+    const data: Record<string, any> = {}
+    if (rawParams) {
+      const parts = rawParams.split(',')
+      for (const p of parts) {
+        const eqIdx = p.indexOf('=')
+        if (eqIdx !== -1) {
+          const key = p.slice(0, eqIdx).trim()
+          const val = p.slice(eqIdx + 1).trim()
+          data[key] = val
+        }
+      }
+    }
+    segments.push({ type, data })
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < content.length) {
+    const text = content.slice(lastIndex)
+    if (text) segments.push({ type: 'text', data: { text } })
+  }
+  return segments
 }
 
 /**
@@ -153,11 +196,18 @@ export class GroupHistoryBuffer {
    */
   private async formatSegmentsToText(event: OneBotMessageEvent, onebotClient?: any): Promise<{ text: string; imageRefs: string[] }> {
     const rawMsg: any = event.message
-    if (typeof rawMsg === 'string') {
+    let segments: Array<{ type: string; data?: Record<string, any> }> = []
+
+    if (Array.isArray(rawMsg) && rawMsg.length > 0) {
+      segments = rawMsg
+    } else if (typeof rawMsg === 'string' && rawMsg.includes('[CQ:')) {
+      segments = parseCqMessageToSegments(rawMsg)
+    } else if (typeof (event as any).raw_message === 'string' && (event as any).raw_message.includes('[CQ:')) {
+      segments = parseCqMessageToSegments((event as any).raw_message)
+    } else if (typeof rawMsg === 'string') {
       return { text: rawMsg.replace(/\r\n/g, '\n'), imageRefs: [] }
     }
 
-    const segments = Array.isArray(rawMsg) ? rawMsg : []
     const parts: string[] = []
     const imageRefs: string[] = []
 
@@ -330,7 +380,7 @@ export class GroupHistoryBuffer {
     options: GroupContextOptions = {},
     excludeMessageId?: string | number,
     onebotClient?: any
-  ): Promise<string | null> {
+  ): Promise<GroupContextResult | null> {
     const gid = String(groupId)
     let list = this.buffers.get(gid) || []
 
@@ -513,28 +563,47 @@ export class GroupHistoryBuffer {
       memberLines.push(`- 群名片: ${cardStr}, QQ昵称: ${nickStr} (${details.join(', ')})`)
     }
 
-    // 2. Build concise message stream with verified badges
+    // 2. Build concise message stream with verified badges and index/id
     const messageLines: string[] = []
-    for (const msg of effectiveSlice) {
+    const recentImageRefs: string[] = []
+
+    for (let idx = 0; idx < effectiveSlice.length; idx++) {
+      const msg = effectiveSlice[idx]
       const userMeta = memberMap.get(msg.userId)
       const speakerName = userMeta ? userMeta.displayName : getSafeSpeakerName(msg.card, msg.nickname)
       const badgeStr = userMeta?.roleBadge ? ` ${userMeta.roleBadge}` : ''
 
+      if (msg.imageRefs && msg.imageRefs.length > 0) {
+        for (const ref of msg.imageRefs) {
+          if (!recentImageRefs.includes(ref)) {
+            recentImageRefs.push(ref)
+          }
+        }
+      }
+
       // Keep single line per message, escaping inner linebreaks if necessary
       const inlineText = msg.text.replace(/\r\n|\r|\n/g, ' ')
-      messageLines.push(`[${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
+      const msgIdTag = msg.messageId ? ` msg:${msg.messageId}` : ''
+      messageLines.push(`[#${idx + 1}${msgIdTag} ${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
     }
 
-    const parts: string[] = []
-    if (memberLines.length > 0) {
-      parts.push('<chat_members>', ...memberLines, '</chat_members>')
-    }
-    if (messageLines.length > 0) {
-      if (parts.length > 0) parts.push('')
-      parts.push('<group_messages>', ...messageLines, '</group_messages>')
+    const membersBlock = memberLines.length > 0 ? `<chat_members>\n${memberLines.join('\n')}\n</chat_members>` : null
+    const messagesBlock = messageLines.length > 0 ? `<group_messages>\n${messageLines.join('\n')}\n</group_messages>` : null
+
+    if (!membersBlock && !messagesBlock) {
+      return null
     }
 
-    return parts.length > 0 ? parts.join('\n') : null
+    const fullParts: string[] = []
+    if (membersBlock) fullParts.push(membersBlock)
+    if (messagesBlock) fullParts.push(messagesBlock)
+
+    return {
+      membersBlock,
+      messagesBlock,
+      recentImageRefs,
+      fullText: fullParts.join('\n\n'),
+    }
   }
 
   /**

@@ -136,9 +136,20 @@ export class AbstractClient implements IClient {
     const toolManager = this.context.chaite.getToolsManager()
     const groupIds = toolGroupIds ? [...toolGroupIds] : []
     const builtinCategories = new Set(this.context.getOptions()?.builtinToolCategories ?? [])
-    // These compact MCP discovery tools are always available, but real MCP
-    // schemas are only loaded after the model selects the required tools.
-    if (builtinCategories.has('mcp-discovery') && this.context.chaite?.getMcpCapabilityManager?.()) {
+    // These compact MCP discovery tools are only mounted when MCP servers are configured or active.
+    const presetOptions = this.context.getOptions()
+    const hasPresetMcp = Array.isArray(presetOptions?.mcpServerIds) && presetOptions.mcpServerIds.length > 0
+    let hasActiveMcp = hasPresetMcp
+    if (!hasActiveMcp) {
+      try {
+        const mcpMgr = (this.context.chaite as any)?.getMcpServerManager?.()
+        if (mcpMgr) {
+          const list = await mcpMgr.listEnabled()
+          if (Array.isArray(list) && list.length > 0) hasActiveMcp = true
+        }
+      } catch {}
+    }
+    if (hasActiveMcp && builtinCategories.has('mcp-discovery') && this.context.chaite?.getMcpCapabilityManager?.()) {
       for (const tool of createMcpCapabilityTools()) pushUnique(tool)
     }
     // Configuration-changing tools are never exposed in normal group chats.

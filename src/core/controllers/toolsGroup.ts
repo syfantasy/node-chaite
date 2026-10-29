@@ -21,12 +21,22 @@ async function wrap(res: Response, fn: () => Promise<unknown>) {
   }
 }
 
+const DEFAULT_SYSTEM_GROUP: ToolsGroupDTO = {
+  id: 'default_local',
+  name: '全部工具 (系统默认)',
+  description: '自动包含当前系统中加载的所有本地工具',
+  tools: [],
+  createdAt: 0,
+  updatedAt: 0,
+} as any
+
 // ─── Local CRUD ───────────────────────────────────────────────────────────────
 
 /** GET /api/toolGroups/list?name=xxx&page=1&pageSize=20 */
 router.get('/list', (req: Request, res: Response) => {
   wrap(res, async () => {
     let items = await Chaite.getInstance().getToolsGroupManager().listInstances()
+    items = [DEFAULT_SYSTEM_GROUP, ...items.filter(g => g.id !== 'default_local')]
     const name = req.query['name'] as string | undefined
     if (name) items = items.filter(g => g.name.includes(name))
     return paginate(items, req)
@@ -36,6 +46,10 @@ router.get('/list', (req: Request, res: Response) => {
 /** POST /api/toolGroups — create */
 router.post('/', (req: Request<object, object, ToolsGroupDTO>, res: Response) => {
   wrap(res, async () => {
+    if (req.body.id === 'default_local') {
+      res.status(400).json(ChaiteResponse.fail(null, 'default_local 为保留的系统默认工具组 ID'))
+      return null
+    }
     const id = await Chaite.getInstance().getToolsGroupManager().addInstance(req.body)
     return { ...req.body, id }
   })
@@ -44,6 +58,10 @@ router.post('/', (req: Request<object, object, ToolsGroupDTO>, res: Response) =>
 /** PUT /api/toolGroups/:id — full update */
 router.put('/:id', (req: Request<{ id: string }, object, ToolsGroupDTO>, res: Response) => {
   wrap(res, async () => {
+    if (req.params.id === 'default_local') {
+      res.status(400).json(ChaiteResponse.fail(null, '系统默认工具组受保护，无法修改'))
+      return null
+    }
     const mgr = Chaite.getInstance().getToolsGroupManager()
     const existing = await mgr.getInstance(req.params.id)
     if (!existing) { res.status(404).json(ChaiteResponse.fail(null, 'Tool group not found')); return null }
@@ -56,6 +74,9 @@ router.put('/:id', (req: Request<{ id: string }, object, ToolsGroupDTO>, res: Re
 /** GET /api/toolGroups/:id */
 router.get('/:id', (req: Request<{ id: string }>, res: Response) => {
   wrap(res, async () => {
+    if (req.params.id === 'default_local') {
+      return DEFAULT_SYSTEM_GROUP
+    }
     const group = await Chaite.getInstance().getToolsGroupManager().getInstance(req.params.id)
     if (!group) { res.status(404).json(ChaiteResponse.fail(null, 'Tool group not found')); return null }
     return group
@@ -65,6 +86,10 @@ router.get('/:id', (req: Request<{ id: string }>, res: Response) => {
 /** DELETE /api/toolGroups/:id */
 router.delete('/:id', (req: Request<{ id: string }>, res: Response) => {
   wrap(res, async () => {
+    if (req.params.id === 'default_local') {
+      res.status(400).json(ChaiteResponse.fail(null, '系统默认工具组受保护，无法删除'))
+      return null
+    }
     const mgr = Chaite.getInstance().getToolsGroupManager()
     const existing = await mgr.getInstance(req.params.id)
     if (!existing) { res.status(404).json(ChaiteResponse.fail(null, 'Tool group not found')); return null }

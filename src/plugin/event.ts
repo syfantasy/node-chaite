@@ -351,7 +351,7 @@ export class ChaiteEvent {
           (this.raw as OneBotMessageEvent)?.message_id
         )
         if (stream) {
-          contextStream = stream
+          contextStream = stream.fullText
         }
       } catch (e) {
         console.warn('[ChaiteEvent] Failed to build context stream:', e)

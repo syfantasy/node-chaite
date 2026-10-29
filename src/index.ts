@@ -7,7 +7,7 @@ import { OneBotMessageEvent } from './onebot/types'
 import { groupHistoryBuffer } from './context/groupHistoryBuffer'
 import { mediaRefStore } from './onebot/refStore'
 import { pluginManager, ChaiteEvent } from './plugin'
-import { Chaite, EventMessage, SendMessageOption, drivers, TextContent } from './core'
+import { Chaite, EventMessage, SendMessageOption, drivers, TextContent, ImageContent } from './core'
 
 async function bootstrap() {
   console.log('==============================================')
@@ -568,7 +568,7 @@ async function handleMessage(
 
     if (event.isGroup && event.groupId && shouldInjectGroupContext) {
       try {
-        const groupContext = await groupHistoryBuffer.buildContext(
+        const groupContextResult = await groupHistoryBuffer.buildContext(
           event.groupId,
           {
             minMessages: config.groupContext?.minMessages ?? 20,
@@ -590,23 +590,46 @@ async function handleMessage(
           rawEvent.message_id,
           onebotAdapter
         )
-        if (groupContext) {
-          const groupContextBlock = [
-            '<!-- BEGIN_GROUP_CONTEXT -->',
-            '### 当前群聊成员花名册与最近发言流水记录：',
-            groupContext,
-            '<!-- END_GROUP_CONTEXT -->',
-          ].join('\n')
+        if (groupContextResult) {
+          const { membersBlock, messagesBlock, recentImageRefs } = groupContextResult
 
-          // 注入到当前轮次的用户输入顶部，直观且与多模态数据对齐
-          const firstTextPart = userMessage.content?.find((part): part is TextContent => part.type === 'text')
-          if (firstTextPart) {
-            firstTextPart.text = `${groupContextBlock}\n\n${firstTextPart.text}`
-          } else {
-            userMessage.content.unshift({
+          // 1. 群聊上下文中的历史图片：自动提取最近 maxRecentImages 张的 Base64 附带到当前请求中
+          const maxRecentImages = config.vision?.maxRecentImages ?? 3
+          if (recentImageRefs && recentImageRefs.length > 0 && maxRecentImages > 0) {
+            const imagesToFetch = recentImageRefs.slice(-maxRecentImages)
+            for (const ref of imagesToFetch) {
+              try {
+                const resolved = await mediaRefStore.resolveImage(ref, onebotAdapter)
+                if (resolved?.base64) {
+                  userMessage.content.push({
+                    type: 'image',
+                    mimeType: resolved.mimeType || 'image/jpeg',
+                    image: resolved.base64,
+                  } as ImageContent)
+                }
+              } catch (imgErr: any) {
+                console.warn(`[Runner] Failed to resolve group context image ${ref}:`, imgErr?.message || imgErr)
+              }
+            }
+          }
+
+          // 2. 将花名册与流水拆分为独立的 text parts 前置插入到 UserMessage 中
+          const contextParts: TextContent[] = []
+          if (membersBlock) {
+            contextParts.push({
               type: 'text',
-              text: groupContextBlock,
+              text: `### 当前群聊成员花名册：\n${membersBlock}`,
             })
+          }
+          if (messagesBlock) {
+            contextParts.push({
+              type: 'text',
+              text: `### 最近群聊发言流水记录：\n${messagesBlock}`,
+            })
+          }
+
+          if (contextParts.length > 0) {
+            userMessage.content.unshift(...contextParts)
           }
         }
       } catch (err: any) {
