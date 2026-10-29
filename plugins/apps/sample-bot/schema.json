@@ -1,0 +1,23 @@
+[
+  {
+    "key": "prefix",
+    "label": "指令前缀",
+    "type": "string",
+    "default": "#打招呼",
+    "description": "自定义唤醒打招呼指令的文本"
+  },
+  {
+    "key": "greetingText",
+    "label": "问候语模版",
+    "type": "string",
+    "default": "你好！我是通过目录工程级插件回复你的哦~",
+    "description": "触发打招呼时回复用户的文字"
+  },
+  {
+    "key": "enableAt",
+    "label": "是否在回复时艾特发送者",
+    "type": "boolean",
+    "default": true,
+    "description": "开启后将在回复前加上 @某人"
+  }
+]

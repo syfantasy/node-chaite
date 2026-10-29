@@ -4,20 +4,18 @@
     "target": "ES2022",
     "esModuleInterop": true,
     "moduleResolution": "bundler",
-    "outDir": "./lib",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "types": [
-      "node",
-      "jest"
+      "node"
     ],
-    "rootDir": "./src",
-    "declaration": true,
-    "noImplicitAny": true,
-    "strict": true,
+    "declaration": false,
+    "noImplicitAny": false,
+    "strict": false,
     "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true,
+    "useDefineForClassFields": false,
     "skipLibCheck": true
   },
   "include": [
@@ -25,8 +23,8 @@
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "**/*.test.ts",
-    "tsdown.config.ts"
+    "data",
+    "web",
+    "**/*.test.ts"
   ]
 }

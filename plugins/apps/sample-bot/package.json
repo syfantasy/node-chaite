@@ -1,0 +1,7 @@
+{
+  "name": "sample-bot",
+  "version": "1.0.0",
+  "description": "目录工程级插件示例（带可视化配置 Schema）",
+  "author": "Chaite",
+  "main": "index.js"
+}

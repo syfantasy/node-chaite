@@ -1,0 +1,62 @@
+{
+  "onebot": {
+    "url": "ws://127.0.0.1:3001/",
+    "accessToken": "",
+    "botUin": 0
+  },
+  "web": {
+    "host": "0.0.0.0",
+    "port": 48370,
+    "adminToken": "admin"
+  },
+  "management": {
+    "whiteGroups": [],
+    "blackGroups": [],
+    "whiteUsers": [],
+    "blackUsers": [],
+    "masterUsers": []
+  },
+  "chat": {
+    "toggleMode": "at",
+    "togglePrefix": "#chat",
+    "commandPrefix": "#",
+    "allowPrivate": false,
+    "maxMessageLength": 1500,
+    "enableAt": false,
+    "atPresetId": ""
+  },
+  "llm": {
+    "defaultModel": "",
+    "defaultChatPresetId": "",
+    "enableGroupContext": true
+  },
+  "bym": {
+    "enable": false,
+    "hit": [],
+    "probability": 0.02,
+    "speakingMode": "reply",
+    "defaultPreset": "",
+    "presetMap": []
+  },
+  "groupContext": {
+    "minMessages": 20,
+    "minTokens": 2000,
+    "maxMessages": 100,
+    "maxTokens": 10000,
+    "enableRichCards": true,
+    "enableForwardParse": true,
+    "maxForwardMessages": 15
+  },
+  "logging": {
+    "enabled": true,
+    "maxRecords": 500
+  },
+  "vision": {
+    "maxRecentImages": 3,
+    "enableGroupContextImages": true
+  },
+  "maintenance": {
+    "historyRetentionDays": 30,
+    "autoCleanImages": true
+  }
+}
