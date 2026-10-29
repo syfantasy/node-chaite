@@ -29,6 +29,83 @@ export interface GroupContextResult {
   fullText: string
 }
 
+export interface EphemeralGroupMessage {
+  seq: number
+  messageId: string | number
+  userId: string | number
+  rawTime: number
+  timeStr: string
+  nickname?: string
+  card?: string
+  role?: string
+  text: string
+  imageRefs?: string[]
+}
+
+export class GroupMessageRefStore {
+  private static instance: GroupMessageRefStore
+  // groupId -> Map<seq, EphemeralGroupMessage>
+  private turnRefs = new Map<string, Map<number, EphemeralGroupMessage>>()
+  // groupId -> Map<messageIdStr, EphemeralGroupMessage>
+  private idRefs = new Map<string, Map<string, EphemeralGroupMessage>>()
+
+  public static getInstance(): GroupMessageRefStore {
+    if (!GroupMessageRefStore.instance) {
+      GroupMessageRefStore.instance = new GroupMessageRefStore()
+    }
+    return GroupMessageRefStore.instance
+  }
+
+  public registerTurn(groupId: string | number, messages: EphemeralGroupMessage[]) {
+    const gid = String(groupId)
+    const seqMap = new Map<number, EphemeralGroupMessage>()
+    const idMap = new Map<string, EphemeralGroupMessage>()
+    for (const m of messages) {
+      seqMap.set(m.seq, m)
+      if (m.messageId !== undefined && m.messageId !== null && m.messageId !== '') {
+        idMap.set(String(m.messageId), m)
+      }
+    }
+    this.turnRefs.set(gid, seqMap)
+    this.idRefs.set(gid, idMap)
+  }
+
+  /**
+   * 解析目标消息：支持传入流动序号（如 "#1"、"1" 或 1）或者原始消息 messageId
+   */
+  public resolve(groupId: string | number, target: string | number): EphemeralGroupMessage | undefined {
+    const gid = String(groupId)
+    const seqMap = this.turnRefs.get(gid)
+    const idMap = this.idRefs.get(gid)
+    if (!seqMap && !idMap) return undefined
+
+    const cleaned = typeof target === 'string' ? target.trim().replace(/^#/, '') : String(target)
+    const num = Number(cleaned)
+    // 1. 若是有效序号数字，优先查当前轮次动态序号 (1 ~ N)
+    if (!isNaN(num) && seqMap && seqMap.has(num)) {
+      return seqMap.get(num)
+    }
+    // 2. 查原始 messageId
+    if (idMap && idMap.has(cleaned)) {
+      return idMap.get(cleaned)
+    }
+    return undefined
+  }
+
+  public clear(groupId: string | number) {
+    const gid = String(groupId)
+    this.turnRefs.delete(gid)
+    this.idRefs.delete(gid)
+  }
+
+  public clearAll() {
+    this.turnRefs.clear()
+    this.idRefs.clear()
+  }
+}
+
+export const groupMessageRefStore = GroupMessageRefStore.getInstance()
+
 export interface BufferedMessage {
   messageId: string | number
   rawTime: number
@@ -567,11 +644,26 @@ export class GroupHistoryBuffer {
     const messageLines: string[] = []
     const recentImageRefs: string[] = []
 
+    const ephemeralList: EphemeralGroupMessage[] = []
     for (let idx = 0; idx < effectiveSlice.length; idx++) {
       const msg = effectiveSlice[idx]
       const userMeta = memberMap.get(msg.userId)
       const speakerName = userMeta ? userMeta.displayName : getSafeSpeakerName(msg.card, msg.nickname)
       const badgeStr = userMeta?.roleBadge ? ` ${userMeta.roleBadge}` : ''
+
+      const seq = idx + 1
+      ephemeralList.push({
+        seq,
+        messageId: msg.messageId,
+        userId: msg.userId,
+        rawTime: msg.rawTime,
+        timeStr: msg.timeStr,
+        nickname: msg.nickname,
+        card: msg.card,
+        role: msg.role,
+        text: msg.text,
+        imageRefs: msg.imageRefs,
+      })
 
       if (msg.imageRefs && msg.imageRefs.length > 0) {
         for (const ref of msg.imageRefs) {
@@ -583,7 +675,11 @@ export class GroupHistoryBuffer {
 
       // Keep single line per message, escaping inner linebreaks if necessary
       const inlineText = msg.text.replace(/\r\n|\r|\n/g, ' ')
-      messageLines.push(`[#${idx + 1} ${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
+      messageLines.push(`[#${seq} ${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
+    }
+
+    if (ephemeralList.length > 0) {
+      groupMessageRefStore.registerTurn(groupId, ephemeralList)
     }
 
     const membersBlock = memberLines.length > 0 ? `<chat_members>\n${memberLines.join('\n')}\n</chat_members>` : null
@@ -687,6 +783,7 @@ export class GroupHistoryBuffer {
    */
   clear(groupId: string | number): void {
     this.buffers.delete(String(groupId))
+    groupMessageRefStore.clear(groupId)
   }
 
   /**
@@ -694,6 +791,7 @@ export class GroupHistoryBuffer {
    */
   clearAll(): void {
     this.buffers.clear()
+    groupMessageRefStore.clearAll()
   }
 }
 

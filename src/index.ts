@@ -4,7 +4,8 @@ import { startWebServer } from './server'
 import { checkPermission, banTarget, unbanTarget, parseDuration } from './guard'
 import { oneBotToUserMessage, formatModelResponse } from './onebot/message'
 import { OneBotMessageEvent } from './onebot/types'
-import { groupHistoryBuffer } from './context/groupHistoryBuffer'
+import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer'
+export { groupHistoryBuffer, groupMessageRefStore }
 import { mediaRefStore } from './onebot/refStore'
 import { pluginManager, ChaiteEvent } from './plugin'
 import { Chaite, EventMessage, SendMessageOption, drivers, TextContent, ImageContent } from './core'
@@ -703,7 +704,7 @@ async function handleMessage(
             if (messagesBlock) {
               contextParts.push({
                 type: 'text',
-                text: `### 最近群聊发言流水记录：\n${messagesBlock}`,
+                text: `### 最近群聊发言流水记录（[#1] 至 [#N] 为当前轮次动态流动序号，对话与工具中均可直接用 '#1' 或 '1' 索引目标消息）：\n${messagesBlock}`,
               })
             }
           }
