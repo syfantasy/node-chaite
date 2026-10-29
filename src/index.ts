@@ -86,15 +86,32 @@ async function bootstrap() {
 
 async function isModelVisualCapable(preset: any): Promise<boolean> {
   try {
-    const modelName = preset?.sendMessageOption?.model
-    if (!modelName) return false
+    const rawSpec = preset?.sendMessageOption?.model
+    if (!rawSpec) return false
+
+    let modelName = rawSpec
+    let channelIdent = ''
+    if (rawSpec.includes('/')) {
+      const slashIdx = rawSpec.indexOf('/')
+      channelIdent = rawSpec.slice(0, slashIdx).trim()
+      modelName = rawSpec.slice(slashIdx + 1).trim()
+    }
 
     const chaite = Chaite.getInstance()
     const channelsManager = chaite?.getChannelsManager?.()
-    if (!channelsManager?.getChannelByModel) return false
+    if (!channelsManager) return false
 
-    const channels = await channelsManager.getChannelByModel(modelName)
-    const channel = channels?.find((c: any) => c.status === 'enabled') || channels?.[0]
+    let channel: any = undefined
+    if (channelIdent) {
+      const allChannels = await channelsManager.listInstances()
+      channel = allChannels.find((c: any) => c.name === channelIdent || c.id === channelIdent)
+    }
+
+    if (!channel && channelsManager.getChannelByModel) {
+      const channels = await channelsManager.getChannelByModel(modelName)
+      channel = channels?.find((c: any) => c.status === 'enabled') || channels?.[0]
+    }
+
     if (!channel) return false
 
     const features =
@@ -754,11 +771,7 @@ async function handleMessage(
               })
             }
 
-            if (contextParts.length > 0) {
-              userMessage.content.unshift(...contextParts)
-            }
-
-            // 3. 将所有视觉附件以图文交错的形式追加到 UserMessage 尾部
+            // 将所有视觉附件以图文交错的形式追加到 UserMessage 尾部
             if (visualAttachments.length > 0) {
               for (const att of visualAttachments) {
                 userMessage.content.push({
@@ -884,6 +897,10 @@ async function handleMessage(
                 if (Object.keys(sub).length > 0) res.customOptions = sub
                 continue
               }
+              if (k === "model" && typeof v === "string" && v.includes("/")) {
+                res[k] = v.slice(v.indexOf("/") + 1).trim()
+                continue
+              }
               res[k] = v
             }
             return res
@@ -899,6 +916,11 @@ async function handleMessage(
             channelName: chanName,
           }
 
+          const rawPresetModel = preset?.sendMessageOption?.model
+          const cleanPresetModel = rawPresetModel && rawPresetModel.includes("/")
+            ? rawPresetModel.slice(rawPresetModel.indexOf("/") + 1).trim()
+            : rawPresetModel
+
           storageCtx.operationLogManager.addSync({
             type: "llm.call",
             level: errorCaught ? "error" : "info",
@@ -908,7 +930,7 @@ async function handleMessage(
             groupId: event.groupId ? String(event.groupId) : undefined,
             channelId: chanId,
             channelName: chanName,
-            model: response?.model || preset?.sendMessageOption?.model || "(default)",
+            model: response?.model || cleanPresetModel || "(default)",
             presetId: preset?.id,
             presetName: preset?.name,
             skillName: sendOptions.skillName,
