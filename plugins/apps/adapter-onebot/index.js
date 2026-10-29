@@ -207,25 +207,49 @@ export default function setup(ctx) {
     const isPoke =
       event.notice_type === 'poke' ||
       (event.notice_type === 'notify' && event.sub_type === 'poke')
+    const isMemberJoin = event.notice_type === 'group_increase'
+    const isMemberLeave = event.notice_type === 'group_decrease'
+    const isRecall = event.notice_type === 'group_recall' || event.notice_type === 'friend_recall'
 
-    if (!isPoke) return
+    if (!isPoke && !isMemberJoin && !isMemberLeave && !isRecall) return
+
+    let eventType = 'notice'
+    let text = '[通知]'
+    if (isPoke) {
+      eventType = 'poke'
+      text = '[戳一戳]'
+    } else if (isMemberJoin) {
+      eventType = 'member_join'
+      text = `[群成员加入: ${event.user_id}]`
+    } else if (isMemberLeave) {
+      eventType = 'member_leave'
+      text = `[群成员退出: ${event.user_id}]`
+    } else if (isRecall) {
+      eventType = 'recall'
+      text = `[消息撤回: ${event.message_id}]`
+    }
 
     const userId = event.user_id
     const targetId = event.target_id
+    const operatorId = event.operator_id
+    const messageId = event.message_id
     const groupId = event.group_id || null
-    const isSelfPoke = String(targetId) === String(selfId)
+    const isSelfPoke = isPoke && String(targetId) === String(selfId)
 
     const chaiteEvent = {
-      eventType: 'poke',
-      isPoke: true,
+      eventType,
+      isPoke,
       isSelfPoke,
       userId,
       targetId,
+      operatorId,
+      messageId,
+      subType: event.sub_type,
       groupId,
       isGroup: Boolean(groupId),
       isPrivate: !groupId,
-      text: '[戳一戳]',
-      rawText: '[戳一戳]',
+      text,
+      rawText: text,
       sender: {
         userId,
         nickname: '',
@@ -247,6 +271,7 @@ export default function setup(ctx) {
           return []
         }
       },
+      deleteMsg: (msgId) => callAction('delete_msg', { message_id: msgId || messageId }),
       reply: (content) => {
         if (groupId) {
           return sendPacket({ message_type: 'group', group_id: groupId }, content)
@@ -257,7 +282,83 @@ export default function setup(ctx) {
     }
 
     ctx.emitMessage(chaiteEvent).catch((err) => {
-      ctx.logger.error('戳一戳事件派发异常:', err)
+      ctx.logger.error(`${eventType} 事件派发异常:`, err)
+    })
+  }
+
+  function handleRequestEvent(event) {
+    const isGroup = event.request_type === 'group'
+    const userId = event.user_id
+    const groupId = event.group_id || null
+    const flag = event.flag
+    const comment = event.comment || ''
+    const subType = isGroup ? (event.sub_type || 'add') : 'friend'
+
+    const chaiteEvent = {
+      eventType: 'request',
+      userId,
+      groupId,
+      isGroup: Boolean(groupId),
+      isPrivate: !groupId,
+      flag,
+      comment,
+      subType,
+      text: `[请求: ${isGroup ? '群申请' : '好友申请'} 来自 ${userId}]`,
+      rawText: `[请求: ${isGroup ? '群申请' : '好友申请'} 来自 ${userId}]`,
+      sender: {
+        userId,
+        nickname: '',
+      },
+      images: [],
+      raw: event,
+      client: {
+        callAction,
+        sendMsg: sendPacket,
+        getSelfId: () => selfId,
+      },
+      callAction: (action, params) => callAction(action, params),
+      approve: async (remark) => {
+        if (isGroup) {
+          return callAction('set_group_add_request', {
+            flag,
+            sub_type: event.sub_type || 'add',
+            approve: true,
+            reason: remark,
+          })
+        } else {
+          return callAction('set_friend_add_request', {
+            flag,
+            approve: true,
+            remark: remark || '',
+          })
+        }
+      },
+      reject: async (reason) => {
+        if (isGroup) {
+          return callAction('set_group_add_request', {
+            flag,
+            sub_type: event.sub_type || 'add',
+            approve: false,
+            reason: reason || '',
+          })
+        } else {
+          return callAction('set_friend_add_request', {
+            flag,
+            approve: false,
+          })
+        }
+      },
+      reply: (content) => {
+        if (groupId) {
+          return sendPacket({ message_type: 'group', group_id: groupId }, content)
+        } else {
+          return sendPacket({ message_type: 'private', user_id: userId }, content)
+        }
+      },
+    }
+
+    ctx.emitMessage(chaiteEvent).catch((err) => {
+      ctx.logger.error('申请事件派发异常:', err)
     })
   }
 
@@ -314,6 +415,8 @@ export default function setup(ctx) {
           handleMessageEvent(payload)
         } else if (payload.post_type === 'notice') {
           handleNoticeEvent(payload)
+        } else if (payload.post_type === 'request') {
+          handleRequestEvent(payload)
         }
       } catch (err) {
         ctx.logger.error('解析 OneBot 数据包失败:', err)

@@ -56,6 +56,13 @@ export class ChaiteEvent {
   readonly isPoke: boolean
   readonly isSelfPoke: boolean
   readonly targetId?: number | string
+  readonly operatorId?: number | string
+  readonly messageId?: number | string
+  readonly subType?: string
+  readonly flag?: string
+  readonly comment?: string
+  command?: string
+  args: string
 
   private replyHandler: (content: ReplyContent) => Promise<any>
 
@@ -72,6 +79,13 @@ export class ChaiteEvent {
     isPoke?: boolean
     isSelfPoke?: boolean
     targetId?: number | string
+    operatorId?: number | string
+    messageId?: number | string
+    subType?: string
+    flag?: string
+    comment?: string
+    command?: string
+    args?: string
     replyHandler: (content: ReplyContent) => Promise<any>
   }) {
     this.userId = params.userId
@@ -86,6 +100,13 @@ export class ChaiteEvent {
     this.isPoke = Boolean(params.isPoke || params.eventType === 'poke')
     this.isSelfPoke = Boolean(params.isSelfPoke)
     this.targetId = params.targetId
+    this.operatorId = params.operatorId
+    this.messageId = params.messageId
+    this.subType = params.subType
+    this.flag = params.flag
+    this.comment = params.comment
+    this.command = params.command
+    this.args = params.args || ''
     this.replyHandler = params.replyHandler
   }
 
@@ -109,6 +130,62 @@ export class ChaiteEvent {
       return globalClient.callAction(action, params)
     }
     throw new Error('当前环境无可用协议客户端 (Client 未就绪)')
+  }
+
+  /**
+   * 快捷同意好友申请或入群申请 (仅在 request 事件中生效)
+   */
+  async approve(remark?: string): Promise<any> {
+    if (this.eventType !== 'request' || !this.flag) {
+      throw new Error('approve 仅可在 request 申请事件中调用且需要有效 flag')
+    }
+    if (this.subType === 'group' || this.isGroup) {
+      return this.callAction('set_group_add_request', {
+        flag: this.flag,
+        sub_type: this.raw?.sub_type || 'add',
+        approve: true,
+        reason: remark,
+      })
+    } else {
+      return this.callAction('set_friend_add_request', {
+        flag: this.flag,
+        approve: true,
+        remark: remark || '',
+      })
+    }
+  }
+
+  /**
+   * 快捷拒绝好友申请或入群申请 (仅在 request 事件中生效)
+   */
+  async reject(reason?: string): Promise<any> {
+    if (this.eventType !== 'request' || !this.flag) {
+      throw new Error('reject 仅可在 request 申请事件中调用且需要有效 flag')
+    }
+    if (this.subType === 'group' || this.isGroup) {
+      return this.callAction('set_group_add_request', {
+        flag: this.flag,
+        sub_type: this.raw?.sub_type || 'add',
+        approve: false,
+        reason: reason || '',
+      })
+    } else {
+      return this.callAction('set_friend_add_request', {
+        flag: this.flag,
+        approve: false,
+      })
+    }
+  }
+
+  /**
+   * 快捷撤回消息
+   */
+  async deleteMsg(messageId?: number | string): Promise<any> {
+    const targetId = messageId || this.messageId || this.raw?.message_id
+    if (!targetId) {
+      throw new Error('未提供要撤回的 messageId')
+    }
+    return this.callAction('delete_msg', { message_id: targetId })
   }
 
   /**

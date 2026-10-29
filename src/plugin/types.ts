@@ -136,6 +136,10 @@ export interface PluginContext {
   onDestroy: (cleanupFn: () => void | Promise<void>) => void
   emitMessage: (event: ChaiteEvent) => Promise<boolean>
   onPoke: (handler: (e: ChaiteEvent) => Promise<boolean | void>) => void
+  onMemberJoin: (handler: (e: ChaiteEvent) => Promise<boolean | void>) => void
+  onMemberLeave: (handler: (e: ChaiteEvent) => Promise<boolean | void>) => void
+  onRequest: (handler: (e: ChaiteEvent) => Promise<boolean | void>) => void
+  onRecall: (handler: (e: ChaiteEvent) => Promise<boolean | void>) => void
   getAdapter: (name?: string) => any
   client: any
   registerService: (name: string, service: any) => void
@@ -149,6 +153,10 @@ export interface PluginInstance {
   meta: PluginMeta
   commands: Array<{ rule: CommandRule; handler: CommandHandler }>
   pokeHandlers: Array<(e: ChaiteEvent) => Promise<boolean | void>>
+  memberJoinHandlers: Array<(e: ChaiteEvent) => Promise<boolean | void>>
+  memberLeaveHandlers: Array<(e: ChaiteEvent) => Promise<boolean | void>>
+  requestHandlers: Array<(e: ChaiteEvent) => Promise<boolean | void>>
+  recallHandlers: Array<(e: ChaiteEvent) => Promise<boolean | void>>
   actions: Map<string, (payload?: any) => Promise<any>>
   middlewares: Array<{ phase: MiddlewarePhase; handler: MiddlewareHandler }>
   cronJobs: Array<() => void>

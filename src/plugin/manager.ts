@@ -192,6 +192,10 @@ export class PluginManager {
         },
         commands: [],
         pokeHandlers: [],
+        memberJoinHandlers: [],
+        memberLeaveHandlers: [],
+        requestHandlers: [],
+        recallHandlers: [],
         actions: new Map(),
         middlewares: [],
         cronJobs: [],
@@ -258,6 +262,10 @@ export class PluginManager {
         },
         commands: [],
         pokeHandlers: [],
+        memberJoinHandlers: [],
+        memberLeaveHandlers: [],
+        requestHandlers: [],
+        recallHandlers: [],
         actions: new Map(),
         middlewares: [],
         cronJobs: [],
@@ -293,6 +301,10 @@ export class PluginManager {
 
     instance.commands = []
     instance.pokeHandlers = []
+    instance.memberJoinHandlers = []
+    instance.memberLeaveHandlers = []
+    instance.requestHandlers = []
+    instance.recallHandlers = []
     instance.actions.clear()
     instance.middlewares = []
     for (const key of instance.adapters.keys()) {
@@ -423,6 +435,18 @@ export class PluginManager {
       },
       onPoke: (handler) => {
         instance.pokeHandlers.push(handler)
+      },
+      onMemberJoin: (handler) => {
+        instance.memberJoinHandlers.push(handler)
+      },
+      onMemberLeave: (handler) => {
+        instance.memberLeaveHandlers.push(handler)
+      },
+      onRequest: (handler) => {
+        instance.requestHandlers.push(handler)
+      },
+      onRecall: (handler) => {
+        instance.recallHandlers.push(handler)
       },
       registerAction: (actionName, handler) => {
         instance.actions.set(actionName, handler)
@@ -955,7 +979,7 @@ export class PluginManager {
       if (!plugin.meta.enabled) continue
       if (this.isBlockedByPluginCommonConfig(plugin, event)) continue
 
-      // 优先响应戳一戳专用处理器
+      // 1. 响应戳一戳专用处理器
       if (event.isPoke && plugin.pokeHandlers.length > 0) {
         for (const handler of plugin.pokeHandlers) {
           try {
@@ -968,16 +992,80 @@ export class PluginManager {
         }
       }
 
+      // 2. 响应群成员变动事件 (加入/退出)
+      if (event.eventType === 'member_join' && plugin.memberJoinHandlers.length > 0) {
+        for (const handler of plugin.memberJoinHandlers) {
+          try {
+            const intercepted = await handler(event)
+            if (intercepted !== false) return true
+          } catch (err: any) {
+            console.error(`[PluginManager] MemberJoin error in "${plugin.meta.name}":`, err)
+            return true
+          }
+        }
+      }
+      if (event.eventType === 'member_leave' && plugin.memberLeaveHandlers.length > 0) {
+        for (const handler of plugin.memberLeaveHandlers) {
+          try {
+            const intercepted = await handler(event)
+            if (intercepted !== false) return true
+          } catch (err: any) {
+            console.error(`[PluginManager] MemberLeave error in "${plugin.meta.name}":`, err)
+            return true
+          }
+        }
+      }
+
+      // 3. 响应加好友/加群申请审批事件
+      if (event.eventType === 'request' && plugin.requestHandlers.length > 0) {
+        for (const handler of plugin.requestHandlers) {
+          try {
+            const intercepted = await handler(event)
+            if (intercepted !== false) return true
+          } catch (err: any) {
+            console.error(`[PluginManager] Request error in "${plugin.meta.name}":`, err)
+            return true
+          }
+        }
+      }
+
+      // 4. 响应消息撤回事件
+      if (event.eventType === 'recall' && plugin.recallHandlers.length > 0) {
+        for (const handler of plugin.recallHandlers) {
+          try {
+            const intercepted = await handler(event)
+            if (intercepted !== false) return true
+          } catch (err: any) {
+            console.error(`[PluginManager] Recall error in "${plugin.meta.name}":`, err)
+            return true
+          }
+        }
+      }
+
+      // 若为非消息类事件，则不继续进入文本指令匹配
+      if (event.eventType !== 'message') {
+        continue
+      }
+
       for (const { rule, handler } of plugin.commands) {
         let matched = false
 
         if (typeof rule.match === 'string') {
-          if (cleanText === rule.match || cleanText.startsWith(`${rule.match} `) || cleanText.startsWith(`${rule.match}\n`)) {
+          if (cleanText === rule.match) {
             matched = true
+            event.command = rule.match
+            event.args = ''
+          } else if (cleanText.startsWith(`${rule.match} `) || cleanText.startsWith(`${rule.match}\n`)) {
+            matched = true
+            event.command = rule.match
+            event.args = cleanText.slice(rule.match.length).trim()
           }
         } else if (rule.match instanceof RegExp) {
-          if (rule.match.test(cleanText)) {
+          const m = rule.match.exec(cleanText)
+          if (m) {
             matched = true
+            event.command = m[0]
+            event.args = cleanText.slice(m.index + m[0].length).trim()
           }
         }
 
