@@ -5,10 +5,9 @@ import { checkPermission, banTarget, unbanTarget, parseDuration } from './guard'
 import { oneBotToUserMessage, formatModelResponse } from './onebot/message'
 import { OneBotMessageEvent } from './onebot/types'
 import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer'
-export { groupHistoryBuffer, groupMessageRefStore }
 import { mediaRefStore } from './onebot/refStore'
 import { pluginManager, ChaiteEvent } from './plugin'
-import { Chaite, EventMessage, SendMessageOption, drivers, TextContent, ImageContent } from './core'
+import { Chaite, EventMessage, SendMessageOption, drivers, TextContent, ImageContent, ChaiteContext } from './core'
 
 async function bootstrap() {
   console.log('==============================================')
@@ -125,7 +124,7 @@ async function isModelVisualCapable(preset: any): Promise<boolean> {
   }
 }
 
-async function handleMessage(
+export async function handleMessage(
   event: ChaiteEvent,
   storageCtx: any
 ): Promise<void> {
@@ -603,6 +602,27 @@ async function handleMessage(
       sendOptions.stream = false
     }
 
+    // 预拉取长期记忆（如果预设开启记忆）
+    const isMemoryEnabled = Boolean(preset?.enableMemory || preset?.sendMessageOption?.enableMemory)
+    let memoryBlock: string | undefined
+    if (isMemoryEnabled) {
+      try {
+        const memoryManager = chaite.getMemoryManager()
+        if (memoryManager) {
+          const ctx = new ChaiteContext()
+          ctx.chaite = chaite
+          ctx.setEvent(rawEvent)
+          ctx.setOptions(sendOptions)
+          memoryBlock = await memoryManager.getActiveProvider().injectContext(ctx, {
+            groupId: event.isGroup && event.groupId ? String(event.groupId) : undefined,
+            userId: event.userId ? String(event.userId) : undefined,
+          })
+        }
+      } catch (err: any) {
+        console.warn('[Runner] Failed to fetch memory context:', err?.message || err)
+      }
+    }
+
     // 注入群聊环境与上下文 (Group Environment & History Stream)
     if (event.isGroup && event.groupId) {
       try {
@@ -753,9 +773,22 @@ async function handleMessage(
             }
 
             // 0. 注入静态场景协议说明（作为前缀基石，稳定命中 KV Cache）
+            const protocolLines = [
+              '### 场景协议：',
+              '当前会话为 QQ 群聊。下方按顺序包含：',
+              '1. <group_messages>: 近期群聊发言流水记录（仅供理解当下话题语境与历史背景）；',
+              '2. <chat_members>: 当前群聊成员花名册（包含群友名片、身份与头衔等元数据）；',
+            ]
+            let orderIdx = 3
+            if (isMemoryEnabled && memoryBlock) {
+              protocolLines.push(`${orderIdx++}. <long_term_memory>: 长期事实记忆（本群共享常识与当前发言者的个人偏好/事实）；`)
+            }
+            protocolLines.push(`${orderIdx++}. <chat_environment>: 动态会话环境与当前时间。`)
+            protocolLines.push('请严格保持你预设的角色人设与口吻，结合群聊上下文与环境中的触发方式做出真实群友般的自然回应。')
+
             contextParts.push({
               type: 'text',
-              text: '### 场景协议：\n当前会话为 QQ 群聊。下方按顺序包含：\n1. <group_messages>: 近期群聊发言流水记录（仅供理解当下话题语境与历史背景）；\n2. <chat_members>: 当前群聊成员花名册（包含群友名片、身份与头衔等元数据）；\n3. <chat_environment>: 动态会话环境与当前时间。\n请严格保持你预设的角色人设与口吻，结合群聊上下文与环境中的触发方式做出真实群友般的自然回应。',
+              text: protocolLines.join('\n'),
             })
 
             // 1. 先推入大体积、相对稳定的历史流水，最大化提升大模型 KV Cache Prefix Caching 命中率
@@ -771,6 +804,14 @@ async function handleMessage(
               contextParts.push({
                 type: 'text',
                 text: `### 当前群聊成员花名册：\n${membersBlock}`,
+              })
+            }
+
+            // 2.5 推入长期事实记忆（紧随花名册后置，不侵入 System Prompt，不击穿流水 KV Cache）
+            if (isMemoryEnabled && memoryBlock) {
+              contextParts.push({
+                type: 'text',
+                text: `### 长期记忆背景：\n${memoryBlock}`,
               })
             }
 
@@ -886,7 +927,13 @@ async function handleMessage(
             }
           }
         } else {
-          // 未启用群聊历史上下文时，直接注入基础会话环境
+          // 未启用群聊历史上下文时，直接注入记忆与基础会话环境
+          if (isMemoryEnabled && memoryBlock) {
+            contextParts.push({
+              type: 'text',
+              text: `### 长期记忆背景：\n${memoryBlock}`,
+            })
+          }
           contextParts.push(envPart)
           if (contextParts.length > 0) {
             userMessage.content.unshift(...contextParts)
@@ -895,9 +942,16 @@ async function handleMessage(
       } catch (err: any) {
         console.warn('[Runner] Failed to build group context:', err?.message || err)
       }
-    } else if (!event.isGroup && isVisual && currentImages.length > 0) {
-      // 私聊场景下直接恢复当前发送的图片
-      userMessage.content.push(...currentImages)
+    } else if (!event.isGroup) {
+      if (isVisual && currentImages.length > 0) {
+        userMessage.content.push(...currentImages)
+      }
+      if (isMemoryEnabled && memoryBlock) {
+        userMessage.content.unshift({
+          type: 'text',
+          text: `### 长期记忆背景：\n${memoryBlock}`,
+        })
+      }
     }
 
     // Skill intent matching & dynamic activation
@@ -1152,7 +1206,24 @@ async function handleMessage(
   }
 }
 
-bootstrap().catch((err) => {
-  console.error('[Runner] Bootstrap error:', err)
-  process.exit(1)
-})
+export * from './core'
+export * from './config'
+export * from './storage'
+export * from './server'
+export * from './plugin'
+export { groupHistoryBuffer, groupMessageRefStore }
+export { bootstrap }
+
+const isDirectRun = Boolean(
+  process.argv[1] &&
+  (process.argv[1].endsWith('index.ts') ||
+   process.argv[1].endsWith('index.js') ||
+   process.argv[1].endsWith('chaite'))
+)
+
+if (isDirectRun) {
+  bootstrap().catch((err) => {
+    console.error('[Runner] Bootstrap error:', err)
+    process.exit(1)
+  })
+}

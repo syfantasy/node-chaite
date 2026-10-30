@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { DataTableColumns } from 'naive-ui'
 import {
+  NAlert,
   NButton,
   NCard,
   NDataTable,
@@ -13,677 +14,620 @@ import {
   NInputNumber,
   NModal,
   NPopconfirm,
+  NSelect,
   NSpace,
   NTabPane,
   NTabs,
+  NTag,
   useMessage,
 } from 'naive-ui'
 import { h, onMounted, reactive, ref } from 'vue'
-import type { GroupFact, UserMemory } from '@/service/api/memory'
+import type { MemoryRecord, MemoryScope } from '@/service/api/memory'
 import {
-  deleteGroupFact,
-  deleteUserMemory,
-  fetchGroupFacts,
-  fetchUserMemories,
-  queryGroupFacts,
-  deleteMemoryById,
-  queryUserMemories,
-  saveGroupFacts,
-  upsertUserMemories,
+  deleteMemory,
+  fetchMemories,
+  fetchMemoryGroups,
+  saveMemory,
+  updateMemoryImportance,
 } from '@/service/api/memory'
 
 const message = useMessage()
-const activeTab = ref('group-facts')
+const activeTab = ref('group')
 
-// Group Facts Management
-const groupFactsState = reactive({
+// 群列表
+const availableGroups = ref<{ label: string; value: string }[]>([])
+const currentGroupId = ref<string>('')
+
+// 群总体记忆状态
+const groupSharedState = reactive({
+  loading: false,
+  items: [] as MemoryRecord[],
+  keyFilter: '',
+})
+
+// 群内用户记忆状态
+const groupUserState = reactive({
+  loading: false,
+  items: [] as MemoryRecord[],
+  userFilter: '',
+  keyFilter: '',
+})
+
+// 私聊记忆状态
+const privateState = reactive({
+  loading: false,
+  userFilter: '',
+  keyFilter: '',
+  items: [] as MemoryRecord[],
+})
+
+// 新增 Modal
+const modalVisible = ref(false)
+const modalSubmitting = ref(false)
+const modalForm = reactive({
+  scope: 'group' as MemoryScope,
   groupId: '',
-  facts: [] as GroupFact[],
-  loading: false,
-  limit: 50,
-  offset: 0,
-  queryText: '',
-  queryLimit: 10,
-  queryMinImportance: undefined as number | undefined,
-})
-
-const groupFactsColumns: DataTableColumns<GroupFact> = [
-  {
-    title: 'ID',
-    key: 'id',
-    width: 80,
-  },
-  {
-    title: 'Fact',
-    key: 'fact',
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: 'Topic',
-    key: 'topic',
-    width: 120,
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: 'Importance',
-    key: 'importance',
-    width: 100,
-    render(row: GroupFact) {
-      return row.importance.toFixed(2)
-    },
-  },
-  {
-    title: 'Created At',
-    key: 'created_at',
-    width: 180,
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 100,
-    render(row: GroupFact) {
-      return h(
-        NPopconfirm,
-        {
-          onPositiveClick: () => handleDeleteGroupFact(row.id!),
-        },
-        {
-          default: () => '确认删除这条记忆吗？',
-          trigger: () => h(NButton, { size: 'small', type: 'error' }, { default: () => '删除' }),
-        },
-      )
-    },
-  },
-]
-
-async function loadGroupFacts() {
-  if (!groupFactsState.groupId) {
-    message.warning('请输入Group ID')
-    return
-  }
-  groupFactsState.loading = true
-  try {
-    const res = await fetchGroupFacts({
-      groupId: groupFactsState.groupId,
-      limit: groupFactsState.limit,
-      offset: groupFactsState.offset,
-    })
-    if (res.isSuccess) {
-      groupFactsState.facts = res.data
-      message.success('加载成功')
-    }
-    else {
-      message.error(res.message || '加载失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to load group facts:', error)
-    message.error('加载失败')
-  }
-  finally {
-    groupFactsState.loading = false
-  }
-}
-
-async function handleQueryGroupFacts() {
-  if (!groupFactsState.groupId) {
-    message.warning('请输入Group ID')
-    return
-  }
-  if (!groupFactsState.queryText) {
-    message.warning('请输入查询文本')
-    return
-  }
-  groupFactsState.loading = true
-  try {
-    const res = await queryGroupFacts({
-      groupId: groupFactsState.groupId,
-      query: groupFactsState.queryText,
-      limit: groupFactsState.queryLimit,
-      minImportance: groupFactsState.queryMinImportance,
-    })
-    if (res.isSuccess) {
-      groupFactsState.facts = res.data
-      message.success('查询成功')
-    }
-    else {
-      message.error(res.message || '查询失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to query group facts:', error)
-    message.error('查询失败')
-  }
-  finally {
-    groupFactsState.loading = false
-  }
-}
-
-const showAddFactModal = ref(false)
-const newFactsInput = ref('')
-
-async function handleSaveGroupFacts() {
-  if (!groupFactsState.groupId) {
-    message.warning('请输入Group ID')
-    return
-  }
-  if (!newFactsInput.value.trim()) {
-    message.warning('请输入要添加的facts')
-    return
-  }
-
-  // Parse facts from textarea, each line is a fact
-  const facts = newFactsInput.value.split('\n').filter(f => f.trim()).map(f => ({
-    fact: f.trim(),
-    importance: 0.5,
-  }))
-
-  try {
-    const res = await saveGroupFacts({
-      groupId: groupFactsState.groupId,
-      facts,
-    })
-    if (res.isSuccess) {
-      message.success('保存成功')
-      showAddFactModal.value = false
-      newFactsInput.value = ''
-      await loadGroupFacts()
-    }
-    else {
-      message.error(res.message || '保存失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to save group facts:', error)
-    message.error('保存失败')
-  }
-}
-
-async function handleDeleteGroupFact(factId: number) {
-  try {
-    const res = await deleteGroupFact(groupFactsState.groupId, String(factId))
-    if (res.isSuccess) {
-      message.success('删除成功')
-      await loadGroupFacts()
-    }
-    else {
-      message.error(res.message || '删除失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to delete group fact:', error)
-    message.error('删除失败')
-  }
-}
-
-// User Memories Management
-const userMemoriesState = reactive({
   userId: '',
-  groupId: '' as string | null,
-  memories: [] as UserMemory[],
-  loading: false,
-  limit: 50,
-  offset: 0,
-  total: 0,
-  queryText: '',
-  queryTotalLimit: 5,
-  querySearchLimit: 3,
-  queryMinImportance: undefined as number | undefined,
+  key: '',
+  content: '',
+  importance: 50,
 })
 
-function normalizeGroupId(value: string | null) {
-  if (!value) {
-    return null
+// 微调重要度 Modal
+const impModalVisible = ref(false)
+const impSubmitting = ref(false)
+const impForm = reactive({
+  id: '',
+  key: '',
+  importance: 50,
+})
+
+async function loadGroups() {
+  try {
+    const res = await fetchMemoryGroups()
+    if (res.data) {
+      availableGroups.value = res.data.map(g => ({
+        label: `群聊: ${g}`,
+        value: String(g),
+      }))
+      if (res.data.length > 0 && !currentGroupId.value) {
+        currentGroupId.value = String(res.data[0])
+      }
+    }
   }
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
+  catch (e: any) {
+    console.warn('获取群列表失败', e)
+  }
 }
 
-const userMemoriesColumns: DataTableColumns<UserMemory> = [
-  {
-    title: 'ID',
-    key: 'id',
-    width: 80,
-  },
-  {
-    title: 'User ID',
-    key: 'user_id',
-    width: 150,
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: 'Group ID',
-    key: 'group_id',
-    width: 150,
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: '记忆内容',
-    key: 'value',
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: '重要度',
-    key: 'importance',
-    width: 100,
-    render(row: UserMemory) {
-      return row.importance.toFixed(2)
+async function loadGroupSharedMemories() {
+  if (!currentGroupId.value) {
+    groupSharedState.items = []
+    return
+  }
+  groupSharedState.loading = true
+  try {
+    const res = await fetchMemories({
+      scope: 'group',
+      groupId: currentGroupId.value,
+      key: groupSharedState.keyFilter.trim() || undefined,
+    })
+    groupSharedState.items = res.data || []
+  }
+  catch (e: any) {
+    message.error(e?.message || '加载群共享记忆失败')
+  }
+  finally {
+    groupSharedState.loading = false
+  }
+}
+
+async function loadGroupUserMemories() {
+  if (!currentGroupId.value) {
+    groupUserState.items = []
+    return
+  }
+  groupUserState.loading = true
+  try {
+    const res = await fetchMemories({
+      scope: 'group_user',
+      groupId: currentGroupId.value,
+      userId: groupUserState.userFilter.trim() || undefined,
+      key: groupUserState.keyFilter.trim() || undefined,
+    })
+    groupUserState.items = res.data || []
+  }
+  catch (e: any) {
+    message.error(e?.message || '加载群内用户记忆失败')
+  }
+  finally {
+    groupUserState.loading = false
+  }
+}
+
+async function loadPrivateMemories() {
+  privateState.loading = true
+  try {
+    const res = await fetchMemories({
+      scope: 'private_user',
+      userId: privateState.userFilter.trim() || undefined,
+      key: privateState.keyFilter.trim() || undefined,
+    })
+    privateState.items = res.data || []
+  }
+  catch (e: any) {
+    message.error(e?.message || '加载私聊记忆失败')
+  }
+  finally {
+    privateState.loading = false
+  }
+}
+
+function handleTabChange(tab: string) {
+  activeTab.value = tab
+  if (tab === 'group') loadGroupSharedMemories()
+  else if (tab === 'group-user') loadGroupUserMemories()
+  else if (tab === 'private') loadPrivateMemories()
+}
+
+function handleGroupChange(gid: string) {
+  currentGroupId.value = gid
+  if (activeTab.value === 'group') loadGroupSharedMemories()
+  else if (activeTab.value === 'group-user') loadGroupUserMemories()
+}
+
+function openAddModal(scope: MemoryScope) {
+  modalForm.scope = scope
+  modalForm.groupId = (scope === 'group' || scope === 'group_user') ? currentGroupId.value : ''
+  modalForm.userId = ''
+  modalForm.key = ''
+  modalForm.content = ''
+  modalForm.importance = 50
+  modalVisible.value = true
+}
+
+function openImpModal(row: MemoryRecord) {
+  impForm.id = row.id
+  impForm.key = row.key
+  impForm.importance = row.importance || 50
+  impModalVisible.value = true
+}
+
+async function handleSaveImportance() {
+  impSubmitting.value = true
+  try {
+    await updateMemoryImportance(impForm.id, impForm.importance)
+    message.success('重要度修改成功')
+    impModalVisible.value = false
+    if (activeTab.value === 'group') loadGroupSharedMemories()
+    else if (activeTab.value === 'group-user') loadGroupUserMemories()
+    else loadPrivateMemories()
+  }
+  catch (e: any) {
+    message.error(e?.message || '修改重要度失败')
+  }
+  finally {
+    impSubmitting.value = false
+  }
+}
+
+async function handleSaveMemory() {
+  if (!modalForm.key.trim() || !modalForm.content.trim()) {
+    message.warning('请填写记忆键名与记忆内容')
+    return
+  }
+  if ((modalForm.scope === 'group' || modalForm.scope === 'group_user') && !modalForm.groupId.trim()) {
+    message.warning('请指定所属群聊')
+    return
+  }
+  if ((modalForm.scope === 'group_user' || modalForm.scope === 'private_user') && !modalForm.userId.trim()) {
+    message.warning('必须指定用户 QQ 号')
+    return
+  }
+
+  modalSubmitting.value = true
+  try {
+    const res = await saveMemory({
+      scope: modalForm.scope,
+      groupId: modalForm.groupId.trim() || null,
+      userId: modalForm.userId.trim() || null,
+      key: modalForm.key.trim(),
+      content: modalForm.content.trim(),
+      importance: modalForm.importance,
+    })
+    message.success(res.data?.message || '保存成功')
+    modalVisible.value = false
+    if (activeTab.value === 'group') loadGroupSharedMemories()
+    else if (activeTab.value === 'group-user') loadGroupUserMemories()
+    else loadPrivateMemories()
+  }
+  catch (e: any) {
+    message.error(e?.message || '保存失败')
+  }
+  finally {
+    modalSubmitting.value = false
+  }
+}
+
+async function handleDelete(id: string) {
+  try {
+    await deleteMemory(id)
+    message.success('删除成功')
+    if (activeTab.value === 'group') loadGroupSharedMemories()
+    else if (activeTab.value === 'group-user') loadGroupUserMemories()
+    else loadPrivateMemories()
+  }
+  catch (e: any) {
+    message.error(e?.message || '删除失败')
+  }
+}
+
+function formatDate(ts: number) {
+  if (!ts) return '-'
+  return new Date(ts).toLocaleString('zh-CN', { hour12: false })
+}
+
+function renderImportanceTag(row: MemoryRecord) {
+  const imp = row.importance || 50
+  let type: 'error' | 'warning' | 'info' | 'default' = 'default'
+  if (imp >= 80) type = 'error'
+  else if (imp >= 60) type = 'warning'
+  else if (imp >= 30) type = 'info'
+
+  return h(
+    NTag,
+    {
+      type,
+      size: 'small',
+      style: 'cursor: pointer;',
+      onClick: () => openImpModal(row),
     },
+    { default: () => `权重: ${imp}` },
+  )
+}
+
+const groupColumns: DataTableColumns<MemoryRecord> = [
+  {
+    title: '键名 (Key)',
+    key: 'key',
+    width: 150,
+    render: row => h(NTag, { type: 'info', size: 'small' }, { default: () => row.key }),
+  },
+  {
+    title: '重要度 (点击修改)',
+    key: 'importance',
+    width: 140,
+    render: row => renderImportanceTag(row),
+  },
+  {
+    title: '记忆事实内容',
+    key: 'content',
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '最后更新时间',
+    key: 'updatedAt',
+    width: 170,
+    render: row => formatDate(row.updatedAt),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 100,
-    render(row: UserMemory) {
-      return h(
-        NPopconfirm,
-        {
-          onPositiveClick: () => handleDeleteUserMemory(row.id!),
-        },
-        {
-          default: () => '确认删除这条记忆吗？',
-          trigger: () => h(NButton, { size: 'small', type: 'error' }, { default: () => '删除' }),
-        },
-      )
-    },
+    width: 90,
+    render: row => h(
+      NPopconfirm,
+      { onPositiveClick: () => handleDelete(row.id) },
+      {
+        trigger: () => h(NButton, { size: 'tiny', type: 'error', tertiary: true }, { default: () => '删除' }),
+        default: () => '确定遗忘该条记忆？',
+      },
+    ),
   },
 ]
 
-async function loadUserMemories() {
-  userMemoriesState.loading = true
-  try {
-    const groupId = normalizeGroupId(userMemoriesState.groupId)
-    const res = await fetchUserMemories({
-      userId: userMemoriesState.userId,
-      groupId,
-      limit: userMemoriesState.limit,
-      offset: userMemoriesState.offset,
-    })
-    if (res.isSuccess) {
-      userMemoriesState.memories = res.data
-      userMemoriesState.total = res.data.length
-      if (!res.data.length) {
-        message.info('未找到记忆记录')
-      }
-    }
-    else {
-      message.error(res.message || '加载失败')
-      userMemoriesState.total = 0
-    }
-  }
-  catch (error) {
-    console.error('Failed to load user memories:', error)
-    message.error('加载失败')
-    userMemoriesState.total = 0
-  }
-  finally {
-    userMemoriesState.loading = false
-  }
-}
+const groupUserColumns: DataTableColumns<MemoryRecord> = [
+  {
+    title: '用户 QQ',
+    key: 'userId',
+    width: 140,
+    render: row => h(NTag, { type: 'success', size: 'small' }, { default: () => `QQ: ${row.userId}` }),
+  },
+  {
+    title: '键名 (Key)',
+    key: 'key',
+    width: 140,
+    render: row => h(NTag, { type: 'info', size: 'small' }, { default: () => row.key }),
+  },
+  {
+    title: '重要度 (点击修改)',
+    key: 'importance',
+    width: 140,
+    render: row => renderImportanceTag(row),
+  },
+  {
+    title: '记忆事实内容',
+    key: 'content',
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '最后更新时间',
+    key: 'updatedAt',
+    width: 170,
+    render: row => formatDate(row.updatedAt),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 90,
+    render: row => h(
+      NPopconfirm,
+      { onPositiveClick: () => handleDelete(row.id) },
+      {
+        trigger: () => h(NButton, { size: 'tiny', type: 'error', tertiary: true }, { default: () => '删除' }),
+        default: () => '确定遗忘该条记忆？',
+      },
+    ),
+  },
+]
 
-async function handleLoadUserMemories(reset = false) {
-  if (reset) {
-    userMemoriesState.offset = 0
-  }
-  await loadUserMemories()
-}
+const privateColumns: DataTableColumns<MemoryRecord> = [
+  {
+    title: '用户 QQ',
+    key: 'userId',
+    width: 150,
+    render: row => h(NTag, { type: 'success', size: 'small' }, { default: () => `QQ: ${row.userId}` }),
+  },
+  {
+    title: '键名 (Key)',
+    key: 'key',
+    width: 140,
+    render: row => h(NTag, { type: 'info', size: 'small' }, { default: () => row.key }),
+  },
+  {
+    title: '重要度 (点击修改)',
+    key: 'importance',
+    width: 140,
+    render: row => renderImportanceTag(row),
+  },
+  {
+    title: '记忆事实内容',
+    key: 'content',
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '最后更新时间',
+    key: 'updatedAt',
+    width: 170,
+    render: row => formatDate(row.updatedAt),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 90,
+    render: row => h(
+      NPopconfirm,
+      { onPositiveClick: () => handleDelete(row.id) },
+      {
+        trigger: () => h(NButton, { size: 'tiny', type: 'error', tertiary: true }, { default: () => '删除' }),
+        default: () => '确定遗忘该条记忆？',
+      },
+    ),
+  },
+]
 
-const showAddMemoryModal = ref(false)
-const newMemoriesInput = ref('')
-
-async function handleUpsertUserMemories() {
-  if (!userMemoriesState.userId) {
-    message.warning('请输入User ID')
-    return
-  }
-  if (!newMemoriesInput.value.trim()) {
-    message.warning('请输入要添加的memories')
-    return
-  }
-
-  // Parse memories from textarea, each line is either "记忆文本" or "记忆文本|重要度"
-  const memories = newMemoriesInput.value
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .map((line) => {
-      const [textPart, importancePart] = line.split('|').map(part => part.trim())
-      if (!textPart) {
-        return null
-      }
-      if (importancePart) {
-        const parsedImportance = Number(importancePart)
-        if (!Number.isNaN(parsedImportance) && parsedImportance >= 0 && parsedImportance <= 1) {
-          return {
-            value: textPart,
-            importance: parsedImportance,
-          }
-        }
-      }
-      return textPart
-    })
-    .filter(Boolean) as Array<string | { value: string, importance: number }>
-
-  if (memories.length === 0) {
-    message.warning('请按行输入记忆内容，可选格式：记忆文本 或 记忆文本|重要度(0-1)')
-    return
-  }
-
-  try {
-    const groupId = normalizeGroupId(userMemoriesState.groupId)
-    const res = await upsertUserMemories({
-      userId: userMemoriesState.userId,
-      groupId,
-      memories,
-    })
-    if (res.isSuccess) {
-      message.success(`成功更新 ${res.data.updated} 条记忆`)
-      showAddMemoryModal.value = false
-      newMemoriesInput.value = ''
-      await loadUserMemories()
-    }
-    else {
-      message.error(res.message || '保存失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to upsert user memories:', error)
-    message.error('保存失败')
-  }
-}
-
-async function handleDeleteUserMemory(memoryId: number) {
-  try {
-    const userId = userMemoriesState.userId?.trim()
-    const res = userId
-      ? await deleteUserMemory(userId, String(memoryId))
-      : await deleteMemoryById(String(memoryId))
-    if (res.isSuccess) {
-      message.success('删除成功')
-      await loadUserMemories()
-    }
-    else {
-      message.error(res.message || '删除失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to delete user memory:', error)
-    message.error('删除失败')
-  }
-}
-
-async function handleQueryUserMemories() {
-  if (!userMemoriesState.userId) {
-    message.warning('请输入User ID')
-    return
-  }
-  if (!userMemoriesState.queryText) {
-    message.warning('请输入查询文本')
-    return
-  }
-  userMemoriesState.loading = true
-  try {
-    const groupId = normalizeGroupId(userMemoriesState.groupId)
-    const res = await queryUserMemories({
-      userId: userMemoriesState.userId,
-      groupId,
-      query: userMemoriesState.queryText,
-      totalLimit: userMemoriesState.queryTotalLimit,
-      searchLimit: userMemoriesState.querySearchLimit,
-      minImportance: userMemoriesState.queryMinImportance,
-    })
-    if (res.isSuccess) {
-      userMemoriesState.memories = res.data
-      message.success('查询成功')
-    }
-    else {
-      message.error(res.message || '查询失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to query user memories:', error)
-    message.error('查询失败')
-  }
-  finally {
-    userMemoriesState.loading = false
-  }
-}
-
-onMounted(() => {
-  handleLoadUserMemories(true)
+onMounted(async () => {
+  await loadGroups()
+  loadGroupSharedMemories()
 })
 </script>
 
 <template>
   <div class="chaite-page memory-container">
-    <header class="chaite-page-header"><div><h1>记忆</h1><p>按群和用户查询、检索与维护聊天记忆。</p></div></header>
+    <header class="chaite-page-header">
+      <div>
+        <h1>长期记忆库</h1>
+        <p>轻量分群与个人偏好事实管理。支持严格的群聊隐私隔离、百分制重要度优先队列置换与 Agent 自主沉淀。</p>
+      </div>
+    </header>
+
     <NCard class="chaite-panel" :bordered="false">
-      <NTabs v-model:value="activeTab" type="line" animated>
-        <!-- Group Facts Tab -->
-        <NTabPane name="group-facts" tab="群组事实记忆">
+      <!-- 顶部群聊选择区域 (仅群共享与群个人 Tab 展示) -->
+      <div v-if="activeTab !== 'private'" class="mb-4 p-3 bg-gray-50/50 dark:bg-gray-800/30 rounded-lg flex items-center gap-3">
+        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">当前群聊：</span>
+        <NSelect
+          v-model:value="currentGroupId"
+          filterable
+          tag
+          placeholder="选择群号或直接手动输入群号"
+          :options="availableGroups"
+          style="width: 260px;"
+          @update:value="handleGroupChange"
+        />
+        <NButton size="small" secondary @click="activeTab === 'group' ? loadGroupSharedMemories() : loadGroupUserMemories()">
+          刷新
+        </NButton>
+      </div>
+
+      <NTabs v-model:value="activeTab" type="line" animated @update:value="handleTabChange">
+        <!-- 1. 群共享记忆 -->
+        <NTabPane name="group" :tab="`群共享记忆 (${groupSharedState.items.length}/20)`">
           <NSpace vertical :size="16">
-            <NCard title="查询条件" size="small">
-              <NForm label-placement="left" label-width="100">
-                <NGrid :cols="24" :x-gap="12">
-                  <NGridItem :span="8">
-                    <NFormItem label="Group ID">
-                      <NInput v-model:value="groupFactsState.groupId" placeholder="输入群组ID" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="4">
-                    <NFormItem label="Limit">
-                      <NInputNumber v-model:value="groupFactsState.limit" :min="1" :max="200" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="4">
-                    <NFormItem label="Offset">
-                      <NInputNumber v-model:value="groupFactsState.offset" :min="0" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="8">
-                    <NFormItem label=" ">
-                      <NSpace>
-                        <NButton type="primary" @click="loadGroupFacts">
-                          加载列表
-                        </NButton>
-                        <NButton @click="showAddFactModal = true">
-                          添加Facts
-                        </NButton>
-                      </NSpace>
-                    </NFormItem>
-                  </NGridItem>
-                </NGrid>
-              </NForm>
-            </NCard>
+            <NAlert type="info" :show-icon="false" class="text-xs">
+              📌 本群共享记忆上限 20 条，开启记忆的预设在当前群对话时全量注入。达到配额后，新记录的高重要度事实会自动置换掉重要度最低的旧记忆。
+            </NAlert>
 
-            <NCard title="语义查询" size="small">
-              <NForm label-placement="left" label-width="100">
-                <NGrid :cols="24" :x-gap="12">
-                  <NGridItem :span="10">
-                    <NFormItem label="查询文本">
-                      <NInput v-model:value="groupFactsState.queryText" placeholder="输入查询文本" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="4">
-                    <NFormItem label="返回数量">
-                      <NInputNumber v-model:value="groupFactsState.queryLimit" :min="1" :max="100" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="4">
-                    <NFormItem label="最小重要度">
-                      <NInputNumber v-model:value="groupFactsState.queryMinImportance" :min="0" :max="1" :step="0.1" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="6">
-                    <NFormItem label=" ">
-                      <NButton type="primary" @click="handleQueryGroupFacts">
-                        查询
-                      </NButton>
-                    </NFormItem>
-                  </NGridItem>
-                </NGrid>
-              </NForm>
-            </NCard>
+            <div class="flex justify-between items-center gap-4">
+              <NInput
+                v-model:value="groupSharedState.keyFilter"
+                placeholder="按键名过滤..."
+                clearable
+                style="max-width: 260px;"
+                @update:value="loadGroupSharedMemories"
+              />
+              <NButton type="primary" :disabled="!currentGroupId" @click="openAddModal('group')">
+                + 添加群共享记忆
+              </NButton>
+            </div>
 
-            <NCard title="Facts列表" size="small">
-              <NDataTable
-                :columns="groupFactsColumns"
-                :data="groupFactsState.facts"
-                :loading="groupFactsState.loading"
-                :scroll-x="1000"
-              >
-                <template #empty>
-                  <NEmpty description="暂无数据" />
-                </template>
-              </NDataTable>
-            </NCard>
+            <NDataTable
+              :columns="groupColumns"
+              :data="groupSharedState.items"
+              :loading="groupSharedState.loading"
+              :pagination="{ pageSize: 20 }"
+            />
           </NSpace>
         </NTabPane>
 
-        <!-- User Memories Tab -->
-        <NTabPane name="user-memories" tab="用户记忆">
+        <!-- 2. 群内个人记忆（严格隔离） -->
+        <NTabPane name="group-user" :tab="`群内个人记忆 (${groupUserState.items.length}/20)`">
           <NSpace vertical :size="16">
-            <NCard title="查询条件" size="small">
-              <NForm label-placement="left" label-width="100">
-                <NGrid :cols="24" :x-gap="12">
-                    <NGridItem :span="8">
-                      <NFormItem label="用户 ID">
-                        <NInput v-model:value="userMemoriesState.userId" placeholder="留空表示全部用户" />
-                      </NFormItem>
-                    </NGridItem>
-                    <NGridItem :span="8">
-                      <NFormItem label="群组 ID">
-                        <NInput v-model:value="userMemoriesState.groupId" placeholder="可选，筛选特定群组" />
-                      </NFormItem>
-                    </NGridItem>
-                    <NGridItem :span="4">
-                      <NFormItem label="每页条数">
-                        <NInputNumber v-model:value="userMemoriesState.limit" :min="1" :max="200" />
-                      </NFormItem>
-                    </NGridItem>
-                    <NGridItem :span="4">
-                      <NFormItem label="偏移量">
-                        <NInputNumber v-model:value="userMemoriesState.offset" :min="0" />
-                      </NFormItem>
-                    </NGridItem>
-                    <NGridItem :span="8">
-                      <NFormItem label="操作">
-                        <NSpace>
-                          <NButton type="primary" @click="handleLoadUserMemories(true)">
-                            查询
-                          </NButton>
-                          <NButton @click="showAddMemoryModal = true">
-                            添加记忆
-                          </NButton>
-                        </NSpace>
-                      </NFormItem>
-                    </NGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
-              <NCard v-if="userMemoriesState.total > 0" size="small" title="统计">
-                <NSpace>
-                  <span>当前条数：{{ userMemoriesState.total }}</span>
-                  <span v-if="userMemoriesState.userId">当前用户：{{ userMemoriesState.userId }}</span>
-                  <span v-if="userMemoriesState.groupId">当前群组：{{ userMemoriesState.groupId }}</span>
-                </NSpace>
-              </NCard>
+            <NAlert type="warning" :show-icon="false" class="text-xs">
+              🔒 严格群隔离：每人在此群上限 20 条，全量注入当前发言者。此处事实绝对不会出现在其他任何群，杜绝跨群信息泄露。
+            </NAlert>
 
-            <NCard title="语义检索" size="small">
-              <NForm label-placement="left" label-width="100">
-                <NGrid :cols="24" :x-gap="12">
-                  <NGridItem :span="10">
-                    <NFormItem label="查询文本">
-                      <NInput v-model:value="userMemoriesState.queryText" placeholder="输入查询文本" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="4">
-                    <NFormItem label="注入上限">
-                      <NInputNumber v-model:value="userMemoriesState.queryTotalLimit" :min="1" :max="100" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="4">
-                    <NFormItem label="检索数量">
-                      <NInputNumber v-model:value="userMemoriesState.querySearchLimit" :min="0" :max="100" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="4">
-                    <NFormItem label="最低重要度">
-                      <NInputNumber v-model:value="userMemoriesState.queryMinImportance" :min="0" :max="1" :step="0.1" />
-                    </NFormItem>
-                  </NGridItem>
-                  <NGridItem :span="6">
-                    <NFormItem label=" ">
-                      <NButton type="primary" @click="handleQueryUserMemories">
-                        查询
-                      </NButton>
-                    </NFormItem>
-                  </NGridItem>
-                </NGrid>
-              </NForm>
-            </NCard>
+            <div class="flex justify-between items-center gap-4">
+              <div class="flex gap-2">
+                <NInput
+                  v-model:value="groupUserState.userFilter"
+                  placeholder="按用户 QQ 号筛选..."
+                  clearable
+                  style="width: 200px;"
+                  @update:value="loadGroupUserMemories"
+                />
+                <NInput
+                  v-model:value="groupUserState.keyFilter"
+                  placeholder="按键名过滤..."
+                  clearable
+                  style="width: 200px;"
+                  @update:value="loadGroupUserMemories"
+                />
+              </div>
+              <NButton type="primary" :disabled="!currentGroupId" @click="openAddModal('group_user')">
+                + 添加个人记忆
+              </NButton>
+            </div>
 
-            <NCard title="Memories列表" size="small">
-              <NDataTable
-                :columns="userMemoriesColumns"
-                :data="userMemoriesState.memories"
-                :loading="userMemoriesState.loading"
-                :scroll-x="1000"
-              >
-                <template #empty>
-                  <NEmpty description="暂无数据" />
-                </template>
-              </NDataTable>
-            </NCard>
+            <NDataTable
+              :columns="groupUserColumns"
+              :data="groupUserState.items"
+              :loading="groupUserState.loading"
+              :pagination="{ pageSize: 20 }"
+            />
+          </NSpace>
+        </NTabPane>
+
+        <!-- 3. 私聊用户记忆 -->
+        <NTabPane name="private" :tab="`私聊个人记忆 (${privateState.items.length}/30)`">
+          <NSpace vertical :size="16">
+            <NAlert type="info" :show-icon="false" class="text-xs">
+              💬 私聊记忆上限 30 条，仅在与该用户的 1v1 私信对话中全量注入。
+            </NAlert>
+
+            <div class="flex justify-between items-center gap-4">
+              <div class="flex gap-2">
+                <NInput
+                  v-model:value="privateState.userFilter"
+                  placeholder="按用户 QQ 号筛选..."
+                  clearable
+                  style="width: 200px;"
+                  @update:value="loadPrivateMemories"
+                />
+                <NInput
+                  v-model:value="privateState.keyFilter"
+                  placeholder="按键名过滤..."
+                  clearable
+                  style="width: 200px;"
+                  @update:value="loadPrivateMemories"
+                />
+              </div>
+              <NButton type="primary" @click="openAddModal('private_user')">
+                + 添加私聊记忆
+              </NButton>
+            </div>
+
+            <NDataTable
+              :columns="privateColumns"
+              :data="privateState.items"
+              :loading="privateState.loading"
+              :pagination="{ pageSize: 30 }"
+            />
           </NSpace>
         </NTabPane>
       </NTabs>
     </NCard>
 
-    <!-- Add Group Facts Modal -->
+    <!-- 新增弹窗 -->
     <NModal
-      v-model:show="showAddFactModal"
-      preset="dialog"
-      title="添加Group Facts"
-      positive-text="保存"
-      negative-text="取消"
-      @positive-click="handleSaveGroupFacts"
+      v-model:show="modalVisible"
+      preset="card"
+      :title="modalForm.scope === 'group' ? '添加群共享记忆 (上限20条)' : modalForm.scope === 'group_user' ? '添加群内个人记忆 (上限20条)' : '添加私聊个人记忆 (上限30条)'"
+      style="width: 540px;"
     >
-      <NSpace vertical>
-        <div>每行一个fact</div>
-        <NInput
-          v-model:value="newFactsInput"
-          type="textarea"
-          placeholder="输入facts，每行一个"
-          :rows="10"
-        />
-      </NSpace>
+      <NForm label-placement="left" label-width="110">
+        <NFormItem v-if="modalForm.scope === 'group' || modalForm.scope === 'group_user'" label="群号">
+          <NInput v-model:value="modalForm.groupId" placeholder="输入群号" />
+        </NFormItem>
+        <NFormItem v-if="modalForm.scope === 'group_user' || modalForm.scope === 'private_user'" label="用户 QQ 号">
+          <NInput v-model:value="modalForm.userId" placeholder="输入用户的 QQ 号" />
+        </NFormItem>
+        <NFormItem label="记忆标识键">
+          <NInput v-model:value="modalForm.key" placeholder="如 preferences, identity, rule 等" />
+        </NFormItem>
+        <NFormItem label="重要度 (1~100)">
+          <NInputNumber v-model:value="modalForm.importance" :min="1" :max="100" style="width: 100%;" />
+        </NFormItem>
+        <NFormItem label="记忆事实内容">
+          <NInput
+            v-model:value="modalForm.content"
+            type="textarea"
+            :rows="4"
+            placeholder="记录具体的事实、习惯偏好或群规设定"
+          />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <NButton @click="modalVisible = false">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="modalSubmitting" @click="handleSaveMemory">
+            保存
+          </NButton>
+        </div>
+      </template>
     </NModal>
 
-    <!-- Add User Memories Modal -->
+    <!-- 调整重要度弹窗 -->
     <NModal
-      v-model:show="showAddMemoryModal"
-      preset="dialog"
-      title="添加User Memories"
-      positive-text="保存"
-      negative-text="取消"
-      @positive-click="handleUpsertUserMemories"
+      v-model:show="impModalVisible"
+      preset="card"
+      title="微调记忆重要度"
+      style="width: 400px;"
     >
-      <NSpace vertical>
-        <div>每行一个记忆，可选格式：记忆文本 或 记忆文本|重要度(0-1)</div>
-        <NInput
-          v-model:value="newMemoriesInput"
-          type="textarea"
-          placeholder="例如：我喜欢喝咖啡 或 我喜欢喝咖啡|0.8"
-          :rows="10"
-        />
-      </NSpace>
+      <NForm label-placement="left" label-width="100">
+        <NFormItem label="记忆键名">
+          <span class="font-medium text-gray-800 dark:text-gray-200">{{ impForm.key }}</span>
+        </NFormItem>
+        <NFormItem label="重要度 (1~100)">
+          <NInputNumber v-model:value="impForm.importance" :min="1" :max="100" style="width: 100%;" />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <NButton @click="impModalVisible = false">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="impSubmitting" @click="handleSaveImportance">
+            确定
+          </NButton>
+        </div>
+      </template>
     </NModal>
   </div>
 </template>
 
 <style scoped>
 .memory-container {
-  max-width: 1600px;
+  padding: 16px;
 }
 </style>

@@ -1,14 +1,30 @@
 {
-  "name": "chaite",
+  "name": "@syfantasy/chaite",
   "version": "2.0.0",
   "description": "Chaite - Standalone AI Agent & Multi-Protocol Bot System",
   "author": "syfantasy",
   "license": "ISC",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./core": {
+      "import": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts"
+    }
+  },
+  "bin": {
+    "chaite": "./dist/index.js"
+  },
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
+    "build": "tsc --outDir dist --declaration",
+    "prepare": "tsc --outDir dist --declaration",
     "build:web": "pnpm --prefix web build",
     "postinstall": "node -e \"try { require('sqlite3') } catch { require('child_process').execSync('npm rebuild sqlite3', { stdio: 'inherit' }) }\"",
     "check": "tsc --noEmit"

@@ -244,6 +244,7 @@ namespace Shareable {
     groupContextMaxMessages?: number
     groupContextMaxTokens?: number
     /** 错误重试开关与最大重试次数 */
+    enableMemory?: boolean
     enableRetry?: boolean
     maxRetries?: number
     /** 失败降级到备用模型开关与模型名称（渠道/模型名） */

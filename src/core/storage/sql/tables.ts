@@ -193,8 +193,27 @@ export const OPERATION_LOGS: TableShape = {
   },
 }
 
+export const MEMORIES: TableShape = {
+  database: 'main',
+  table: 'memories',
+  keyColumn: 'id',
+  columns: {
+    id: { type: 'text', pk: true },
+    scope: { type: 'text', notNull: true },
+    groupId: { type: 'text' },
+    userId: { type: 'text' },
+    targetId: { type: 'text', notNull: true },
+    key: { type: 'text', notNull: true },
+    content: { type: 'text', notNull: true },
+    importance: { type: 'int', default: 50 },
+    updatedAt: { type: 'bigint', default: 0 },
+  },
+  uniqueIndex: { columns: ['scope', 'targetId', 'key'], name: 'uniq_memories_scope_target_key', unique: true },
+}
+
 /** chaite 自己管的全部表。宿主有额外的表可以自己追加。 */
 export const CHAITE_TABLES: TableShape[] = [
   CHANNELS, CHAT_PRESETS, TOOLS, TRIGGERS, PROCESSORS,
   TOOLS_GROUPS, USER_STATES, MCP_SERVERS, HISTORY, OPERATION_LOGS,
+  MEMORIES,
 ]

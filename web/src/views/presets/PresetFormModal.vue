@@ -207,6 +207,7 @@ const addPreset = ref<Partial<Shareable.PresetModel>>({
   showThinking: false,
   customOptions: undefined,
   autoTriggerProbability: 0,
+  enableMemory: false,
   enableRetry: false,
   maxRetries: 2,
   enableFallback: false,
@@ -289,6 +290,9 @@ watch(() => props.initialData, (newVal) => {
     }
     if (data.autoTriggerProbability === undefined) {
       data.autoTriggerProbability = 0
+    }
+    if (data.enableMemory === undefined) {
+      data.enableMemory = false
     }
     if (data.enableRetry === undefined) {
       data.enableRetry = false
@@ -440,6 +444,7 @@ watch(showModal, (val) => {
       showThinking: false,
       customOptions: undefined,
       autoTriggerProbability: 0,
+      enableMemory: false,
       enableRetry: false,
       maxRetries: 2,
       enableFallback: false,
@@ -761,6 +766,14 @@ watch(showModal, (val) => {
                           </template>
                           <span>如果选择了"任意"，toolcall下一轮会自动变回"自动"模式，防止无限循环。</span>
                         </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+
+                    <!-- 长期记忆 -->
+                    <NFormItemGridItem span="24 s:12 m:12" label="开启长期记忆">
+                      <div style="display: flex; align-items: center; gap: 12px;">
+                        <NSwitch v-model:value="addPreset.enableMemory" />
+                        <span class="text-xs text-gray-500">开启后自动挂载用户与全局记忆工具，跨预设共享用户偏好与常识</span>
                       </div>
                     </NFormItemGridItem>
 

@@ -80,6 +80,9 @@ export class Chaite extends EventEmitter {
   /** Operation log manager — records fine-grained AI activity */
   private operationLogManager: OperationLogManager
 
+  /** Memory manager for persistent lightweight user & global facts */
+  private memoryManager?: import('../memory').MemoryManager
+
   private constructor(private channelsManager: ChannelsManager, private toolsManager: ToolManager,
                         private processorsManager: ProcessorsManager, private chatPresetManager: ChatPresetManager, private toolsGroupManager: ToolsGroupManager, private triggerManager: TriggerManager<TriggerDTO>,
                         private userModeSelector: UserModeSelector, private userStateStorage: BasicStorage<UserState>,
@@ -305,6 +308,7 @@ export class Chaite extends EventEmitter {
 
         const newOptions = {
           ...preset.sendMessageOption,
+          enableMemory: preset.enableMemory ?? preset.sendMessageOption?.enableMemory,
           builtinToolCategories: preset.builtinToolCategories,
           ...Object.fromEntries(
             Object.entries(options)
@@ -441,6 +445,14 @@ export class Chaite extends EventEmitter {
 
   canManageMcp(context: ChaiteContext): boolean {
     return this.mcpManagementGuard?.(context) ?? false
+  }
+
+  setMemoryManager(manager: import('../memory').MemoryManager): void {
+    this.memoryManager = manager
+  }
+
+  getMemoryManager(): import('../memory').MemoryManager | undefined {
+    return this.memoryManager
   }
 
   // ─── Workflow Engine ─────────────────────────────────────────────────────────

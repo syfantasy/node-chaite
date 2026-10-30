@@ -30,6 +30,7 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
       this.groupContextMaxMessages = params.groupContextMaxMessages
       this.groupContextMaxTokens = params.groupContextMaxTokens
       this.enableRetry = params.enableRetry !== undefined ? params.enableRetry : false
+      this.enableMemory = params.enableMemory !== undefined ? params.enableMemory : false
       this.maxRetries = typeof params.maxRetries === 'number' ? params.maxRetries : 2
       this.enableFallback = params.enableFallback !== undefined ? params.enableFallback : false
       this.fallbackModel = params.fallbackModel
@@ -80,6 +81,7 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
    * 错误重试开关与最大重试次数
    */
   enableRetry?: boolean
+  enableMemory?: boolean
   maxRetries?: number
 
   /**
@@ -153,6 +155,7 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
       groupContextMaxMessages: this.groupContextMaxMessages,
       groupContextMaxTokens: this.groupContextMaxTokens,
       enableRetry: this.enableRetry !== undefined ? this.enableRetry : false,
+      enableMemory: this.enableMemory !== undefined ? this.enableMemory : false,
       maxRetries: this.maxRetries !== undefined ? this.maxRetries : 2,
       enableFallback: this.enableFallback !== undefined ? this.enableFallback : false,
       fallbackModel: this.fallbackModel,
@@ -197,6 +200,7 @@ export class ChatPreset extends AbstractShareable<ChatPreset> {
     preset.groupContextMaxMessages = typeof raw.groupContextMaxMessages === 'number' ? raw.groupContextMaxMessages : undefined
     preset.groupContextMaxTokens = typeof raw.groupContextMaxTokens === 'number' ? raw.groupContextMaxTokens : undefined
     preset.enableRetry = raw.enableRetry !== undefined ? Boolean(raw.enableRetry) : false
+    preset.enableMemory = raw.enableMemory !== undefined ? Boolean(raw.enableMemory) : false
     preset.maxRetries = typeof raw.maxRetries === 'number' ? raw.maxRetries : 2
     preset.enableFallback = raw.enableFallback !== undefined ? Boolean(raw.enableFallback) : false
     preset.fallbackModel = raw.fallbackModel

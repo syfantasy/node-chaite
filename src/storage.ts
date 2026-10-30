@@ -24,6 +24,9 @@ import {
   SqlMcpServerStorage,
   SqlHistoryManager,
   SqlOperationLogStorage,
+  SqlMemoryStorage,
+  MemoryManager,
+  DefaultMemoryProvider,
   getLogger,
 } from './core'
 import { StandaloneUserModeSelector } from './userMode'
@@ -39,6 +42,12 @@ export interface StorageContext {
   userStateStorage: SqlUserStateStorage
   historyStorage: SqlHistoryManager
   operationLogManager: OperationLogManager
+}
+
+let currentStorageContext: StorageContext | null = null
+
+export function getStorageContext(): StorageContext | null {
+  return currentStorageContext
 }
 
 export async function initChaiteStorage(): Promise<StorageContext> {
@@ -92,6 +101,9 @@ export async function initChaiteStorage(): Promise<StorageContext> {
   const mcpServerStorage = new SqlMcpServerStorage(mainDriver)
   await mcpServerStorage.initialize()
 
+  const memoryStorage = new SqlMemoryStorage(mainDriver)
+  await memoryStorage.initialize()
+
   const historyStorage = new SqlHistoryManager(historyDriver, path.join(ROOT_DATA_DIR, 'images'))
   await historyStorage.initialize()
 
@@ -127,13 +139,16 @@ export async function initChaiteStorage(): Promise<StorageContext> {
   chaite.setOperationLogManager(opLogMgr)
   chaite.setMcpServerManager(new McpServerManager(mcpServerStorage))
 
+  const memoryManager = new MemoryManager(new DefaultMemoryProvider(memoryStorage))
+  chaite.setMemoryManager(memoryManager)
+
   const skillRegistry = new SkillRegistry(path.join(ROOT_DATA_DIR, 'skills'))
   await skillRegistry.load()
   chaite.setSkillRegistry(skillRegistry)
 
   console.log('[Storage] Chaite core & SQLite storage initialized successfully.')
 
-  return {
+  currentStorageContext = {
     mainDriver,
     chaite,
     presetManager: chatPresetManager,
@@ -142,4 +157,6 @@ export async function initChaiteStorage(): Promise<StorageContext> {
     historyStorage,
     operationLogManager: opLogMgr,
   }
+
+  return currentStorageContext
 }

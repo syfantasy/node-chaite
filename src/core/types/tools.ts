@@ -18,6 +18,7 @@ export interface Parameter {
 export interface Property {
     type: 'string' | 'number' | 'boolean' | 'array' | 'object'
     description: string | null
+    enum?: string[]
     /** Required by Gemini for array-typed parameters. */
     items?: Property
     properties?: Record<string, Property>

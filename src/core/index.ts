@@ -6,6 +6,7 @@ export * from './channels/index'
 export * from './const/index'
 export * from './share/index'
 export * from './storage/index'
+export * from './memory/index'
 
 // 把 chaite 的 getLogger 注入存储层。存储层只做类型引用以避免把 types 桶文件
 // （以及它带来的 node-schedule / PdfParser）拉进自己的模块图，所以这里在包入口

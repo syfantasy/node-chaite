@@ -241,13 +241,28 @@ interface BuiltinToolRow {
 }
 
 const builtinTools: BuiltinToolRow[] = [
-  { name: 'search_skills', description: '搜索精简的 Skill 能力目录，不加载 MCP 工具 schema。', visibility: '所有启用 MCP 的对话', source: 'Skill / MCP 运行时' },
-  { name: 'activate_skill_tools', description: '按 Skill 激活少量 MCP 工具；仅激活后的下一轮才会看见真实工具。', visibility: '所有启用 MCP 的对话', source: 'Skill / MCP 运行时' },
-  { name: 'list_mcp_servers', description: '查看 MCP Server 及已缓存工具数，不返回密钥。', visibility: '仅机器人主人', source: 'MCP 管理' },
-  { name: 'draft_mcp_server', description: '生成 MCP 配置草案；主人 QQ 确认后才会保存。', visibility: '仅机器人主人', source: 'MCP 管理' },
-  { name: 'list_skills', description: '列出已加载 Skill。', visibility: '仅机器人主人', source: 'Skill 管理' },
-  { name: 'create_skill / update_skill / delete_skill', description: '创建、修改或删除 Skill 文件。', visibility: '仅机器人主人', source: 'Skill 管理' },
-  { name: 'create_workflow / run_skill', description: '维护工作流或按需运行 Skill。', visibility: '仅机器人主人', source: 'Skill 管理' },
+  // 长期记忆工具（随预设开启自动挂载）
+  { name: 'remember', description: '记录或更新长期事实记忆（支持百分制重要度与优先置换淘汰，后台静默执行）。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
+  { name: 'update_memory_importance', description: '微调已有记忆的重要度（1~100），动态影响淘汰优先级。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
+  { name: 'get_memories', description: '主动检索当前群或用户已保存的长期事实清单。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
+  { name: 'forget_memory', description: '主动遗忘或删除已失效的特定事实记忆。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
+
+  // MCP 能力检索与动态激活
+  { name: 'search_mcp_tools', description: '搜索已配置 MCP Server 中的可用工具，不预先加载全量 schema。', visibility: '所有启用 MCP 的对话', source: 'MCP 运行时' },
+  { name: 'activate_mcp_tools', description: '按需激活指定的少量 MCP 工具，下一轮模型直接可用。', visibility: '所有启用 MCP 的对话', source: 'MCP 运行时' },
+
+  // MCP 配置管理（主人权限）
+  { name: 'list_mcp_servers', description: '查看配置的 MCP Server 及已缓存工具数，不泄露凭据。', visibility: '仅机器人主人', source: 'MCP 管理' },
+  { name: 'draft_mcp_server', description: '生成 MCP 配置草案，主人确认后写入。', visibility: '仅机器人主人', source: 'MCP 管理' },
+
+  // Skill 管理（主人权限）
+  { name: 'list_skills', description: '列出已加载的 Skill 列表及元数据。', visibility: '仅机器人主人', source: 'Skill 管理' },
+  { name: 'create_skill / update_skill / delete_skill', description: '动态创建、修改或删除 Skill 文件。', visibility: '仅机器人主人', source: 'Skill 管理' },
+  { name: 'create_workflow / run_skill', description: '编排复杂工作流或按需直接执行 Skill。', visibility: '仅机器人主人', source: 'Skill 管理' },
+
+  // 调度与异步任务
+  { name: 'schedule_task / cancel_scheduled_task / list_scheduled_tasks', description: '创建与维护基于自然语言的定时调度任务。', visibility: '主人与受信任对话', source: '系统调度' },
+  { name: 'spawn_background_task / check_job_status', description: '派发耗时异步后台任务并追踪进度。', visibility: '主人与受信任对话', source: '任务与执行' },
 ]
 
 const builtinColumns: DataTableColumns<BuiltinToolRow> = [

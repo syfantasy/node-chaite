@@ -166,6 +166,11 @@ export class AbstractClient implements IClient {
         for (const tool of createSelfTools()) pushUnique(tool)
       }
     }
+    // Memory tools: mounted when preset enables memory
+    if (this.context.getOptions()?.enableMemory && this.context.chaite?.getMemoryManager?.()) {
+      const memoryTools = this.context.chaite.getMemoryManager()!.getActiveProvider().getTools()
+      for (const tool of memoryTools) pushUnique(tool)
+    }
     if (groupIds.includes('default_local')) {
       const toolDTOS = await toolManager.listInstances()
       for (const toolDTO of toolDTOS) {

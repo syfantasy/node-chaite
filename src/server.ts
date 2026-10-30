@@ -11,6 +11,9 @@ import {
 } from './core'
 import { AppConfig, getConfig, saveConfig } from './config'
 import { pluginManager } from './plugin'
+import { groupHistoryBuffer } from './context/groupHistoryBuffer'
+import { handleMessage } from './index'
+import { getStorageContext, initChaiteStorage } from './storage'
 
 const cwd = process.cwd()
 const FRONTEND_DIR = fs.existsSync(path.resolve(cwd, 'web/build'))
@@ -177,6 +180,103 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
   const app = createApp(
     (expressApp: any) => {
       // Memory config & fallback routes (avoids 404/HTML alert on WebUI)
+      expressApp.get('/api/memories/groups', async (_req: any, res: any) => {
+        try {
+          const chaite = Chaite.getInstance()
+          const memoryMgr = chaite.getMemoryManager()
+          const provider = memoryMgr?.getActiveProvider() as any
+          const storage = provider?.getStorage ? provider.getStorage() : undefined
+          const dbGroups = storage ? await storage.listDistinctGroups() : []
+          const cfgGroups = (getConfig().management?.whiteGroups || []).map(String)
+          const allGroups = Array.from(new Set([...dbGroups, ...cfgGroups])).filter(Boolean)
+          res.json(ChaiteResponse.ok(allGroups))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err.message))
+        }
+      })
+
+      expressApp.get('/api/memories', async (req: any, res: any) => {
+        try {
+          const chaite = Chaite.getInstance()
+          const memoryMgr = chaite.getMemoryManager()
+          if (!memoryMgr) return res.json(ChaiteResponse.ok([]))
+          const { scope, groupId, userId, key, limit, offset } = req.query
+          const filter: any = {}
+          if (scope) filter.scope = scope
+          if (groupId !== undefined && groupId !== '') filter.groupId = groupId
+          if (userId !== undefined && userId !== '') filter.userId = userId
+          if (key) filter.key = key
+          if (limit) filter.limit = Number(limit)
+          if (offset) filter.offset = Number(offset)
+
+          const list = await memoryMgr.getActiveProvider().getMemories(filter)
+          res.json(ChaiteResponse.ok(list))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err.message))
+        }
+      })
+
+      expressApp.post('/api/memories', async (req: any, res: any) => {
+        try {
+          const chaite = Chaite.getInstance()
+          const memoryMgr = chaite.getMemoryManager()
+          if (!memoryMgr) return res.status(500).json(ChaiteResponse.fail(null, 'Memory manager not available'))
+          const { scope, groupId, userId, key, content, importance } = req.body || {}
+          if (!scope || !key || !content) {
+            return res.status(400).json(ChaiteResponse.fail(null, 'scope, key, and content are required'))
+          }
+          const result = await memoryMgr.getActiveProvider().setMemory({
+            scope,
+            groupId: groupId || null,
+            userId: userId || null,
+            key: String(key).trim(),
+            content: String(content).trim(),
+            importance: importance !== undefined ? Number(importance) : 50,
+          })
+          res.json(ChaiteResponse.ok(result))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err.message))
+        }
+      })
+
+      expressApp.put('/api/memories/:id/importance', async (req: any, res: any) => {
+        try {
+          const chaite = Chaite.getInstance()
+          const memoryMgr = chaite.getMemoryManager()
+          if (!memoryMgr) return res.status(500).json(ChaiteResponse.fail(null, 'Memory manager not available'))
+          const provider = memoryMgr.getActiveProvider() as any
+          const storage = provider?.getStorage ? provider.getStorage() : undefined
+          if (!storage) return res.status(500).json(ChaiteResponse.fail(null, 'Storage not available'))
+          const item = await storage.getItem(req.params.id)
+          if (!item) return res.status(404).json(ChaiteResponse.fail(null, 'Memory not found'))
+          const newImp = Number(req.body?.importance)
+          const ok = await storage.updateImportance(item.scope, item.targetId, item.key, newImp)
+          res.json(ChaiteResponse.ok({ success: ok }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err.message))
+        }
+      })
+
+      expressApp.delete('/api/memories/:id', async (req: any, res: any) => {
+        try {
+          const chaite = Chaite.getInstance()
+          const memoryMgr = chaite.getMemoryManager()
+          if (!memoryMgr) return res.status(500).json(ChaiteResponse.fail(null, 'Memory manager not available'))
+          const ok = await memoryMgr.getActiveProvider().deleteMemory(req.params.id)
+          res.json(ChaiteResponse.ok({ removed: ok }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err.message))
+        }
+      })
+
+      // 旧接口兼容降级（避免任何 404/页面报错）
+      expressApp.get('/api/memory/user/memories', (_req: any, res: any) => {
+        res.status(200).json(ChaiteResponse.ok([]))
+      })
+      expressApp.get('/api/memory/group/:groupId/facts', (_req: any, res: any) => {
+        res.status(200).json(ChaiteResponse.ok([]))
+      })
+
       expressApp.get('/api/memory/config', (_req: any, res: any) => {
         res.status(200).json(
           ChaiteResponse.ok({
@@ -384,6 +484,116 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
         } else {
           res.status(401).json(ChaiteResponse.fail(null, '密码错误，请输入正确的管理密码'))
         }
+      })
+
+      // ==================== Bridge API (供外部 Bot / chatgpt-plugin 对接) ====================
+      // 1. 旁路群聊消息流水录入
+      expressApp.post('/api/bridge/record', async (req: any, res: any) => {
+        try {
+          const event = req.body?.event
+          if (event && event.message_type === 'group' && event.group_id) {
+            await groupHistoryBuffer.recordMessage(event)
+          }
+          res.status(200).json(ChaiteResponse.ok({ recorded: true }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || '记录失败'))
+        }
+      })
+
+      // 2. 对话处理网关
+      expressApp.post('/api/bridge/chat', async (req: any, res: any) => {
+        try {
+          const { text, event, presetId } = req.body || {}
+          if (!event) {
+            return res.status(400).json(ChaiteResponse.fail(null, '缺少 event 参数'))
+          }
+
+          const replies: any[] = []
+          const virtualAdapter = {
+            getSelfId: () => 0,
+            sendGroupMsg: async (_gid: any, msg: any) => {
+              replies.push(msg)
+            },
+            sendPrivateMsg: async (_uid: any, msg: any) => {
+              replies.push(msg)
+            },
+          }
+
+          const chaiteEvent: any = {
+            type: event.message_type === 'group' ? 'group_message' : 'private_message',
+            userId: String(event.user_id),
+            groupId: event.group_id ? String(event.group_id) : undefined,
+            messageId: event.message_id,
+            text: text || event.raw_message || '',
+            raw: { ...event, _adapter: virtualAdapter },
+            client: virtualAdapter,
+            sender: event.sender,
+          }
+
+          if (presetId) {
+            chaiteEvent.presetId = presetId
+          }
+
+          const storageCtx = getStorageContext() || await initChaiteStorage()
+          await handleMessage(chaiteEvent, storageCtx)
+
+          // 整理回复结果
+          let replyText = ''
+          const images: string[] = []
+
+          for (const rep of replies) {
+            if (typeof rep === 'string') {
+              replyText += (replyText ? '\n' : '') + rep
+            } else if (Array.isArray(rep)) {
+              for (const seg of rep) {
+                if (seg.type === 'text') {
+                  replyText += seg.data?.text || ''
+                } else if (seg.type === 'image') {
+                  if (seg.data?.file) images.push(seg.data.file)
+                }
+              }
+            }
+          }
+
+          res.status(200).json(
+            ChaiteResponse.ok({
+              text: replyText,
+              images,
+              rawReplies: replies,
+            })
+          )
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || '处理异常'))
+        }
+      })
+
+      // 3. 重置对话上下文
+      expressApp.post('/api/bridge/reset', async (req: any, res: any) => {
+        try {
+          const { groupId } = req.body || {}
+          if (groupId) {
+            groupHistoryBuffer.clear(groupId)
+          }
+          res.status(200).json(ChaiteResponse.ok({ reset: true }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || '重置失败'))
+        }
+      })
+
+      // 4. 获取免密进入 Web 管理面板的 Token
+      expressApp.get('/api/bridge/panel-token', async (_req: any, res: any) => {
+        try {
+          const authKey = globalConfig.getAuthKey() || 'chaite-key'
+          const token = FrontEndAuthHandler.generateJWT(authKey)
+          res.status(200).json(ChaiteResponse.ok({ token }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || '获取失败'))
+        }
+      })
+
+      // 5. 健康检查
+      expressApp.get('/api/bridge/status', async (_req: any, res: any) => {
+        res.status(200).json(ChaiteResponse.ok({ status: 'online', version: '2.0.0' }))
       })
     },
     { frontendDir: FRONTEND_DIR }

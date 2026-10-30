@@ -163,8 +163,6 @@ const config = reactive({
   },
   llm: {
     defaultModel: '',
-    embeddingModel: 'gemini-embedding-exp-03-07',
-    dimensions: 0,
     defaultChatPresetId: '',
     enableCustomPreset: false,
     customPresetUserWhiteList: [],
@@ -751,29 +749,12 @@ onMounted(async () => {
                       模型配置
                     </div>
                     <div class="card-subtitle">
-                      设置默认使用的模型和嵌入模型
+                      设置默认对话预设与内容安全规则
                     </div>
                   </div>
                 </template>
                 <NForm label-placement="left" label-width="auto" :model="config.llm">
                   <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                    <!--                    <NFormItemGridItem span="24 s:24 m:12" label="默认模型" path="defaultModel"> -->
-                    <!--                      <NInput v-model:value="config.llm.defaultModel" placeholder="输入默认模型名称" /> -->
-                    <!--                    </NFormItemGridItem> -->
-
-                    <NFormItemGridItem span="24 s:24 m:12" label="嵌入模型" path="embeddingModel">
-                      <NInput v-model:value="config.llm.embeddingModel" placeholder="输入嵌入模型名称" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24 s:24 m:12" label="嵌入维度" path="dimensions">
-                      <NInputNumber
-                        v-model:value="config.llm.dimensions"
-                        clearable
-                        placeholder="0表示自动"
-                        :min="0"
-                        style="width: 100%"
-                      />
-                    </NFormItemGridItem>
 
                     <NFormItemGridItem span="24" label="默认对话预设" path="defaultChatPresetId">
                       <NSelect

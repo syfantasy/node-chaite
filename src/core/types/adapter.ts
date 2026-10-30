@@ -58,6 +58,7 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
     this.jobId = option.jobId
     this.planId = option.planId
     this.skillName = option.skillName
+    this.enableMemory = option.enableMemory
     this.builtinToolCategories = option.builtinToolCategories
     this.geminiBuiltinTools = option.geminiBuiltinTools
   }
@@ -171,6 +172,9 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
   /** Preset-selected categories of built-in tools. Undefined keeps compatibility by enabling all. */
   builtinToolCategories?: Array<'mcp-discovery' | 'mcp-management' | 'skill-management'>
 
+  /** 是否为该预设开启长期记忆 */
+  enableMemory?: boolean
+
   /** Gemini Generate Content built-in tools enabled by the preset. */
   geminiBuiltinTools?: Array<'googleSearch' | 'googleMaps' | 'codeExecution' | 'urlContext'>
 
@@ -223,6 +227,7 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
       responseModalities: this.responseModalities,
       safetySettings: this.safetySettings,
       toolCallLimit: this.toolCallLimit,
+      enableMemory: this.enableMemory,
       builtinToolCategories: this.builtinToolCategories,
       geminiBuiltinTools: this.geminiBuiltinTools,
     }
