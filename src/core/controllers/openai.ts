@@ -1,9 +1,9 @@
 import express, { Router } from 'express'
 import { Request, Response } from 'express'
-import { ModelResponseChunk, SendMessageOption } from '../types/index'
-import { Chaite } from '../core'
-import { createClient } from '../adapters/index'
-import { getFromChaiteConverter, getIntoChaiteConverter } from '../utils/converter'
+import { ModelResponseChunk, SendMessageOption } from '../types/index.js'
+import { Chaite } from '../core/index.js'
+import { createClient } from '../adapters/index.js'
+import { getFromChaiteConverter, getIntoChaiteConverter } from '../utils/converter.js'
 import OpenAI from 'openai'
 
 const router: Router = express.Router()

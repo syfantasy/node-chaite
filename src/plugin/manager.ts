@@ -16,10 +16,10 @@ import {
   RendererService,
   RenderOptions,
   PluginSkillDefinition,
-} from './types'
-import { PluginKVStorage } from './storage'
-import { Chaite } from '../core/core/chaite'
-import { InMemorySkillImpl } from '../core/agent/skills/SkillRegistry'
+} from './types.js'
+import { PluginKVStorage } from './storage.js'
+import { Chaite } from '../core/core/chaite.js'
+import { InMemorySkillImpl } from '../core/agent/skills/SkillRegistry.js'
 
 export class PluginManager {
   private plugins = new Map<string, PluginInstance>()

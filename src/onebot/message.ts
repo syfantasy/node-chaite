@@ -8,14 +8,14 @@ import {
   AudioContent,
   ReasoningContent,
   ModelResponse,
-} from '../core'
+} from '../core/index.js'
 import {
   OneBotMessageEvent,
   OneBotSegment,
   OneBotSegmentText,
   OneBotSegmentImage,
-} from './types'
-import { mediaRefStore } from './refStore'
+} from './types.js'
+import { mediaRefStore } from './refStore.js'
 
 export interface ConvertOptions {
   botUin?: number

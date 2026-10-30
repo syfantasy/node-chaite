@@ -1,2 +1,2 @@
-export * from './skill.types'
-export * from './SkillRegistry'
+export * from './skill.types.js'
+export * from './SkillRegistry.js'

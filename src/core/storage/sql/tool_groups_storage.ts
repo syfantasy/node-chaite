@@ -1,8 +1,8 @@
-import { ToolsGroupDTO } from '../../types/tools'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage'
-import { stampTimestamps } from './shareable'
-import { TOOLS_GROUPS } from './tables'
+import { ToolsGroupDTO } from '../../types/tools.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage.js'
+import { stampTimestamps } from './shareable.js'
+import { TOOLS_GROUPS } from './tables.js'
 
 const spec: TableSpec<ToolsGroupDTO> = {
   table: TOOLS_GROUPS.table,

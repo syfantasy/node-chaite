@@ -1,4 +1,4 @@
-import type { ILogger } from '../types/common'
+import type { ILogger } from '../types/common.js'
 
 /**
  * 存储层的日志入口。

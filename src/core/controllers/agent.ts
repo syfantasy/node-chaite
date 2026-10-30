@@ -10,9 +10,9 @@
 import express, { Router, Request, Response } from 'express'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { Chaite, ChaiteResponse } from '../index'
-import type { McpServerConfig } from '../agent/mcp/McpServerConfig'
-import type { SkillFrontmatter } from '../agent/skills/skill.types'
+import { Chaite, ChaiteResponse } from '../index.js'
+import type { McpServerConfig } from '../agent/mcp/McpServerConfig.js'
+import type { SkillFrontmatter } from '../agent/skills/skill.types.js'
 
 const router: Router = express.Router()
 
@@ -42,7 +42,7 @@ function paginate<T>(items: T[], req: Request): { items: T[]; total: number; pag
 }
 
 async function discoverMcpTools(config: McpServerConfig) {
-  const { McpToolExecutor } = await import('../agent/tool-executors/mcp')
+  const { McpToolExecutor } = await import('../agent/tool-executors/mcp.js')
   const executor = new McpToolExecutor(config)
   try {
     return await executor.listAvailableTools({ runId: 'discovery', userId: 'admin', timeoutMs: config.timeoutMs })

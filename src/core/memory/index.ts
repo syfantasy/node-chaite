@@ -1,5 +1,5 @@
-import type { ChaiteContext } from '../types/common'
-import type { Tool } from '../types/tools'
+import type { ChaiteContext } from '../types/common.js'
+import type { Tool } from '../types/tools.js'
 import {
   MEMORY_LIMITS,
   MemoryFilter,
@@ -8,11 +8,11 @@ import {
   MemoryRecord,
   MemoryScope,
   SetMemoryResult,
-} from './types'
-import { createMemoryTools } from '../agent/tools/memory-tools'
-import { buildTargetId, SqlMemoryStorage } from '../storage/sql/memory_storage'
+} from './types.js'
+import { createMemoryTools } from '../agent/tools/memory-tools.js'
+import { buildTargetId, SqlMemoryStorage } from '../storage/sql/memory_storage.js'
 
-export * from './types'
+export * from './types.js'
 
 export class DefaultMemoryProvider implements MemoryProvider {
   readonly id = 'builtin-lightweight'

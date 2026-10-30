@@ -1,7 +1,7 @@
-import { ChaiteStorage } from '../types/storage'
-import { ColumnSpec, ColumnTypeName, IndexColumn, IndexOptions, SqlDriver } from './driver/types'
-import { listColumns } from './driver/introspect'
-import { log } from './logger'
+import { ChaiteStorage } from '../types/storage.js'
+import { ColumnSpec, ColumnTypeName, IndexColumn, IndexOptions, SqlDriver } from './driver/types.js'
+import { listColumns } from './driver/introspect.js'
+import { log } from './logger.js'
 
 /**
  * 和宿主插件里原有的 generateId 保持同样的形状，避免迁移后新旧 id 风格不一致。

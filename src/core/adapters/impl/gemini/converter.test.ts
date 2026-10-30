@@ -1,7 +1,7 @@
 import { Content } from '@google/genai'
-import { UserMessage } from '../../../types'
-import { getFromChaiteConverter } from '../../../utils/converter'
-import './converter'
+import { UserMessage } from '../../../types/index.js'
+import { getFromChaiteConverter } from '../../../utils/converter.js'
+import './converter.js'
 
 describe('Gemini message converter', () => {
   test('preserves GIF MIME type and data', () => {

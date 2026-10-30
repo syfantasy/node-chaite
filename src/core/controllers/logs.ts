@@ -1,6 +1,6 @@
 import express, { Router, Request, Response } from 'express'
-import { Chaite, ChaiteResponse } from '../index'
-import type { ListLogsFilter, OperationLogType, OperationLogLevel } from '../types/operation-log'
+import { Chaite, ChaiteResponse } from '../index.js'
+import type { ListLogsFilter, OperationLogType, OperationLogLevel } from '../types/operation-log.js'
 
 const router: Router = express.Router()
 

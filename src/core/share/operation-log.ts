@@ -6,8 +6,8 @@ import type {
   OperationLog,
   OperationLogLevel,
   OperationLogType,
-} from '../types/operation-log'
-import type { BasicStorage } from '../types/storage'
+} from '../types/operation-log.js'
+import type { BasicStorage } from '../types/storage.js'
 
 /** Default max entries kept in memory when no external storage is provided */
 const DEFAULT_MAX_IN_MEMORY = 5000

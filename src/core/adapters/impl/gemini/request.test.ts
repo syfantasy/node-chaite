@@ -1,7 +1,7 @@
 import { ThinkingLevel, HarmCategory, HarmBlockThreshold } from '@google/genai'
-import { buildGeminiRequest, buildGeminiThinking, geminiApiVersion } from './request'
-import { SendMessageOption } from '../../../types/adapter'
-import type { IMessage, TextContent } from '../../../types'
+import { buildGeminiRequest, buildGeminiThinking, geminiApiVersion } from './request.js'
+import { SendMessageOption } from '../../../types/adapter.js'
+import type { IMessage, TextContent } from '../../../types/index.js'
 const history: IMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'hi' } as TextContent] }]
 const thinking = (model: string, options: Partial<SendMessageOption>) => buildGeminiThinking(model, SendMessageOption.create(options))
 

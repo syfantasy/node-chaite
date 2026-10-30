@@ -6,7 +6,7 @@ import {
   ILogger,
   MultipleKeyStrategy,
   MultipleKeyStrategyChoice,
-} from '../types/common'
+} from '../types/common.js'
 import { AsyncLocalStorage } from 'async_hooks'
 import fs from 'fs/promises'
 import path from 'path'

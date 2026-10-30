@@ -6,10 +6,10 @@ import {
   Filter, PaginationResult, ProcessorDTO,
   SearchOption, ToolDTO, ToolsGroupDTO, TriggerDTO,
   User,
-} from '../types'
-import { createHttpClient, HttpClient } from '../utils/index'
-import { CloudAPI } from '../const'
-import { Channel, ChatPreset } from '../channels'
+} from '../types/index.js'
+import { createHttpClient, HttpClient } from '../utils/index.js'
+import { CloudAPI } from '../const/index.js'
+import { Channel, ChatPreset } from '../channels/index.js'
 
 export class DefaultCloudService<T extends AbstractShareable<T>> implements CloudSharingService<T> {
 

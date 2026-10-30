@@ -1,10 +1,10 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
 import chokidar, { FSWatcher } from 'chokidar'
-import { BasicStorage, ChaiteContext, CloudSharingService, Filter, PaginationResult, SearchOption } from '../types'
-import { getLogger } from '../utils'
-import { getMd5 } from '../utils/hash'
-import { Trigger, TriggerDTO } from '../types'
+import { BasicStorage, ChaiteContext, CloudSharingService, Filter, PaginationResult, SearchOption } from '../types/index.js'
+import { getLogger } from '../utils/index.js'
+import { getMd5 } from '../utils/hash.js'
+import { Trigger, TriggerDTO } from '../types/index.js'
 
 /**
  * 专门用于管理触发器的管理器

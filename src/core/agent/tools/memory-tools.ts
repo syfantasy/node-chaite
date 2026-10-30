@@ -1,7 +1,7 @@
-import type { ChaiteContext } from '../../types/common'
-import type { Tool } from '../../types/tools'
-import type { MemoryScope } from '../../memory/types'
-import { buildTargetId } from '../../storage/sql/memory_storage'
+import type { ChaiteContext } from '../../types/common.js'
+import type { Tool } from '../../types/tools.js'
+import type { MemoryScope } from '../../memory/types.js'
+import { buildTargetId } from '../../storage/sql/memory_storage.js'
 
 export function createMemoryTools(): Tool[] {
   return [rememberTool(), updateImportanceTool(), getMemoriesTool(), forgetMemoryTool()]

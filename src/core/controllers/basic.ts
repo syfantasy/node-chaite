@@ -1,6 +1,6 @@
 import express, { Router } from 'express'
-import { Chaite, ChaiteResponse } from '../index'
-import { VERSION } from '../version'
+import { Chaite, ChaiteResponse } from '../index.js'
+import { VERSION } from '../version.js'
 
 const router: Router = express.Router()
 

@@ -3,15 +3,15 @@ import {
   registerFromChaiteConverter,
   registerFromChaiteToolConverter,
   registerIntoChaiteConverter,
-} from '../../../utils/converter'
+} from '../../../utils/converter.js'
 import type {
   AssistantMessage, AudioContent, DeveloperMessage, ImageContent, IMessage, MessageContent,
   ProviderContextContent, ReasoningContent, ReasoningPart, SystemMessage, TextContent, ToolCall,
   ToolCallResultMessage, UserMessage,
-} from '../../../types'
+} from '../../../types/index.js'
 import type OpenAI from 'openai'
-import { parseInlineImage } from '../../../utils/imageData'
-import { parseToolArguments } from '../../../utils/toolArguments'
+import { parseInlineImage } from '../../../utils/imageData.js'
+import { parseToolArguments } from '../../../utils/toolArguments.js'
 
 registerFromChaiteConverter<OpenAI.ChatCompletionMessageParam | OpenAI.ChatCompletionMessageParam[]>('openai', (source: IMessage) => {
   switch (source.role) {

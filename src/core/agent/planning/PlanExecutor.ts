@@ -1,8 +1,8 @@
-import type { AgentRunContext } from '../contracts'
-import type { Planner } from './Planner'
-import type { PlanReviewer } from './PlanReviewer'
-import type { Plan, PlanStep } from './plan.types'
-import { getPlanProgress } from './plan.types'
+import type { AgentRunContext } from '../contracts.js'
+import type { Planner } from './Planner.js'
+import type { PlanReviewer } from './PlanReviewer.js'
+import type { Plan, PlanStep } from './plan.types.js'
+import { getPlanProgress } from './plan.types.js'
 import * as crypto from 'node:crypto'
 
 const PLAN_STORAGE_PREFIX = 'plan:'

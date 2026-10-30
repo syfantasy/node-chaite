@@ -1,6 +1,6 @@
-import type { ChaiteContext } from '../../types/common'
-import type { Tool } from '../../types/tools'
-import type { DynamicScheduler } from '../scheduler/DynamicScheduler'
+import type { ChaiteContext } from '../../types/common.js'
+import type { Tool } from '../../types/tools.js'
+import type { DynamicScheduler } from '../scheduler/DynamicScheduler.js'
 
 /**
  * System tools that let the LLM schedule, cancel, and list tasks.

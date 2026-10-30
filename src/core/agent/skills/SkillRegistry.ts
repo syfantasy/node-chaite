@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { parse as parseYaml } from 'yaml'
-import type { Skill, SkillFrontmatter, SkillMeta, SkillValidationContext } from './skill.types'
+import type { Skill, SkillFrontmatter, SkillMeta, SkillValidationContext } from './skill.types.js'
 
 /**
  * Robust frontmatter parser using the standard 'yaml' package.

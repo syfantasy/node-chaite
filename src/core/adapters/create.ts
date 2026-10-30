@@ -1,7 +1,7 @@
-import { OpenAIClient } from './impl/openai/OpenAIClient'
-import { ClaudeClient } from './impl/claude/ClaudeClient'
-import { GeminiClient } from './impl/gemini/GeminiClient'
-import { BaseClientOptions, ChaiteContext, ClientType, IClient } from '../types'
+import { OpenAIClient } from './impl/openai/OpenAIClient.js'
+import { ClaudeClient } from './impl/claude/ClaudeClient.js'
+import { GeminiClient } from './impl/gemini/GeminiClient.js'
+import { BaseClientOptions, ChaiteContext, ClientType, IClient } from '../types/index.js'
 
 export function createClient(name: ClientType, options: BaseClientOptions | Partial<BaseClientOptions>, context?: ChaiteContext): IClient {
   switch (name) {

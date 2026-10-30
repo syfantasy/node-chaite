@@ -1,4 +1,4 @@
-import { ColumnSpec, ColumnTypeName, IndexColumn, IndexOptions, LogicalDatabase } from '../driver/types'
+import { ColumnSpec, ColumnTypeName, IndexColumn, IndexOptions, LogicalDatabase } from '../driver/types.js'
 
 /**
  * 表的形状：表名、列、主键、所属逻辑库。

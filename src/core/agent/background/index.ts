@@ -1,2 +1,2 @@
-export * from './job.types'
-export * from './BackgroundJobManager'
+export * from './job.types.js'
+export * from './BackgroundJobManager.js'

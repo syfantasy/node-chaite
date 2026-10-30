@@ -1,8 +1,8 @@
-import { ProcessorDTO } from '../../types/processors'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage'
-import { stampTimestamps } from './shareable'
-import { PROCESSORS } from './tables'
+import { ProcessorDTO } from '../../types/processors.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage.js'
+import { stampTimestamps } from './shareable.js'
+import { PROCESSORS } from './tables.js'
 
 const spec: TableSpec<ProcessorDTO> = {
   table: PROCESSORS.table,

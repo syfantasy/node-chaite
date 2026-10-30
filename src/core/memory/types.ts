@@ -1,5 +1,5 @@
-import type { Tool } from '../types/tools'
-import type { ChaiteContext } from '../types/common'
+import type { Tool } from '../types/tools.js'
+import type { ChaiteContext } from '../types/common.js'
 
 export type MemoryScope = 'group' | 'group_user' | 'private_user'
 

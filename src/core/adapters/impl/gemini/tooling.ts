@@ -5,7 +5,7 @@ import {
   Tool,
   ToolConfig,
 } from '@google/genai'
-import { SendMessageOption } from '../../../types'
+import { SendMessageOption } from '../../../types/index.js'
 
 export type GeminiBuiltinToolName = 'googleSearch' | 'googleMaps' | 'codeExecution' | 'urlContext'
 

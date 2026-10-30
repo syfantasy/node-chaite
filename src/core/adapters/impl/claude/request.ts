@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import type { IMessage, SendMessageOption, Tool } from '../../../types'
-import { getFromChaiteConverter, getFromChaiteToolConverter } from '../../../utils/converter'
-import './converter'
+import type { IMessage, SendMessageOption, Tool } from '../../../types/index.js'
+import { getFromChaiteConverter, getFromChaiteToolConverter } from '../../../utils/converter.js'
+import './converter.js'
 
 function modelProfile(model: string) {
   // Accept native IDs, provider prefixes, and common dotted gateway aliases.

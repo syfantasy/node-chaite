@@ -8,12 +8,12 @@ import {
   ChaiteResponse,
   GlobalConfig,
   FrontEndAuthHandler,
-} from './core'
-import { AppConfig, getConfig, saveConfig } from './config'
-import { pluginManager } from './plugin'
-import { groupHistoryBuffer } from './context/groupHistoryBuffer'
-import { handleMessage } from './index'
-import { getStorageContext, initChaiteStorage } from './storage'
+} from './core/index.js'
+import { AppConfig, getConfig, saveConfig } from './config.js'
+import { pluginManager } from './plugin/index.js'
+import { groupHistoryBuffer } from './context/groupHistoryBuffer.js'
+import { handleMessage } from './index.js'
+import { getStorageContext, initChaiteStorage } from './storage.js'
 
 const cwd = process.cwd()
 const FRONTEND_DIR = fs.existsSync(path.resolve(cwd, 'web/build'))

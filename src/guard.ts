@@ -1,4 +1,4 @@
-import { AppConfig, getConfig } from './config'
+import { AppConfig, getConfig } from './config.js'
 
 export interface CheckResult {
   allow: boolean

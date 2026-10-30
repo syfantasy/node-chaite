@@ -1,5 +1,5 @@
-import type { AgentToolCall, ExecutionContext, ToolExecutor, ToolResult, ToolSchema } from '../contracts'
-import type { Tool } from '../../types/tools'
+import type { AgentToolCall, ExecutionContext, ToolExecutor, ToolResult, ToolSchema } from '../contracts.js'
+import type { Tool } from '../../types/tools.js'
 
 /**
  * Default fallback executor: runs tools in-process via tool.run().

@@ -1,4 +1,4 @@
-import { SqlDriver } from './types'
+import { SqlDriver } from './types.js'
 
 /**
  * 模式自省。两种方言问法不同，但调用方不该关心。

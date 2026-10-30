@@ -1,4 +1,4 @@
-import { ChaiteEvent } from './event'
+import { ChaiteEvent } from './event.js'
 
 export type PluginType = 'single-file' | 'directory'
 

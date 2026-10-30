@@ -1,5 +1,5 @@
-import type { AgentRunContext } from '../contracts'
-import type { WorkflowEngine } from './WorkflowEngine'
+import type { AgentRunContext } from '../contracts.js'
+import type { WorkflowEngine } from './WorkflowEngine.js'
 import type {
   BackgroundStep,
   ConditionStep,
@@ -12,7 +12,7 @@ import type {
   WorkflowRunResult,
   WorkflowStep,
   WorkflowStepResult,
-} from './workflow.types'
+} from './workflow.types.js'
 import * as crypto from 'node:crypto'
 
 /**

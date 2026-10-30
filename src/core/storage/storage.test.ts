@@ -1,15 +1,15 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { toDollarPlaceholders, countPlaceholders } from './driver/placeholders'
-import { createDialect } from './driver/dialect'
-import { SqliteDriver } from './driver/sqlite'
-import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from './sql_storage'
-import { SqlUserStateStorage } from './sql/user_state_storage'
-import { SqlOperationLogStorage } from './sql/operation_log_storage'
-import { SqlHistoryManager } from './sql/history_manager'
-import { HistoryMessage } from '../types/models'
-import { OperationLog } from '../types/operation-log'
+import { toDollarPlaceholders, countPlaceholders } from './driver/placeholders.js'
+import { createDialect } from './driver/dialect.js'
+import { SqliteDriver } from './driver/sqlite.js'
+import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from './sql_storage.js'
+import { SqlUserStateStorage } from './sql/user_state_storage.js'
+import { SqlOperationLogStorage } from './sql/operation_log_storage.js'
+import { SqlHistoryManager } from './sql/history_manager.js'
+import { HistoryMessage } from '../types/models.js'
+import { OperationLog } from '../types/operation-log.js'
 
 function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -589,7 +589,7 @@ describe('lifecycle and concurrency', () => {
 
 describe('DriverRegistry', () => {
   test('concurrent init() opens exactly one set of drivers', async () => {
-    const { DriverRegistry } = await import('./driver/registry')
+    const { DriverRegistry } = await import('./driver/registry.js')
     const registry = new DriverRegistry()
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reg-'))
 
@@ -605,7 +605,7 @@ describe('DriverRegistry', () => {
   })
 
   test('a failed init() leaves nothing open and stays retryable', async () => {
-    const { DriverRegistry } = await import('./driver/registry')
+    const { DriverRegistry } = await import('./driver/registry.js')
     const registry = new DriverRegistry()
 
     await expect(
@@ -623,7 +623,7 @@ describe('DriverRegistry', () => {
   })
 
   test('close() is idempotent', async () => {
-    const { DriverRegistry } = await import('./driver/registry')
+    const { DriverRegistry } = await import('./driver/registry.js')
     const registry = new DriverRegistry()
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reg-close-'))
     await registry.init({ dialect: 'sqlite', dataDir })

@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto'
-import type { Tool, Parameter } from '../../types/tools'
-import type { ChaiteContext } from '../../types/common'
-import type { ToolExecutor, ToolSchema } from '../contracts'
+import type { Tool, Parameter } from '../../types/tools.js'
+import type { ChaiteContext } from '../../types/common.js'
+import type { ToolExecutor, ToolSchema } from '../contracts.js'
 
 /**
  * Wraps a remote tool schema (from MCP or any ToolExecutor) as an in-process Tool.
@@ -20,7 +20,7 @@ export class McpToolProxy implements Tool {
   constructor(
     schema: ToolSchema,
     private readonly executor: ToolExecutor,
-    private readonly execCtxBuilder: () => import('../contracts').ExecutionContext,
+    private readonly execCtxBuilder: () => import('../contracts.js').ExecutionContext,
   ) {
     this.name = schema.name
     this.function = {

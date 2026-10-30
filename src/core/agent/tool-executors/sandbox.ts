@@ -7,7 +7,7 @@ import type {
   SandboxResult,
   ToolExecutor,
   ToolResult,
-} from '../contracts'
+} from '../contracts.js'
 
 // ─── SandboxExecutor implementations ─────────────────────────────────────────
 

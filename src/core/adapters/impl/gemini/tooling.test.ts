@@ -1,5 +1,5 @@
 import { FunctionCallingConfigMode, FunctionDeclaration } from '@google/genai'
-import { buildGeminiTooling, isGemini3Model } from './tooling'
+import { buildGeminiTooling, isGemini3Model } from './tooling.js'
 
 const functionDeclarations: FunctionDeclaration[] = [{
   name: 'get_weather',

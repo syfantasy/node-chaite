@@ -5,7 +5,7 @@ import {
   OneBotEvent,
   OneBotMessageEvent,
   OneBotSegment,
-} from './types'
+} from './types.js'
 
 export interface OneBotClientOptions {
   url: string

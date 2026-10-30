@@ -4,11 +4,11 @@ import {
   ModelResponse,
   ModelResponseChunk, ModelUsage,
   UserMessage,
-} from './models'
-import { Tool } from './tools'
-import { ILogger, MultipleKeyStrategy } from './common'
-import { PostProcessor, PreProcessor } from './processors'
-import { DeSerializable, Serializable } from './cloud'
+} from './models.js'
+import { Tool } from './tools.js'
+import { ILogger, MultipleKeyStrategy } from './common.js'
+import { PostProcessor, PreProcessor } from './processors.js'
+import { DeSerializable, Serializable } from './cloud.js'
 import { SafetySetting } from '@google/genai'
 
 export interface ToolCallLimitConfig {

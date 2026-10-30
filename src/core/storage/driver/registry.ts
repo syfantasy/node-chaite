@@ -1,7 +1,7 @@
 import path from 'node:path'
-import { SqliteDriver } from './sqlite'
-import { createPostgresDriver } from './postgres'
-import { ConnectionOptions, LogicalDatabase, SqlDriver } from './types'
+import { SqliteDriver } from './sqlite.js'
+import { createPostgresDriver } from './postgres.js'
+import { ConnectionOptions, LogicalDatabase, SqlDriver } from './types.js'
 
 /**
  * driver 注册表。

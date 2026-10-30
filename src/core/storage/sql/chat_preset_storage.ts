@@ -1,9 +1,9 @@
-import { ChatPreset } from '../../channels/preset'
-import { SendMessageOption } from '../../types'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage'
-import { stampTimestamps } from './shareable'
-import { CHAT_PRESETS } from './tables'
+import { ChatPreset } from '../../channels/preset.js'
+import { SendMessageOption } from '../../types/index.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage.js'
+import { stampTimestamps } from './shareable.js'
+import { CHAT_PRESETS } from './tables.js'
 
 const spec: TableSpec<ChatPreset> = {
   table: CHAT_PRESETS.table,

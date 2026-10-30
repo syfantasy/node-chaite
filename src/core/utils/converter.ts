@@ -1,4 +1,4 @@
-import { ClientType, IMessage, ReasoningPart, Tool } from '../types'
+import { ClientType, IMessage, ReasoningPart, Tool } from '../types/index.js'
 import { Content, FunctionDeclaration } from '@google/genai'
 // import type { Anthropic.MessageParam, ToolUnion } from '@anthropic-ai/sdk/src/resources'
 type IntoChaiteConverter<T> = (source: T) => IMessage;

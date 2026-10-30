@@ -3,9 +3,9 @@
  * Other agent modules import types from this file to avoid circular dependencies.
  */
 
-import type { ModelResponse } from '../types/models'
-import type { BasicStorage } from '../types/storage'
-import type { ILogger } from '../types/common'
+import type { ModelResponse } from '../types/models.js'
+import type { BasicStorage } from '../types/storage.js'
+import type { ILogger } from '../types/common.js'
 
 // ─── Tool Execution ───────────────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ export interface SandboxExecutor {
 /** Minimal interface used by workflow/plan steps to avoid circular dep */
 export interface IBackgroundJobManager {
   createAndRun(spec: BackgroundJobSpec): Promise<string>
-  getJob(jobId: string): Promise<import('./background/job.types').BackgroundJob | null>
+  getJob(jobId: string): Promise<import('./background/job.types.js').BackgroundJob | null>
 }
 
 export interface BackgroundJobSpec {

@@ -1,5 +1,5 @@
-import type { AgentRunContext } from '../contracts'
-import type { Plan, PlanStep } from './plan.types'
+import type { AgentRunContext } from '../contracts.js'
+import type { Plan, PlanStep } from './plan.types.js'
 import * as crypto from 'node:crypto'
 
 export interface ReviewResult {

@@ -1,8 +1,8 @@
 import express, { Request, Response, Router } from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
-import { Chaite, ChaiteResponse } from '../index'
-import { SqlHistoryManager } from '../storage/sql/history_manager'
+import { Chaite, ChaiteResponse } from '../index.js'
+import { SqlHistoryManager } from '../storage/sql/history_manager.js'
 
 const router: Router = express.Router()
 

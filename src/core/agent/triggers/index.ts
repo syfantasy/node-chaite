@@ -1,1 +1,1 @@
-export { WorkflowTrigger, SkillWorkflowTrigger } from './WorkflowTrigger'
+export { WorkflowTrigger, SkillWorkflowTrigger } from './WorkflowTrigger.js'

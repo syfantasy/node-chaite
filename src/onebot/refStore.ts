@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import axios from 'axios'
-import { detectSupportedImageMime, optimizeGifBuffer } from './message'
+import { detectSupportedImageMime, optimizeGifBuffer } from './message.js'
 
 export type RefType = 'voice' | 'forward' | 'image' | 'video' | 'file'
 

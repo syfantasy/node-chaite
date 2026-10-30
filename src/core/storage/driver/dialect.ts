@@ -1,4 +1,4 @@
-import { ColumnSpec, ColumnTypeName, Dialect, DialectName, IndexColumn, IndexOptions } from './types'
+import { ColumnSpec, ColumnTypeName, Dialect, DialectName, IndexColumn, IndexOptions } from './types.js'
 
 /**
  * 方言差异。

@@ -1,1 +1,1 @@
-export * from './DynamicScheduler'
+export * from './DynamicScheduler.js'

@@ -1,9 +1,9 @@
 import * as crypto from 'node:crypto'
 import type EventEmitter from 'node:events'
-import type { BasicStorage } from '../../types/storage'
-import type { ILogger } from '../../types/common'
-import type { AgentRunContext, BackgroundJobSpec, IBackgroundJobManager } from '../contracts'
-import type { BackgroundJob, JobCompletePayload, JobProgressPayload } from './job.types'
+import type { BasicStorage } from '../../types/storage.js'
+import type { ILogger } from '../../types/common.js'
+import type { AgentRunContext, BackgroundJobSpec, IBackgroundJobManager } from '../contracts.js'
+import type { BackgroundJob, JobCompletePayload, JobProgressPayload } from './job.types.js'
 
 const JOB_STORAGE_PREFIX = 'job:'
 
@@ -187,7 +187,7 @@ export class BackgroundJobManager implements IBackgroundJobManager {
    */
   buildAgentExecutor(
     makeRunContext: (jobId: string) => AgentRunContext,
-    planExecutor?: import('../planning/PlanExecutor').PlanExecutor,
+    planExecutor?: import('../planning/PlanExecutor.js').PlanExecutor,
   ): JobExecutorFn {
     return async (jobId: string, onProgress) => {
       const ctx = makeRunContext(jobId)

@@ -1,9 +1,9 @@
 import schedule, { Job } from '@karinjs/node-schedule'
 import * as crypto from 'node:crypto'
 import type EventEmitter from 'node:events'
-import type { BasicStorage } from '../../types/storage'
-import type { ILogger } from '../../types/common'
-import type { AgentRunContext } from '../contracts'
+import type { BasicStorage } from '../../types/storage.js'
+import type { ILogger } from '../../types/common.js'
+import type { AgentRunContext } from '../contracts.js'
 
 export interface ScheduledTask {
   id: string

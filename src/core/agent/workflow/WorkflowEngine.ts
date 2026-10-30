@@ -1,5 +1,5 @@
-import type { AgentRunContext } from '../contracts'
-import type { WorkflowDefinition, WorkflowRunResult } from './workflow.types'
+import type { AgentRunContext } from '../contracts.js'
+import type { WorkflowDefinition, WorkflowRunResult } from './workflow.types.js'
 
 /**
  * Abstract interface for workflow engines.

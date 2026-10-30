@@ -1,23 +1,23 @@
-import { BaseClientOptions, ChaiteContext, ToolCallLimitConfig } from '../../../types'
-import { AbstractClient } from '../../clients'
+import { BaseClientOptions, ChaiteContext, ToolCallLimitConfig } from '../../../types/index.js'
+import { AbstractClient } from '../../clients.js'
 import {
   EmbeddingOption,
   EmbeddingResult,
   HistoryMessage, IMessage,
   ModelUsage,
-} from '../../../types'
+} from '../../../types/index.js'
 import {
   Content,
   GenerateContentParameters,
   GoogleGenAI,
 } from '@google/genai'
-import { getIntoChaiteConverter } from '../../../utils/converter'
-import './converter'
-import { asyncLocalStorage, getKey } from '../../../utils'
-import { SendMessageOption } from '../../../types'
+import { getIntoChaiteConverter } from '../../../utils/converter.js'
+import './converter.js'
+import { asyncLocalStorage, getKey } from '../../../utils/index.js'
+import { SendMessageOption } from '../../../types/index.js'
 import * as crypto from 'node:crypto'
-import { VERSION } from '../../../index'
-import { buildGeminiRequest, geminiApiVersion } from './request'
+import { VERSION } from '../../../index.js'
+import { buildGeminiRequest, geminiApiVersion } from './request.js'
 
 const DEFAULT_TOOL_CALL_LIMIT: ToolCallLimitConfig = {
   maxConsecutiveCalls: 8,

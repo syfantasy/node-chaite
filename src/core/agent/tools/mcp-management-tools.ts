@@ -1,5 +1,5 @@
-import type { ChaiteContext } from '../../types/common'
-import type { Tool } from '../../types/tools'
+import type { ChaiteContext } from '../../types/common.js'
+import type { Tool } from '../../types/tools.js'
 
 /** Owner-only MCP management tools. Creating a draft never starts a process. */
 export function createMcpManagementTools(): Tool[] {

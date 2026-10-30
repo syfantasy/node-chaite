@@ -1,10 +1,10 @@
 import { ThinkingLevel } from '@google/genai'
 import type { GenerateContentParameters, ThinkingConfig } from '@google/genai'
-import type { ImageContent, IMessage, SendMessageOption, TextContent, Tool } from '../../../types'
-import { getFromChaiteConverter, getFromChaiteToolConverter } from '../../../utils/converter'
-import { parseInlineImage } from '../../../utils/imageData'
-import { buildGeminiTooling } from './tooling'
-import './converter'
+import type { ImageContent, IMessage, SendMessageOption, TextContent, Tool } from '../../../types/index.js'
+import { getFromChaiteConverter, getFromChaiteToolConverter } from '../../../utils/converter.js'
+import { parseInlineImage } from '../../../utils/imageData.js'
+import { buildGeminiTooling } from './tooling.js'
+import './converter.js'
 
 export function geminiApiVersion(baseUrl: string, builtinTools = false): string | undefined {
   const url = baseUrl.replace(/\/+$/, '')

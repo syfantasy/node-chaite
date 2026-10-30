@@ -1,9 +1,9 @@
-import { ToolDTO } from '../../types/tools'
-import { TriggerDTO } from '../../types/trigger'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage'
-import { stampTimestamps } from './shareable'
-import { TOOLS, TRIGGERS } from './tables'
+import { ToolDTO } from '../../types/tools.js'
+import { TriggerDTO } from '../../types/trigger.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage.js'
+import { stampTimestamps } from './shareable.js'
+import { TOOLS, TRIGGERS } from './tables.js'
 
 /**
  * 工具和触发器的表结构除了 isOneTime 之外完全一样，序列化逻辑也一样。

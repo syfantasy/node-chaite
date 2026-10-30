@@ -1,8 +1,8 @@
-import { Channel } from '../../channels/channels'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage'
-import { stampTimestamps } from './shareable'
-import { CHANNELS } from './tables'
+import { Channel } from '../../channels/channels.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson, stringifyJson } from '../sql_storage.js'
+import { stampTimestamps } from './shareable.js'
+import { CHANNELS } from './tables.js'
 
 const spec: TableSpec<Channel> = {
   table: CHANNELS.table,

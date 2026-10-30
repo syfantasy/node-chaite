@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { getFromChaiteConverter, getIntoChaiteConverter } from '../../../utils/converter'
-import type { AssistantMessage, IMessage, ReasoningContent, TextContent, ToolCall, ToolCallResultMessage } from '../../../types'
-import './converter'
+import { getFromChaiteConverter, getIntoChaiteConverter } from '../../../utils/converter.js'
+import type { AssistantMessage, IMessage, ReasoningContent, TextContent, ToolCall, ToolCallResultMessage } from '../../../types/index.js'
+import './converter.js'
 
 const fromClaude = getIntoChaiteConverter('claude')
 const toClaude = getFromChaiteConverter('claude')

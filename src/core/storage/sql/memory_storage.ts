@@ -6,10 +6,10 @@ import {
   MemoryRecord,
   MemoryScope,
   SetMemoryResult,
-} from '../../memory/types'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec } from '../sql_storage'
-import { MEMORIES } from './tables'
+} from '../../memory/types.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec } from '../sql_storage.js'
+import { MEMORIES } from './tables.js'
 
 function clampImportance(val?: number): number {
   if (val === undefined || Number.isNaN(val)) return 50

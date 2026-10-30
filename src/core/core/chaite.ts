@@ -1,4 +1,4 @@
-import { ChannelsManager, ChatPresetManager, DefaultCloudService, ProcessorsManager, ToolManager } from '../share'
+import { ChannelsManager, ChatPresetManager, DefaultCloudService, ProcessorsManager, ToolManager } from '../share/index.js'
 import {
   ChaiteContext,
   CustomConfig,
@@ -9,10 +9,10 @@ import {
   ToolDTO, ToolsGroupDTO,
   TriggerDTO,
   UserMessage,
-} from '../types'
-import { EventMessage, UserModeSelector } from '../types'
-import { createClient } from '../adapters'
-import { BasicStorage, UserState } from '../types'
+} from '../types/index.js'
+import { EventMessage, UserModeSelector } from '../types/index.js'
+import { createClient } from '../adapters/index.js'
+import { BasicStorage, UserState } from '../types/index.js'
 import {
   asyncLocalStorage,
   DEFAULT_HOST,
@@ -20,25 +20,25 @@ import {
   FrontEndAuthHandler,
   GlobalConfig,
   InMemoryHistoryManager,
-} from '../utils'
-import { Channel, ChatPreset } from '../channels'
-import { RAGManager } from '../rag'
+} from '../utils/index.js'
+import { Channel, ChatPreset } from '../channels/index.js'
+import { RAGManager } from '../rag/index.js'
 import EventEmitter from 'node:events'
-import { ApiServerOptions, runServer } from '../controllers'
-import { ToolsGroupManager } from '../share'
-import { TriggerManager } from '../share'
+import { ApiServerOptions, runServer } from '../controllers/index.js'
+import { ToolsGroupManager } from '../share/index.js'
+import { TriggerManager } from '../share/index.js'
 import type { Application } from 'express'
-import type { SkillRegistry } from '../agent/skills/SkillRegistry'
-import type { BackgroundJobManager } from '../agent/background/BackgroundJobManager'
-import type { DynamicScheduler } from '../agent/scheduler/DynamicScheduler'
-import type { McpServerManager } from '../agent/mcp/McpServerConfig'
-import { McpCapabilityManager } from '../agent/mcp/McpCapabilityManager'
-import type { AgentRunContext } from '../agent/contracts'
-import type { WorkflowEngine } from '../agent/workflow/WorkflowEngine'
-import type { PlanExecutor } from '../agent/planning/PlanExecutor'
-import { McpToolExecutor } from '../agent/tool-executors/mcp'
-import { OperationLogManager } from '../share/operation-log'
-import type { AuditEvent } from '../agent/contracts'
+import type { SkillRegistry } from '../agent/skills/SkillRegistry.js'
+import type { BackgroundJobManager } from '../agent/background/BackgroundJobManager.js'
+import type { DynamicScheduler } from '../agent/scheduler/DynamicScheduler.js'
+import type { McpServerManager } from '../agent/mcp/McpServerConfig.js'
+import { McpCapabilityManager } from '../agent/mcp/McpCapabilityManager.js'
+import type { AgentRunContext } from '../agent/contracts.js'
+import type { WorkflowEngine } from '../agent/workflow/WorkflowEngine.js'
+import type { PlanExecutor } from '../agent/planning/PlanExecutor.js'
+import { McpToolExecutor } from '../agent/tool-executors/mcp.js'
+import { OperationLogManager } from '../share/operation-log.js'
+import type { AuditEvent } from '../agent/contracts.js'
 
 /**
  * 入口
@@ -81,7 +81,7 @@ export class Chaite extends EventEmitter {
   private operationLogManager: OperationLogManager
 
   /** Memory manager for persistent lightweight user & global facts */
-  private memoryManager?: import('../memory').MemoryManager
+  private memoryManager?: import('../memory/index.js').MemoryManager
 
   private constructor(private channelsManager: ChannelsManager, private toolsManager: ToolManager,
                         private processorsManager: ProcessorsManager, private chatPresetManager: ChatPresetManager, private toolsGroupManager: ToolsGroupManager, private triggerManager: TriggerManager<TriggerDTO>,
@@ -447,11 +447,11 @@ export class Chaite extends EventEmitter {
     return this.mcpManagementGuard?.(context) ?? false
   }
 
-  setMemoryManager(manager: import('../memory').MemoryManager): void {
+  setMemoryManager(manager: import('../memory/index.js').MemoryManager): void {
     this.memoryManager = manager
   }
 
-  getMemoryManager(): import('../memory').MemoryManager | undefined {
+  getMemoryManager(): import('../memory/index.js').MemoryManager | undefined {
     return this.memoryManager
   }
 

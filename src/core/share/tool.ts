@@ -2,8 +2,8 @@ import { promises as fsPromises } from 'fs'
 import path from 'path'
 import {
   Tool, ToolDTO, BasicStorage, CloudSharingService,
-} from '../types/index'
-import { ExecutableShareableManager } from './shareable'
+} from '../types/index.js'
+import { ExecutableShareableManager } from './shareable.js'
 
 
 export class ToolManager extends ExecutableShareableManager<ToolDTO, Tool> {

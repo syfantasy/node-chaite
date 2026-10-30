@@ -1,7 +1,7 @@
-import { createDialect } from './dialect'
-import { toDollarPlaceholders } from './placeholders'
-import { Dialect, PostgresConnectionOptions, RunResult, SqlDriver, TransactionScope } from './types'
-import { log } from '../logger'
+import { createDialect } from './dialect.js'
+import { toDollarPlaceholders } from './placeholders.js'
+import { Dialect, PostgresConnectionOptions, RunResult, SqlDriver, TransactionScope } from './types.js'
+import { log } from '../logger.js'
 
 /** pg 的最小接口。pg 是可选 peer 依赖，动态 import。 */
 interface PgQueryResult {

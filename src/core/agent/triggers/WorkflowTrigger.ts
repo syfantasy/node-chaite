@@ -1,7 +1,7 @@
-import { CronTrigger } from '../../types/trigger'
-import type { ChaiteContext } from '../../types/common'
-import type { WorkflowDefinition } from '../workflow/workflow.types'
-import { Chaite } from '../../core'
+import { CronTrigger } from '../../types/trigger.js'
+import type { ChaiteContext } from '../../types/common.js'
+import type { WorkflowDefinition } from '../workflow/workflow.types.js'
+import { Chaite } from '../../core/index.js'
 
 /**
  * A CronTrigger that runs a WorkflowDefinition when fired.

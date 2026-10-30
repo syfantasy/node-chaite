@@ -1,7 +1,7 @@
 import type OpenAI from 'openai'
-import type { IMessage, SendMessageOption, Tool } from '../../../types'
-import { getFromChaiteConverter, getFromChaiteToolConverter } from '../../../utils/converter'
-import './converter'
+import type { IMessage, SendMessageOption, Tool } from '../../../types/index.js'
+import { getFromChaiteConverter, getFromChaiteToolConverter } from '../../../utils/converter.js'
+import './converter.js'
 
 export type OpenAIRequest = OpenAI.ChatCompletionCreateParamsNonStreaming & {
   thinking_budget_tokens?: number

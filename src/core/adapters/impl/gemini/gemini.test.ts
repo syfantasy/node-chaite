@@ -1,8 +1,8 @@
-import {GeminiClient} from "./GeminiClient"
-import DefaultHistoryManager from '../../../utils/history'
-import { Parameter, Tool, Function } from "../../../types/tools"
-import { ArgumentValue, UserMessage } from "../../../types/models"
-import { DefaultLogger } from "../../../types/common"
+import {GeminiClient} from "./GeminiClient.js"
+import DefaultHistoryManager from '../../../utils/history.js'
+import { Parameter, Tool, Function } from "../../../types/tools.js"
+import { ArgumentValue, UserMessage } from "../../../types/models.js"
+import { DefaultLogger } from "../../../types/common.js"
 
 class SearchTool implements Tool {
   constructor() {

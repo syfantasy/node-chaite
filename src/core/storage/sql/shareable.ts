@@ -1,4 +1,4 @@
-import { ColumnSpec, ColumnTypeName } from '../driver/types'
+import { ColumnSpec, ColumnTypeName } from '../driver/types.js'
 
 /**
  * 绝大多数可分享实体（渠道、预设、工具、处理器、触发器）都继承 AbstractShareable，

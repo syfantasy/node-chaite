@@ -7,8 +7,8 @@ import {
   Feature,
   ModelConfig,
   Wait,
-} from '../types/index'
-import { CHANNEL_STATUS_MAP } from '../const/index'
+} from '../types/index.js'
+import { CHANNEL_STATUS_MAP } from '../const/index.js'
 
 export class DefaultChannelLoadBalancer implements ChannelsLoadBalancer {
   public constructor() {}

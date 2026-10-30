@@ -6,8 +6,8 @@ import {
   EventMessage,
   SendMessageOption,
   UserState,
-} from './core'
-import { getConfig } from './config'
+} from './core/index.js'
+import { getConfig } from './config.js'
 
 export class StandaloneUserModeSelector extends AbstractUserModeSelector {
   constructor(

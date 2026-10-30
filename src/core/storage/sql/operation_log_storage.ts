@@ -1,8 +1,8 @@
-import { OperationLog } from '../../types/operation-log'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage'
-import { log } from '../logger'
-import { OPERATION_LOGS } from './tables'
+import { OperationLog } from '../../types/operation-log.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage.js'
+import { log } from '../logger.js'
+import { OPERATION_LOGS } from './tables.js'
 
 /** 能下推到 SQL 的列。其余字段都在 payload 里，只能读出来再过滤。 */
 const FILTERABLE = ['id', 'timestamp', 'type', 'level', 'userId', 'groupId', 'channelId', 'model', 'presetId']

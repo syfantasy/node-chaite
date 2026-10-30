@@ -1,9 +1,9 @@
-import { registerFromChaiteConverter, registerFromChaiteToolConverter, registerIntoChaiteConverter } from '../../../utils/converter'
-import type { AssistantMessage, ImageContent, IMessage, MessageContent, ProviderContextContent, ReasoningContent, TextContent, ToolCall, ToolCallResultMessage, UserMessage } from '../../../types'
+import { registerFromChaiteConverter, registerFromChaiteToolConverter, registerIntoChaiteConverter } from '../../../utils/converter.js'
+import type { AssistantMessage, ImageContent, IMessage, MessageContent, ProviderContextContent, ReasoningContent, TextContent, ToolCall, ToolCallResultMessage, UserMessage } from '../../../types/index.js'
 import type { Content, FunctionDeclaration, GenerateContentResponse, Part } from '@google/genai'
 import { randomUUID } from 'node:crypto'
-import { parseInlineImage } from '../../../utils/imageData'
-import { parseToolArguments } from '../../../utils/toolArguments'
+import { parseInlineImage } from '../../../utils/imageData.js'
+import { parseToolArguments } from '../../../utils/toolArguments.js'
 
 function imagePart(image: ImageContent): Part {
   if (/^(?:https?:\/\/|gs:\/\/)/i.test(image.image)) return { fileData: { fileUri: image.image, mimeType: image.mimeType || 'image/jpeg' } }

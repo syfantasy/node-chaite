@@ -1,4 +1,4 @@
-import { ChatPreset } from '../channels/index'
+import { ChatPreset } from '../channels/index.js'
 
 export interface EventMessage {
   sender: {

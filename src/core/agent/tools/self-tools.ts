@@ -12,9 +12,9 @@
  */
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import type { ChaiteContext } from '../../types/common'
-import type { Tool } from '../../types/tools'
-import type { SkillFrontmatter } from '../skills/skill.types'
+import type { ChaiteContext } from '../../types/common.js'
+import type { Tool } from '../../types/tools.js'
+import type { SkillFrontmatter } from '../skills/skill.types.js'
 
 export function createSelfTools(): Tool[] {
   return [

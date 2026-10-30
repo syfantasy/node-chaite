@@ -1,6 +1,6 @@
 import type OpenAI from 'openai'
-import type { ModelResponseChunk, ReasoningContent, ReasoningPart, TextContent, ToolCall } from '../../../types'
-import { parseToolArguments } from '../../../utils/toolArguments'
+import type { ModelResponseChunk, ReasoningContent, ReasoningPart, TextContent, ToolCall } from '../../../types/index.js'
+import { parseToolArguments } from '../../../utils/toolArguments.js'
 
 /** Tool calls stream independently by index; IDs usually appear only in the first delta. */
 export class OpenAIStreamAccumulator {

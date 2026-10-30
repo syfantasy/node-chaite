@@ -1,4 +1,4 @@
-import { SqlDriver } from '../core'
+import { SqlDriver } from '../core/index.js'
 
 export class PluginKVStorage {
   private initialized = false

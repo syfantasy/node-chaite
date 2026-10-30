@@ -1,6 +1,6 @@
-import { Chaite, createClient, ChaiteContext } from '../core'
-import { groupHistoryBuffer } from '../context/groupHistoryBuffer'
-import { OneBotMessageEvent } from '../onebot/types'
+import { Chaite, createClient, ChaiteContext } from '../core/index.js'
+import { groupHistoryBuffer } from '../context/groupHistoryBuffer.js'
+import { OneBotMessageEvent } from '../onebot/types.js'
 
 export interface SenderInfo {
   userId: number | string

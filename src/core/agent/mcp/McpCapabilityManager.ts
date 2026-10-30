@@ -1,5 +1,5 @@
-import type { ChaiteContext } from '../../types/common'
-import type { McpServerConfig, McpServerManager } from './McpServerConfig'
+import type { ChaiteContext } from '../../types/common.js'
+import type { McpServerConfig, McpServerManager } from './McpServerConfig.js'
 import * as crypto from 'node:crypto'
 
 export interface ActiveMcpTools {

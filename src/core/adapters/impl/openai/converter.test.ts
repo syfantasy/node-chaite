@@ -1,7 +1,7 @@
-import { getFromChaiteConverter, getIntoChaiteConverter } from '../../../utils/converter'
-import type { OpenAICompatibleMessageParam } from '../../../utils/converter'
-import type { AssistantMessage, IMessage, ProviderContextContent, ReasoningContent, TextContent, ToolCallResultMessage, UserMessage } from '../../../types'
-import './converter'
+import { getFromChaiteConverter, getIntoChaiteConverter } from '../../../utils/converter.js'
+import type { OpenAICompatibleMessageParam } from '../../../utils/converter.js'
+import type { AssistantMessage, IMessage, ProviderContextContent, ReasoningContent, TextContent, ToolCallResultMessage, UserMessage } from '../../../types/index.js'
+import './converter.js'
 const toOpenAI = getFromChaiteConverter('openai')
 const fromOpenAI = getIntoChaiteConverter('openai')
 

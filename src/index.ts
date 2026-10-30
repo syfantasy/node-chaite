@@ -1,13 +1,13 @@
-import { loadConfig, getConfig, saveConfig } from './config'
-import { initChaiteStorage } from './storage'
-import { startWebServer } from './server'
-import { checkPermission, banTarget, unbanTarget, parseDuration } from './guard'
-import { oneBotToUserMessage, formatModelResponse } from './onebot/message'
-import { OneBotMessageEvent } from './onebot/types'
-import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer'
-import { mediaRefStore } from './onebot/refStore'
-import { pluginManager, ChaiteEvent } from './plugin'
-import { Chaite, EventMessage, SendMessageOption, drivers, TextContent, ImageContent, ChaiteContext } from './core'
+import { loadConfig, getConfig, saveConfig } from './config.js'
+import { initChaiteStorage } from './storage.js'
+import { startWebServer } from './server.js'
+import { checkPermission, banTarget, unbanTarget, parseDuration } from './guard.js'
+import { oneBotToUserMessage, formatModelResponse } from './onebot/message.js'
+import { OneBotMessageEvent } from './onebot/types.js'
+import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer.js'
+import { mediaRefStore } from './onebot/refStore.js'
+import { pluginManager, ChaiteEvent } from './plugin/index.js'
+import { Chaite, EventMessage, SendMessageOption, drivers, TextContent, ImageContent, ChaiteContext } from './core/index.js'
 
 async function bootstrap() {
   console.log('==============================================')
@@ -1206,11 +1206,11 @@ export async function handleMessage(
   }
 }
 
-export * from './core'
-export * from './config'
-export * from './storage'
-export * from './server'
-export * from './plugin'
+export * from './core/index.js'
+export * from './config.js'
+export * from './storage.js'
+export * from './server.js'
+export * from './plugin/index.js'
 export { groupHistoryBuffer, groupMessageRefStore }
 export { bootstrap }
 

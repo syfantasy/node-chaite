@@ -1,7 +1,7 @@
 import express, { Router, Request, Response } from 'express'
-import { Chaite, ChaiteResponse, Channel, Filter, SearchOption } from '../index'
-import { ChaiteContext, TextContent, ImageContent, UserMessage, BaseClientOptions, Tool } from '../types'
-import { createClient } from '../adapters'
+import { Chaite, ChaiteResponse, Channel, Filter, SearchOption } from '../index.js'
+import { ChaiteContext, TextContent, ImageContent, UserMessage, BaseClientOptions, Tool } from '../types/index.js'
+import { createClient } from '../adapters/index.js'
 
 const router: Router = express.Router()
 

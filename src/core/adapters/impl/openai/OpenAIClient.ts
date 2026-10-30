@@ -6,18 +6,18 @@ import {
   ModelResponseChunk, ModelUsage,
   TextContent,
   ToolCall,
-} from '../../../types'
-import { AbstractClient } from '../../clients'
-import { BaseClientOptions, ChaiteContext } from '../../../types'
+} from '../../../types/index.js'
+import { AbstractClient } from '../../clients.js'
+import { BaseClientOptions, ChaiteContext } from '../../../types/index.js'
 import OpenAI from 'openai'
-import { asyncLocalStorage, getKey } from '../../../utils'
-import { getIntoChaiteConverter } from '../../../utils/converter'
-import { buildOpenAIRequest } from './request'
-import { OpenAIStreamAccumulator } from './stream'
-import './converter'
-import { EmbeddingOption, SendMessageOption } from '../../../types'
+import { asyncLocalStorage, getKey } from '../../../utils/index.js'
+import { getIntoChaiteConverter } from '../../../utils/converter.js'
+import { buildOpenAIRequest } from './request.js'
+import { OpenAIStreamAccumulator } from './stream.js'
+import './converter.js'
+import { EmbeddingOption, SendMessageOption } from '../../../types/index.js'
 import * as crypto from 'node:crypto'
-import { VERSION } from '../../../index'
+import { VERSION } from '../../../index.js'
 
 export type OpenAIClientOptions = BaseClientOptions
 

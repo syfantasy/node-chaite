@@ -1,2 +1,2 @@
-export * from './McpServerConfig'
-export * from './McpCapabilityManager'
+export * from './McpServerConfig.js'
+export * from './McpCapabilityManager.js'

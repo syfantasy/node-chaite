@@ -1,6 +1,6 @@
 import type OpenAI from 'openai'
-import { OpenAIStreamAccumulator } from './stream'
-import type { ReasoningPart } from '../../../types'
+import { OpenAIStreamAccumulator } from './stream.js'
+import type { ReasoningPart } from '../../../types/index.js'
 const chunk = (delta: unknown) => ({ id: 'stream', model: 'test', choices: [{ index: 0, delta }] }) as OpenAI.ChatCompletionChunk
 
 describe('OpenAI streaming assembly', () => {

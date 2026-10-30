@@ -1,7 +1,7 @@
 import { Content, GenerateContentResponse } from '@google/genai'
-import { AssistantMessage, ProviderContextContent, ToolCallResultMessage } from '../../../types'
-import { getFromChaiteConverter, getIntoChaiteConverter } from '../../../utils/converter'
-import './converter'
+import { AssistantMessage, ProviderContextContent, ToolCallResultMessage } from '../../../types/index.js'
+import { getFromChaiteConverter, getIntoChaiteConverter } from '../../../utils/converter.js'
+import './converter.js'
 
 describe('Gemini tool context conversion', () => {
   test('preserves server tool parts and function call ids across history', () => {

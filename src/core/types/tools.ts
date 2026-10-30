@@ -1,7 +1,7 @@
-import { ArgumentValue } from './models'
-import { AbstractShareable } from './cloud'
-import { CHANNEL_STATUS_MAP } from '../const/index'
-import { ChaiteContext } from './common'
+import { ArgumentValue } from './models.js'
+import { AbstractShareable } from './cloud.js'
+import { CHANNEL_STATUS_MAP } from '../const/index.js'
+import { ChaiteContext } from './common.js'
 
 export interface Function {
     name: string

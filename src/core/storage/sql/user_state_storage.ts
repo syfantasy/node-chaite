@@ -1,9 +1,9 @@
 import * as crypto from 'node:crypto'
-import { Conversation, UserSettings, UserState } from '../../types/storage'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage'
-import { log } from '../logger'
-import { USER_STATES } from './tables'
+import { Conversation, UserSettings, UserState } from '../../types/storage.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage.js'
+import { log } from '../logger.js'
+import { USER_STATES } from './tables.js'
 
 /**
  * user_states 的业务主键是 userId，不是 id——id 只是个随机 UUID 代理键。

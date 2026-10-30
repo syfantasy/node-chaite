@@ -1,4 +1,4 @@
-import type { BasicStorage } from '../../types/storage'
+import type { BasicStorage } from '../../types/storage.js'
 import * as crypto from 'node:crypto'
 
 export type McpTransportType = 'streamable-http' | 'sse' | 'stdio'

@@ -1,5 +1,5 @@
 import express, { Router, Request, Response } from 'express'
-import { Chaite, ChaiteResponse, ChatPreset, Filter, SearchOption } from '../index'
+import { Chaite, ChaiteResponse, ChatPreset, Filter, SearchOption } from '../index.js'
 
 const router: Router = express.Router()
 

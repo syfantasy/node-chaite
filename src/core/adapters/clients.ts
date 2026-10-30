@@ -18,25 +18,25 @@ import {
   ToolCallResultMessage,
   ToolCallLimitConfig,
   UserMessage,
-} from '../types'
+} from '../types/index.js'
 import {
   BaseClientOptions, ChaiteContext,
   DefaultLogger,
   ILogger,
   MultipleKeyStrategy,
   MultipleKeyStrategyChoice,
-} from '../types'
-import type { ExecutionContext, ToolExecutor } from '../agent/contracts'
-import { McpToolProxy } from '../agent/tool-executors/proxy'
-import { McpToolExecutor } from '../agent/tool-executors/mcp'
-import { createMcpCapabilityTools } from '../agent/tools/mcp-capability-tools'
-import { createMcpManagementTools } from '../agent/tools/mcp-management-tools'
-import { createSelfTools } from '../agent/tools/self-tools'
-import DefaultHistoryManager from '../utils/history'
-import { asyncLocalStorage, extractClassName, getKey } from '../utils'
-import { ClientType, EmbeddingOption, HistoryManager, IClient, SendMessageOption } from '../types'
-import { PostProcessor, PreProcessor } from '../types'
-import { ProcessorsManager } from '../share'
+} from '../types/index.js'
+import type { ExecutionContext, ToolExecutor } from '../agent/contracts.js'
+import { McpToolProxy } from '../agent/tool-executors/proxy.js'
+import { McpToolExecutor } from '../agent/tool-executors/mcp.js'
+import { createMcpCapabilityTools } from '../agent/tools/mcp-capability-tools.js'
+import { createMcpManagementTools } from '../agent/tools/mcp-management-tools.js'
+import { createSelfTools } from '../agent/tools/self-tools.js'
+import DefaultHistoryManager from '../utils/history.js'
+import { asyncLocalStorage, extractClassName, getKey } from '../utils/index.js'
+import { ClientType, EmbeddingOption, HistoryManager, IClient, SendMessageOption } from '../types/index.js'
+import { PostProcessor, PreProcessor } from '../types/index.js'
+import { ProcessorsManager } from '../share/index.js'
 import * as crypto from 'node:crypto'
 
 

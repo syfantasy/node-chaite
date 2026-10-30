@@ -1,12 +1,12 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
-import { AbstractHistoryManager } from '../../types/adapter'
-import { HistoryMessage } from '../../types/models'
-import { SqlDriver } from '../driver/types'
-import { isBase64Image } from './base64_image'
-import { log } from '../logger'
-import { HISTORY } from './tables'
+import { AbstractHistoryManager } from '../../types/adapter.js'
+import { HistoryMessage } from '../../types/models.js'
+import { SqlDriver } from '../driver/types.js'
+import { isBase64Image } from './base64_image.js'
+import { log } from '../logger.js'
+import { HISTORY } from './tables.js'
 
 interface HistoryRecord {
   id: string

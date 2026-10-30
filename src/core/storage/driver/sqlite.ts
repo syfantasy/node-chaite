@@ -1,8 +1,8 @@
 import path from 'node:path'
 import fs from 'node:fs'
-import { createDialect } from './dialect'
-import { Dialect, RunResult, SqlDriver, TransactionScope, WriteOptions } from './types'
-import { log } from '../logger'
+import { createDialect } from './dialect.js'
+import { Dialect, RunResult, SqlDriver, TransactionScope, WriteOptions } from './types.js'
+import { log } from '../logger.js'
 
 /**
  * sqlite3 的最小接口。sqlite3 是可选 peer 依赖，动态 import，所以这里不引它的

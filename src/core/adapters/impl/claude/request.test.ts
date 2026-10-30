@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { buildClaudeRequest } from './request'
-import { SendMessageOption } from '../../../types/adapter'
-import type { IMessage, TextContent, Tool } from '../../../types'
+import { buildClaudeRequest } from './request.js'
+import { SendMessageOption } from '../../../types/adapter.js'
+import type { IMessage, TextContent, Tool } from '../../../types/index.js'
 
 const messages: IMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'Hello' } as TextContent] }]
 const tool = { function: { name: 'search', description: 'Search', parameters: { type: 'object', properties: {} } } } as Tool

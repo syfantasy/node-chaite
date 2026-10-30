@@ -1,8 +1,8 @@
-import type { ChaiteContext } from '../../types/common'
-import type { Tool } from '../../types/tools'
-import type { BackgroundJobManager } from '../background/BackgroundJobManager'
-import { getPlanProgress } from '../planning/plan.types'
-import type { PlanExecutor } from '../planning/PlanExecutor'
+import type { ChaiteContext } from '../../types/common.js'
+import type { Tool } from '../../types/tools.js'
+import type { BackgroundJobManager } from '../background/BackgroundJobManager.js'
+import { getPlanProgress } from '../planning/plan.types.js'
+import type { PlanExecutor } from '../planning/PlanExecutor.js'
 
 /**
  * Returns the set of built-in system tools to register with Chaite.

@@ -2,8 +2,8 @@ import {
   registerFromChaiteConverter,
   registerFromChaiteToolConverter,
   registerIntoChaiteConverter,
-} from '../../../utils/converter'
-import type { AssistantMessage, IMessage, ProviderContextContent, TextContent, ToolCall } from '../../../types'
+} from '../../../utils/converter.js'
+import type { AssistantMessage, IMessage, ProviderContextContent, TextContent, ToolCall } from '../../../types/index.js'
 import type Anthropic from '@anthropic-ai/sdk'
 
 function toolInput(value: unknown): Record<string, unknown> {

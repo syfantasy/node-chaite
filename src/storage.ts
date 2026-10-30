@@ -28,8 +28,8 @@ import {
   MemoryManager,
   DefaultMemoryProvider,
   getLogger,
-} from './core'
-import { StandaloneUserModeSelector } from './userMode'
+} from './core/index.js'
+import { StandaloneUserModeSelector } from './userMode.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT_DATA_DIR = path.resolve(__dirname, '../data')

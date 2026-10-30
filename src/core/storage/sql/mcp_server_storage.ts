@@ -1,7 +1,7 @@
-import { McpServerConfig } from '../../agent/mcp/McpServerConfig'
-import { SqlDriver } from '../driver/types'
-import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage'
-import { MCP_SERVERS } from './tables'
+import { McpServerConfig } from '../../agent/mcp/McpServerConfig.js'
+import { SqlDriver } from '../driver/types.js'
+import { SqlKvStorage, TableSpec, parseJson } from '../sql_storage.js'
+import { MCP_SERVERS } from './tables.js'
 
 /**
  * MCP 连接配置。里面有凭据（headers 里的 Authorization、env 里的 API key），

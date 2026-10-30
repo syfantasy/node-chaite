@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
-import { buildOpenAIRequest } from './request'
-import { SendMessageOption } from '../../../types/adapter'
-import type { IMessage, TextContent, Tool } from '../../../types'
+import { buildOpenAIRequest } from './request.js'
+import { SendMessageOption } from '../../../types/adapter.js'
+import type { IMessage, TextContent, Tool } from '../../../types/index.js'
 const history: IMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'hi' } as TextContent] }]
 const tool = { function: { name: 'search', parameters: { type: 'object', properties: {} } } } as Tool
 const request = (options: Partial<SendMessageOption>, tools: Tool[] = [], url = 'https://api.openai.com/v1') => buildOpenAIRequest(history, tools, SendMessageOption.create(options), url)

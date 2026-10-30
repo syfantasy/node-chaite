@@ -1,7 +1,7 @@
-import { NonExecutableShareableManager } from './shareable'
-import { Channel, DefaultChannelLoadBalancer } from '../channels'
-import { BasicStorage, ChannelsLoadBalancer } from '../types'
-import { asyncLocalStorage, getLogger } from '../utils'
+import { NonExecutableShareableManager } from './shareable.js'
+import { Channel, DefaultChannelLoadBalancer } from '../channels/index.js'
+import { BasicStorage, ChannelsLoadBalancer } from '../types/index.js'
+import { asyncLocalStorage, getLogger } from '../utils/index.js'
 export class ChannelsManager extends NonExecutableShareableManager<Channel> {
   private static instance: ChannelsManager
   private constructor(protected storage: BasicStorage<Channel>, private loadBalancer: ChannelsLoadBalancer = new DefaultChannelLoadBalancer()) {

@@ -1,1 +1,1 @@
-export * from './chaite'
+export * from './chaite.js'

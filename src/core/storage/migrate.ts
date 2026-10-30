@@ -1,8 +1,8 @@
-import { SqlDriver } from './driver/types'
-import { log } from './logger'
-import { CHAITE_TABLES, TableShape } from './sql/tables'
-import { listColumns, tableExists } from './driver/introspect'
-import { ColumnSpec, ColumnTypeName, LogicalDatabase } from './driver/types'
+import { SqlDriver } from './driver/types.js'
+import { log } from './logger.js'
+import { CHAITE_TABLES, TableShape } from './sql/tables.js'
+import { listColumns, tableExists } from './driver/introspect.js'
+import { ColumnSpec, ColumnTypeName, LogicalDatabase } from './driver/types.js'
 
 /**
  * 跨引擎搬数据。

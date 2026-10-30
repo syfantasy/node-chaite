@@ -1,8 +1,8 @@
-import { estimateTokens } from './tokenEstimator'
-import { parseJsonCard, parseXmlCard } from './cardParser'
-import { mediaRefStore } from '../onebot/refStore'
-import { OneBotMessageEvent, OneBotSegment } from '../onebot/types'
-import { getConfig } from '../config'
+import { estimateTokens } from './tokenEstimator.js'
+import { parseJsonCard, parseXmlCard } from './cardParser.js'
+import { mediaRefStore } from '../onebot/refStore.js'
+import { OneBotMessageEvent, OneBotSegment } from '../onebot/types.js'
+import { getConfig } from '../config.js'
 
 export interface GroupContextOptions {
   minMessages?: number
