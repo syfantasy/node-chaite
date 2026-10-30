@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { Server } from 'node:http'
 import { Application, Request, Response } from 'express'
 import {
@@ -16,9 +17,20 @@ import { handleMessage } from './index.js'
 import { getStorageContext, initChaiteStorage } from './storage.js'
 
 const cwd = process.cwd()
-const FRONTEND_DIR = fs.existsSync(path.resolve(cwd, 'web/build'))
-  ? path.resolve(cwd, 'web/build')
-  : (fs.existsSync(path.resolve(cwd, 'web/dist')) ? path.resolve(cwd, 'web/dist') : path.resolve(cwd, 'build'))
+// 面板目录查找顺序：
+// 1. cwd 相对（本地开发 / 手动构建场景）
+// 2. 包根相对（随 npm 包发布的 frontend/build，保证以任意 cwd 通过 bin 启动时都能找到）
+const pkgRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
+const frontendCandidates = [
+  path.resolve(cwd, 'web/build'),
+  path.resolve(cwd, 'web/dist'),
+  path.resolve(cwd, 'build'),
+  path.resolve(pkgRoot, 'frontend/build'),
+  path.resolve(pkgRoot, 'web/build'),
+  path.resolve(pkgRoot, 'web/dist'),
+]
+const FRONTEND_DIR = frontendCandidates.find(dir => fs.existsSync(path.join(dir, 'index.html')))
+  ?? path.resolve(pkgRoot, 'frontend/build')
 
 class CustomAuthHandler extends FrontEndAuthHandler {
   constructor(private staticToken?: string) {
