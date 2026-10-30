@@ -749,24 +749,32 @@ async function handleMessage(
               }
             }
 
-            // 1. 先推入相对稳定的花名册与历史流水，最大化提升大模型 KV Cache Prefix Caching 命中率
+            // 0. 注入静态场景协议说明（作为前缀基石，稳定命中 KV Cache）
+            contextParts.push({
+              type: 'text',
+              text: '### 场景协议：\n当前会话为 QQ 群聊。下方按顺序包含：\n1. <group_messages>: 近期群聊发言流水记录（仅供理解当下话题语境与历史背景，无需逐条回复）；\n2. <chat_members>: 当前群聊成员花名册（包含群友名片、身份与头衔等元数据）；\n3. <chat_environment>: 动态会话环境与当前时间。\n请严格保持你预设的角色人设与口吻，仅针对【当前提问者】的最新意图做出自然回应。',
+            })
+
+            // 1. 先推入大体积、相对稳定的历史流水，最大化提升大模型 KV Cache Prefix Caching 命中率
+            if (messagesBlock) {
+              contextParts.push({
+                type: 'text',
+                text: `### 最近群聊发言流水记录：\n${messagesBlock}`,
+              })
+            }
+
+            // 2. 推入群聊成员花名册（后置于流水，新人冒泡发言不击穿前序流水的 KV 缓存）
             if (membersBlock) {
               contextParts.push({
                 type: 'text',
                 text: `### 当前群聊成员花名册：\n${membersBlock}`,
               })
             }
-            if (messagesBlock) {
-              contextParts.push({
-                type: 'text',
-                text: `### 最近群聊发言流水记录（[#1] 至 [#N] 为当前轮次动态流动序号，对话与工具中均可直接用 '#1' 或 '1' 索引目标消息）：\n${messagesBlock}`,
-              })
-            }
 
-            // 2. 紧接着推入本轮动态的会话环境与时间戳（后置下移，避免每秒变化的时间戳击穿头部缓存）
+            // 3. 紧接着推入本轮动态的会话环境与时间戳（后置下移，避免每秒变化的时间戳击穿头部缓存）
             contextParts.push(envPart)
 
-            // 3. 推入多模态附图索引清单
+            // 4. 推入多模态附图索引清单
             if (visualAttachments.length > 0) {
               const imageIndexLines = visualAttachments.map(
                 (att) => `- 附图 ${att.seq}: ${att.detail}`

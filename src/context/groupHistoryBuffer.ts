@@ -740,8 +740,8 @@ export class GroupHistoryBuffer {
     }
 
     const fullParts: string[] = []
-    if (membersBlock) fullParts.push(membersBlock)
     if (messagesBlock) fullParts.push(messagesBlock)
+    if (membersBlock) fullParts.push(membersBlock)
 
     return {
       membersBlock,
