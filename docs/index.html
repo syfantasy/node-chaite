@@ -458,8 +458,9 @@ ctx.registerCommand('#总结讨论', async (e) => {
       <h3>群聊环境认知与流动式虚拟消息引用 (Group Environment & Virtual Ref)</h3>
       <p>为符合主流大模型（Google Gemini、Anthropic Claude、DeepSeek-R1）对严格轮次交替（单 turn 多 parts）的要求，系统在单一 <code>user</code> turn 内按独立 text part 严格组织：</p>
       <ul>
-        <li><strong>KV Cache Prefix 缓存优化（静态沉淀在前）：</strong> 为防止随秒变化的动态时间戳击穿大模型的前缀缓存，系统将稳定的 <code>&lt;chat_members&gt;</code> 花名册与 <code>&lt;group_messages&gt;</code> 发言流水置于 Prompt 最前置头部，多轮对话中前缀高度复用，吃满 Gemini / Claude / DeepSeek 的 Prefix Caching；</li>
-        <li><strong>&lt;chat_environment&gt;（后置环境元信息）：</strong> 注入当前精确北京时间（CST/UTC+8）、Bot 自身 QQ、管理员/主人列表、当前提问者身份与本轮触发方式，置于流水之后，从根源消除时间幻觉与身份混淆；</li>
+        <li><strong>场景协议前缀与流水前置（KV Cache 极限优化）：</strong> 在单一 <code>user</code> turn 最首部注入静态场景协议声明，并紧接着推入占据大体积 Token 的 <code>&lt;group_messages&gt;</code> 发言流水（仅在尾部单调递增），即使群内突然冒泡新人产生新的 <code>&lt;chat_members&gt;</code>，也不会击穿前序几千 Token 流水的 KV 缓存；</li>
+        <li><strong>&lt;chat_members&gt;（后置花名册）：</strong> 将群名片、角色角标、群头衔与活跃等级构成的花名册后置于发言流水，兼顾身份近因效应与前缀缓存命中；</li>
+        <li><strong>&lt;chat_environment&gt;（动态环境与互动模式）：</strong> 注入当前精确北京时间（CST/UTC+8）、Bot 自身 QQ、管理员/主人列表、当前发言者身份、触发方式与针对性的<strong>互动模式</strong>（主动触发时引导对话响应，随机唤醒时引导自然接梗/插话），后置避免时间戳击穿缓存；</li>
         <li><strong>&lt;group_messages&gt;（流动序号流水）：</strong> 流水记录格式为 <code>[#1 20:29] 名字: 内容</code>，剥离冗长无语义的随机整数 <code>msgId</code>，大幅节省上下文 Token。针对群昵称为空或全角空白的用户自动使用 <code>QQ &lt;QQ号&gt;</code> 标识；当群内存在重名用户时自动在流水名字后追加 <code>(QQ号)</code> 消除歧义；合并转发记录中空白昵称自动提取 QQ 号或回退为 <code>用户1/用户2</code>；</li>
         <li><strong>&lt;attached_images&gt; 与图文交错锚定（Interleaved Vision Anchoring）：</strong> 针对群聊多张图片并存时上游协议 <code>inlineData</code> / <code>image_url</code> 无法携带自定义属性的问题，系统自动生成 <code>&lt;attached_images&gt;</code> 映射索引，并在每张真实图像 Part 前紧贴引导文本 <code>【下方附图 N 对应 ...】：</code>，完美兼容主流多模态模型，彻底消除多图视觉张冠李戴；</li>
         <li><strong>提问者真实输入沉底与格式归一：</strong> 提问者本轮真实消息置于最末尾（享受最强 Recency Bias），格式统一为 <code>[#N HH:mm] 发送者[身份角标]: 消息正文</code>，彻底防串用户，且当前触发消息的流动序号 <code>#N</code> 同步注册进 <code>groupMessageRefStore</code>；</li>
