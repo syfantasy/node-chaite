@@ -1094,7 +1094,8 @@ export class PluginManager {
       }
 
       // 若为非消息类事件，则不继续进入文本指令匹配
-      if (event.eventType !== 'message') {
+      const evtType = event.eventType || 'message'
+      if (evtType !== 'message') {
         continue
       }
 
