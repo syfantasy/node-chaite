@@ -634,8 +634,10 @@ async function handleMessage(
         const mastersStr = mastersList.length > 0 ? mastersList.join(', ') : '无配置'
 
         let triggerWay = '常规对话'
+        let interactMode = '对话响应（结合当前发言者的意图与话题做出针对性回应）'
         if (triggerReason === 'random_probability') {
           triggerWay = '随机唤醒 (自动插话)'
+          interactMode = '自然接梗/插话（群友未主动呼叫，无需刻意单点回复最后一人；可就近期话题发表看法、吐槽、接梗，表现得像正在看群的真实群友）'
         } else if (triggerReason === 'at_bot') {
           triggerWay = '@你提问'
         } else if (triggerReason?.startsWith('preset_prefix')) {
@@ -655,8 +657,9 @@ async function handleMessage(
           `- 当前时间: ${cstTimeStr} (北京时间 CST/UTC+8)`,
           `- 你的身份: QQ ${botUin || '未知'}`,
           `- 管理员/主人: QQ ${mastersStr}`,
-          `- 当前提问者: ${senderStr}`,
+          `- 当前发言者: ${senderStr}`,
           `- 触发方式: ${triggerWay}`,
+          `- 互动模式: ${interactMode}`,
           '</chat_environment>',
         ]
 
@@ -752,7 +755,7 @@ async function handleMessage(
             // 0. 注入静态场景协议说明（作为前缀基石，稳定命中 KV Cache）
             contextParts.push({
               type: 'text',
-              text: '### 场景协议：\n当前会话为 QQ 群聊。下方按顺序包含：\n1. <group_messages>: 近期群聊发言流水记录（仅供理解当下话题语境与历史背景，无需逐条回复）；\n2. <chat_members>: 当前群聊成员花名册（包含群友名片、身份与头衔等元数据）；\n3. <chat_environment>: 动态会话环境与当前时间。\n请严格保持你预设的角色人设与口吻，仅针对【当前提问者】的最新意图做出自然回应。',
+              text: '### 场景协议：\n当前会话为 QQ 群聊。下方按顺序包含：\n1. <group_messages>: 近期群聊发言流水记录（仅供理解当下话题语境与历史背景）；\n2. <chat_members>: 当前群聊成员花名册（包含群友名片、身份与头衔等元数据）；\n3. <chat_environment>: 动态会话环境与当前时间。\n请严格保持你预设的角色人设与口吻，结合群聊上下文与环境中的触发方式做出真实群友般的自然回应。',
             })
 
             // 1. 先推入大体积、相对稳定的历史流水，最大化提升大模型 KV Cache Prefix Caching 命中率
