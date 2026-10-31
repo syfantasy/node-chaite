@@ -607,6 +607,27 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
       expressApp.get('/api/bridge/status', async (_req: any, res: any) => {
         res.status(200).json(ChaiteResponse.ok({ status: 'online', version: '2.0.0' }))
       })
+
+      // 6. 预设触发词列表（供宿主适配器在 @/命令前缀之外实现"喊触发词"唤醒；
+      //    无鉴权，与 bridge 系列保持一致）
+      expressApp.get('/api/bridge/preset-triggers', async (_req: any, res: any) => {
+        try {
+          const storageCtx = (globalThis as any).chaiteStorageCtx || getStorageContext()
+          const presets = storageCtx?.presetManager ? await storageCtx.presetManager.listInstances() : []
+          const items = (presets || [])
+            .map((p: any) => ({
+              presetId: p.id,
+              prefixes: Array.isArray(p.prefixes) && p.prefixes.length > 0
+                ? p.prefixes.filter((x: any) => typeof x === 'string' && x.trim()).map((x: string) => x.trim())
+                : (typeof p.prefix === 'string' && p.prefix.trim() ? [p.prefix.trim()] : []),
+              prefixAnywhere: p.prefixAnywhere !== false,
+            }))
+            .filter((x: any) => x.prefixes.length > 0)
+          res.status(200).json(ChaiteResponse.ok({ items }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || '获取失败'))
+        }
+      })
     },
     { frontendDir: FRONTEND_DIR }
   )
