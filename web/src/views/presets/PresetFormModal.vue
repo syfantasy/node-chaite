@@ -138,16 +138,6 @@ const channelRules = {
     trigger: ['blur', 'input'],
     message: '请输入预设名称',
   },
-  'description': {
-    required: true,
-    trigger: ['blur', 'change'],
-    message: '请选择客户端类型',
-  },
-  'prefix': {
-    required: true,
-    trigger: ['blur', 'input'],
-    message: '请输入基础URL',
-  },
   'sendMessageOption.model': {
     required: true,
     trigger: ['blur', 'input'],
