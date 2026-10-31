@@ -54,6 +54,20 @@ export function testTool(id: string, data: { args: Record<string, unknown>; user
   return request.Post<Service.ResponseResult<{ result: string; durationMs: number }>>(`/api/tools/${id}/test`, data)
 }
 
+export interface ToolConfigFileResult {
+  filePath: string
+  rawText: string
+  config: any
+}
+
+export function fetchToolConfigFile(id: string) {
+  return request.Get<Service.ResponseResult<ToolConfigFileResult>>(`/api/tools/${id}/config`)
+}
+
+export function saveToolConfigFile(id: string, data: { rawText?: string; config?: any }) {
+  return request.Post<Service.ResponseResult<{ success: boolean; filePath: string; config: any; rawText: string }>>(`/api/tools/${id}/config`, data)
+}
+
 export function uploadToolToCloud(data: { id: string }) {
   return request.Post<Service.ResponseResult<Shareable.ToolModel>>('/api/tools/upload', data)
 }

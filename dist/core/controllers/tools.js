@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Chaite, ChaiteContext, ChaiteResponse } from '../index.js';
 import { asyncLocalStorage, extractClassName } from '../utils/index.js';
 const router = express.Router();
@@ -44,6 +46,87 @@ router.get('/:id/test-schema', (req, res) => {
         if (!tool)
             throw new Error(`工具“${dto.name}”尚未被运行时加载，请保存后稍候再试`);
         return { name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters };
+    });
+});
+function resolveToolConfigPath(toolName) {
+    const cwd = process.cwd();
+    // 1. 已知特定工具路径 (如网易云工具组)
+    if (toolName === 'searchNetease' || toolName === 'sendNetease') {
+        const dir = path.join(cwd, 'data', 'netease_music_tool');
+        return { dir, filePath: path.join(dir, 'config.json') };
+    }
+    // 2. data/<toolName>/config.json 存在则优先使用
+    const specificDir = path.join(cwd, 'data', toolName);
+    const specificFile = path.join(specificDir, 'config.json');
+    if (fs.existsSync(specificFile)) {
+        return { dir: specificDir, filePath: specificFile };
+    }
+    // 3. 默认通用路径 data/tools_config/<toolName>.json
+    const defaultDir = path.join(cwd, 'data', 'tools_config');
+    return { dir: defaultDir, filePath: path.join(defaultDir, `${toolName}.json`) };
+}
+/** GET /api/tools/:id/config — 获取工具独立的配置文件 */
+router.get('/:id/config', (req, res) => {
+    wrap(res, async () => {
+        const mgr = Chaite.getInstance().getToolsManager();
+        const dto = await mgr.getInstanceT(req.params.id);
+        if (!dto)
+            throw new Error('Tool not found');
+        const { dir, filePath } = resolveToolConfigPath(dto.name);
+        let rawText = '';
+        let config = null;
+        if (fs.existsSync(filePath)) {
+            rawText = fs.readFileSync(filePath, 'utf-8');
+            try {
+                config = JSON.parse(rawText);
+            }
+            catch {
+                config = null;
+            }
+        }
+        else {
+            config = dto.config || dto.extraData?.config || {};
+            rawText = JSON.stringify(config, null, 2);
+        }
+        const relativePath = path.relative(process.cwd(), filePath);
+        return { filePath: relativePath, rawText, config };
+    });
+});
+/** POST /api/tools/:id/config — 保存工具独立的配置文件 */
+router.post('/:id/config', (req, res) => {
+    wrap(res, async () => {
+        const mgr = Chaite.getInstance().getToolsManager();
+        const dto = await mgr.getInstanceT(req.params.id);
+        if (!dto)
+            throw new Error('Tool not found');
+        const { dir, filePath } = resolveToolConfigPath(dto.name);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        let textToSave = req.body.rawText;
+        let parsedConfig = req.body.config;
+        if (textToSave != null) {
+            try {
+                parsedConfig = JSON.parse(textToSave);
+                textToSave = JSON.stringify(parsedConfig, null, 2);
+            }
+            catch (err) {
+                throw new Error(`JSON 格式错误: ${err?.message || err}`);
+            }
+        }
+        else if (parsedConfig != null) {
+            textToSave = JSON.stringify(parsedConfig, null, 2);
+        }
+        else {
+            textToSave = '{}';
+            parsedConfig = {};
+        }
+        fs.writeFileSync(filePath, textToSave, 'utf-8');
+        // 同步更新数据库内 tool.config
+        dto.config = parsedConfig;
+        await mgr.upsertInstanceT(dto);
+        const relativePath = path.relative(process.cwd(), filePath);
+        return { success: true, filePath: relativePath, config: parsedConfig, rawText: textToSave };
     });
 });
 /** POST /api/tools/:id/test — execute through the live Chaite/plugin runtime. */

@@ -7,6 +7,7 @@ import type { ListToolModels } from '@/service/api/tools'
 import { createTool, deleteTool, fetchAllToolList, fetchToolList, updateTool, uploadToolToCloud } from '@/service/api/tools'
 import ToolFormModal from './ToolFormModal.vue'
 import ToolTestModal from './ToolTestModal.vue'
+import ToolConfigModal from './ToolConfigModal.vue'
 import { createToolGroup, deleteToolGroup, fetchAllToolGroupList, updateToolGroup } from '@/service/api/toolGroup'
 import ToolGroupFormModal from '@/views/tools/ToolGroupFormModal.vue'
 import IconLinkCloudSuccess from '~icons/icon-park-outline/cloudy'
@@ -15,11 +16,13 @@ import type { Shareable } from '@/typings/entities/shareable'
 function createColumns({
   upload,
   edit,
+  config,
   test,
   remove,
 }: {
   upload: (row: Shareable.ToolModel) => void
   edit: (row: Shareable.ToolModel) => void
+  config: (row: Shareable.ToolModel) => void
   test: (row: Shareable.ToolModel) => void
   remove: (row: Shareable.ToolModel) => void
 }): DataTableColumns<Shareable.ToolModel> {
@@ -92,6 +95,17 @@ function createColumns({
               onClick: () => edit(row),
             },
             { default: () => '修改' },
+          ),
+          h(
+            NButton,
+            {
+              type: 'warning',
+              strong: true,
+              tertiary: true,
+              size: 'small',
+              onClick: () => config(row),
+            },
+            { default: () => '配置' },
           ),
           h(NButton, { type: 'success', strong: true, tertiary: true, size: 'small', onClick: () => test(row) }, { default: () => '测试' }),
           h(
@@ -213,7 +227,9 @@ const defaultTool = {
 const currentTool = ref<Shareable.ToolModel>(JSON.parse(JSON.stringify(defaultTool)))
 const loading = ref(false)
 const showTestModal = ref(false)
+const showConfigModal = ref(false)
 const testingTool = ref<Shareable.ToolModel>()
+const configuringTool = ref<Shareable.ToolModel>()
 
 // 工具组相关状态
 const groupData = reactive({ value: [] as Shareable.ToolsGroupModel[] })
@@ -341,6 +357,10 @@ const columns = createColumns({
     editMode.value = true
     currentTool.value = { ...row }
     showModal.value = true
+  },
+  config(row) {
+    configuringTool.value = row
+    showConfigModal.value = true
   },
   test(row) {
     testingTool.value = row
@@ -544,6 +564,7 @@ function handleToolPageSizeChange(pageSize: number) {
       @submit="handleSubmitTool"
     />
     <ToolTestModal v-model:show="showTestModal" :tool="testingTool" />
+    <ToolConfigModal v-model:show="showConfigModal" :tool="configuringTool" />
 
     <ToolGroupFormModal
       v-model:show="showGroupModal"
