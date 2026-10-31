@@ -342,7 +342,30 @@ export class PluginManager {
     instance.tools = []
   }
 
+  /**
+   * 影子拷贝会把插件移到 <宿主>/plugins/.cache/runtime/<id>/<ts>/ 下运行。
+   * 插件源码里的 `../../../xxx` 相对导入原本解析到 <宿主根>/xxx，影子化后
+   * 却指向 runtime 根，导致 ERR_MODULE_NOT_FOUND（如 Yunzai 插件的
+   * ../../../lib/plugins/plugin.js）。在 runtime 根建立指向宿主根各条目
+   * 的符号链接（跳过 plugins 与 .cache），使相对导入解析与原位置无损一致。
+   */
+  private ensureRuntimePathShim(): void {
+    try {
+      const hostRoot = path.resolve(this.pluginsDir, '..')
+      for (const entry of fs.readdirSync(hostRoot, { withFileTypes: true })) {
+        if (entry.name === 'plugins' || entry.name === '.cache') continue
+        const dest = path.join(this.cacheDir, entry.name)
+        if (fs.existsSync(dest)) continue
+        try {
+          fs.symlinkSync(path.join(hostRoot, entry.name), dest, 'junction')
+        } catch {}
+      }
+    } catch {}
+  }
+
   private prepareDirectoryRuntime(id: string, dirPath: string, relativeEntry: string): string {
+    this.ensureRuntimePathShim()
+
     const pluginCacheRoot = path.join(this.cacheDir, id)
     if (!fs.existsSync(pluginCacheRoot)) {
       fs.mkdirSync(pluginCacheRoot, { recursive: true })
