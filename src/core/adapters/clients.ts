@@ -356,7 +356,7 @@ export class AbstractClient implements IClient {
       this.preProcessors = this.options.getPreProcessors()
       this.postProcessors = this.options.getPostProcessors()
       const apiKey = await getKey(this.apiKey, this.multipleKeyStrategy)
-      const histories = options.disableHistoryRead ? [] : await this.historyManager.getHistory(options.parentMessageId, options.conversationId)
+      let histories = options.disableHistoryRead ? [] : await this.historyManager.getHistory(options.parentMessageId, options.conversationId)
       this.context.setHistoryMessages(histories)
       if (!options.conversationId) {
         options.conversationId = crypto.randomUUID()
@@ -408,6 +408,19 @@ export class AbstractClient implements IClient {
           histories.push(thisRequestMsg)
         } else if (debug) {
           this.logger.debug('skip sending empty user message to model')
+        }
+      }
+      // 上下文置顶：允许调用方把「本轮注入的上下文」挪到对话最前面（稳定头部利于前缀缓存），
+      // 历史非空时通常合并进历史首条 user 消息，避免出现连续的 user 消息。
+      if (typeof options.prependContext === 'function') {
+        try {
+          const injected = options.prependContext(histories, thisRequestMsg)
+          if (Array.isArray(injected) && injected !== histories) {
+            histories = injected
+            this.context.setHistoryMessages(histories)
+          }
+        } catch (err) {
+          this.logger.warn(`prependContext failed: ${(err as Error).message}`)
         }
       }
       const _llmCallStart = Date.now()

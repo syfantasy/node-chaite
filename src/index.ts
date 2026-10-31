@@ -635,6 +635,52 @@ export async function handleMessage(
       try {
         const contextParts: TextContent[] = []
 
+        // ── 上下文置顶器 ──────────────────────────────────────────────────
+        // 把本轮注入块（协议/流水/花名册/环境）放到「对话最前面」而不是塞在本轮
+        // user 消息里：
+        //   · 历史为空（新会话 / 伪人模式）→ 直接并入本轮 user 消息的头部；
+        //   · 历史非空 → 并入历史首条 user 消息，避免出现连续两条 user（多数渠道不接受）；
+        // 这样对话结构是 [user: 上下文 + 首句] [assistant] [user] ... [user: 本轮发言]，
+        // 稳定头部内容才能持续命中前缀缓存（KV Cache）。
+        // 写入 history 时仍由 persistMessage 剥掉注入块，只在「并入本轮消息」时需要剥离。
+        const installPrependContext = (parts: TextContent[]) => {
+          if (parts.length === 0) return
+          const injectedCount = parts.length
+          let ctxAttachedToCurrent = false
+          sendOptions.prependContext = (histories: any[], current?: any) => {
+            ctxAttachedToCurrent = false
+            if (!Array.isArray(histories) || histories.length === 0) return
+            const cloned = parts.map((p) => ({ ...p }))
+            // 列表里只有本轮这一条（无历史）：上下文与发言同属最前面的一条消息
+            if (histories.length === 1 && (!current || histories[0] === current)) {
+              const target = current || histories[0]
+              target.content = [...cloned, ...((target.content as any[]) || [])]
+              ctxAttachedToCurrent = true
+              return
+            }
+            const head: any = histories[0]
+            if (head && head.role === 'user' && Array.isArray(head.content)) {
+              head.content = [...cloned, ...head.content]
+            } else {
+              histories.unshift({
+                id: crypto.randomUUID(),
+                parentId: null,
+                role: 'user',
+                content: cloned,
+              } as any)
+            }
+          }
+          if (!isBym) {
+            sendOptions.persistMessage = (msg: any) => {
+              if (!msg || !Array.isArray(msg.content)) return msg
+              // 上下文已并入历史首条（或独立成条）时，本轮发言本身就是干净的
+              if (!ctxAttachedToCurrent) return msg
+              if (msg.content.length <= injectedCount) return { ...msg, content: [] }
+              return { ...msg, content: msg.content.slice(injectedCount) }
+            }
+          }
+        }
+
         // 1. 构建当前会话环境元信息 (时间具体到秒、自身身份、主人列表、提问者、触发方式)
         const now = new Date()
         const cstFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -892,16 +938,11 @@ export async function handleMessage(
               })
             }
 
-            // 提取提问者原始的用户消息部件（保持原样，放置在最末尾，避免被伪造/注入人造前缀）
+            // 提取提问者原始的用户消息部件（保持原样，避免被伪造/注入人造前缀）
             const originalUserParts = [...userMessage.content]
             userMessage.content = []
 
-            // 1. 注入群聊环境、花名册、发言流水与附图清单
-            if (contextParts.length > 0) {
-              userMessage.content.push(...contextParts)
-            }
-
-            // 2. 注入图文交错的视觉素材
+            // 1. 注入图文交错的视觉素材（随本轮发言走，与上方附图索引顺序严格对应）
             if (visualAttachments.length > 0) {
               for (const att of visualAttachments) {
                 userMessage.content.push({
@@ -959,19 +1000,11 @@ export async function handleMessage(
               userMessage.content.push(...originalUserParts)
             }
 
-            // ── 持久化裁剪 ────────────────────────────────────────────────
-            // 上面注入的「场景协议 / 流水 / 花名册 / 环境 / 附图索引」只对本轮请求
-            // 生效，写入 history 时剥掉，只保留附图 + 本轮发言。否则每轮注入的
-            // 快照都会堆进历史（token 爆炸、时间线互相矛盾）。
-            // 附图（视觉素材）保留：后续轮次仍需看到历史里的图片。
-            if (!isBym) {
-              const injectedCount = contextParts.length
-              sendOptions.persistMessage = (msg: any) => {
-                if (!msg || !Array.isArray(msg.content)) return msg
-                if (msg.content.length <= injectedCount) return { ...msg, content: [] }
-                return { ...msg, content: msg.content.slice(injectedCount) }
-              }
-            }
+            // ── 持久化裁剪 + 上下文置顶 ────────────────────────────────────
+            // 上面构建的「场景协议 / 流水 / 花名册 / 环境 / 附图索引」通过 prependContext
+            // 放到对话最前面（新会话即本轮这条消息的头部；已有历史则并入历史首条 user）。
+            // 写入 history 时剥掉，只保留附图 + 本轮发言，否则每轮注入的快照都会堆进历史。
+            installPrependContext(contextParts)
           }
         } else {
           // 未启用群聊历史上下文时，直接注入记忆与基础会话环境
@@ -982,18 +1015,8 @@ export async function handleMessage(
             })
           }
           contextParts.push(envPart)
-          if (contextParts.length > 0) {
-            userMessage.content.unshift(...contextParts)
-          }
-          // 同上：注入块只对本轮生效，写入 history 时剥掉
-          if (!isBym) {
-            const injectedCount = contextParts.length
-            sendOptions.persistMessage = (msg: any) => {
-              if (!msg || !Array.isArray(msg.content)) return msg
-              if (msg.content.length <= injectedCount) return { ...msg, content: [] }
-              return { ...msg, content: msg.content.slice(injectedCount) }
-            }
-          }
+          // 同上：注入块置顶，且不落库
+          installPrependContext(contextParts)
         }
       } catch (err: any) {
         console.warn('[Runner] Failed to build group context:', err?.message || err)

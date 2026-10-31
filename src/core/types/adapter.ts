@@ -62,6 +62,7 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
     this.builtinToolCategories = option.builtinToolCategories
     this.geminiBuiltinTools = option.geminiBuiltinTools
     this.persistMessage = option.persistMessage
+    this.prependContext = option.prependContext
   }
 
   static create(options?: SendMessageOption | Partial<SendMessageOption>): SendMessageOption {
@@ -198,6 +199,16 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
    * 注意：实现必须保留 message.id，否则 parentMessageId 链会断。
    */
   persistMessage?(message: HistoryMessage): HistoryMessage
+
+  /**
+   * 上下文置顶：在「历史 + 本轮消息」拼装完成后、真正发给模型前回调。
+   * 用于把本轮注入的上下文（场景协议 / 群聊流水 / 花名册 / 环境）放到对话最前面，
+   * 而不是塞在本轮 user 消息里 —— 稳定的头部内容才能持续命中前缀缓存。
+   * @param histories 当前将要发送的完整消息列表（含本轮 user 消息）
+   * @param currentMessage 本轮 user 消息（已在列表末尾）
+   * 返回新数组则替换；原地修改亦可。
+   */
+  prependContext?(histories: HistoryMessage[], currentMessage?: HistoryMessage): HistoryMessage[] | void
 
   fromString(str: string): SendMessageOption {
     return JSON.parse(str) as SendMessageOption
