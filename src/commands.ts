@@ -49,7 +49,9 @@ export interface ChaiteCommandHit {
 export function matchChaiteCommand(text: string, commandPrefix = '#'): ChaiteCommandHit | null {
   const current = String(text || '').trim()
   if (!current) return null
-  const prefixes = Array.from(new Set([commandPrefix, '#'])).filter(Boolean)
+  // 只认配置的 commandPrefix（默认 '#'）：改前缀后旧前缀立即失效，
+  // 避免与宿主（如 Yunzai）的原生指令冲突
+  const prefixes = Array.from(new Set([commandPrefix || '#'])).filter(Boolean)
 
   for (const cmd of CHAITE_COMMANDS) {
     for (const alias of cmd.aliases) {
