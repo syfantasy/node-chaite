@@ -556,17 +556,22 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
           // 整理回复结果
           let replyText = ''
           const images: string[] = []
+          const appendSegment = (seg: any) => {
+            if (seg?.type === 'text' && seg.data?.text) replyText += (replyText ? '\n' : '') + seg.data.text
+            if (seg?.type === 'image' && seg.data?.file) images.push(seg.data.file)
+          }
 
           for (const rep of replies) {
             if (typeof rep === 'string') {
               replyText += (replyText ? '\n' : '') + rep
             } else if (Array.isArray(rep)) {
-              for (const seg of rep) {
-                if (seg.type === 'text') {
-                  replyText += seg.data?.text || ''
-                } else if (seg.type === 'image') {
-                  if (seg.data?.file) images.push(seg.data.file)
-                }
+              for (const seg of rep) appendSegment(seg)
+            } else if (rep && typeof rep === 'object') {
+              // Runner 主流程的回复约定是 event.reply({ text, reply })，必须处理对象形态
+              if (typeof rep.text === 'string' && rep.text) {
+                replyText += (replyText ? '\n' : '') + rep.text
+              } else if (rep.type) {
+                appendSegment(rep)
               }
             }
           }
