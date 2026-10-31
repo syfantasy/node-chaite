@@ -21,7 +21,17 @@ export function resolveRootDataDir(): string {
   if (envDir) {
     return path.resolve(envDir)
   }
-  const pkgDataDir = path.resolve(__dirname, '../data')
+
+  const pkgRoot = path.resolve(__dirname, '..')
+  const isStandalone = path.resolve(process.cwd()) === pkgRoot
+  const pkgDataDir = path.resolve(pkgRoot, 'data')
+
+  // 1. 如果是直接独立部署（当前 cwd 即本体根目录），数据目录始终直接是本体的 data/
+  if (isStandalone) {
+    return pkgDataDir
+  }
+
+  // 2. 如果是被外部宿主（如 Yunzai）作为依赖加载：
   const hostDataDir = path.resolve(process.cwd(), 'data/chaite')
   const hasData = (dir: string): boolean => fs.existsSync(path.join(dir, 'data.db'))
   if (hasData(hostDataDir)) {
@@ -34,13 +44,32 @@ export function resolveRootDataDir(): string {
 }
 
 function resolveConfigPath(): string {
-  const dataConfig = path.join(resolveRootDataDir(), 'config.json')
+  const dataDir = resolveRootDataDir()
+  const dataConfig = path.join(dataDir, 'config.json')
+
+  const pkgRoot = path.resolve(__dirname, '..')
+  const isStandalone = path.resolve(process.cwd()) === pkgRoot
+  const rootConfig = path.join(pkgRoot, 'config.json')
+
+  // 独立部署版：优先直接使用本体根目录的 config.json（最符合独立部署直觉，改配置一目了然）
+  if (isStandalone) {
+    if (fs.existsSync(rootConfig)) {
+      return rootConfig
+    }
+    if (fs.existsSync(dataConfig)) {
+      return dataConfig
+    }
+    return rootConfig
+  }
+
+  // 外部宿主依赖版（如在 Yunzai 中运行）：配置必须落在持久化目录 data/chaite/config.json，防止重装被冲掉
   if (fs.existsSync(dataConfig)) {
     return dataConfig
   }
-  // 向后兼容历史独立部署布局：若 data/config.json 尚不存在，但包根或 cwd 下有 config.json，则自动迁移过来
+
+  // 若宿主根目录或包根有老配置，自动迁移过来
   const candidateDirs = [
-    path.resolve(__dirname, '..'),
+    pkgRoot,
     process.cwd(),
   ]
   for (const dir of candidateDirs) {
