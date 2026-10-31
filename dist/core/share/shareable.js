@@ -72,6 +72,37 @@ export class ExecutableShareableManager {
                             const instanceName = instance.name;
                             getLogger().debug(`Loaded ${this.type} '${instanceName}' from file '${file}'`);
                             newInstanceMap.set(instanceName, file);
+                            // 自动同步：若数据库中无此记录，自动补全入库，确保 Web 管理面板和预设选择器可见
+                            try {
+                                const existing = await this.storage.getItem(instanceName);
+                                if (!existing) {
+                                    const fileContent = await fsPromises.readFile(filePath, 'utf-8');
+                                    const description = instance?.function?.description ||
+                                        instance?.description ||
+                                        instanceName;
+                                    const now = new Date().toISOString();
+                                    await this.storage.setItem(instanceName, {
+                                        id: instanceName,
+                                        name: instanceName,
+                                        description,
+                                        modelType: 'executable',
+                                        code: fileContent,
+                                        status: 'enabled',
+                                        permission: 'public',
+                                        cloudId: null,
+                                        createdAt: now,
+                                        updatedAt: now,
+                                        md5: '',
+                                        embedded: 0,
+                                        uploader: null,
+                                        extraData: '{}',
+                                    });
+                                    getLogger().info(`Auto-registered ${this.type} '${instanceName}' into database for Web panel visibility`);
+                                }
+                            }
+                            catch (storageSyncErr) {
+                                getLogger().warn(`Failed to auto-sync ${this.type} '${instanceName}' to storage:`, storageSyncErr);
+                            }
                         }
                     }
                     catch (error) {

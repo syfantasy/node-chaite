@@ -90,6 +90,38 @@ export abstract class ExecutableShareableManager<T extends Shareable<T>, C> {
               const instanceName = (instance as { name: string }).name
               getLogger().debug(`Loaded ${this.type} '${instanceName}' from file '${file}'`)
               newInstanceMap.set(instanceName, file)
+
+              // 自动同步：若数据库中无此记录，自动补全入库，确保 Web 管理面板和预设选择器可见
+              try {
+                const existing = await this.storage.getItem(instanceName)
+                if (!existing) {
+                  const fileContent = await fsPromises.readFile(filePath, 'utf-8')
+                  const description =
+                    (instance as { function?: { description?: string } })?.function?.description ||
+                    (instance as { description?: string })?.description ||
+                    instanceName
+                  const now = new Date().toISOString()
+                  await this.storage.setItem(instanceName, {
+                    id: instanceName,
+                    name: instanceName,
+                    description,
+                    modelType: 'executable',
+                    code: fileContent,
+                    status: 'enabled',
+                    permission: 'public',
+                    cloudId: null,
+                    createdAt: now,
+                    updatedAt: now,
+                    md5: '',
+                    embedded: 0,
+                    uploader: null,
+                    extraData: '{}',
+                  } as unknown as T)
+                  getLogger().info(`Auto-registered ${this.type} '${instanceName}' into database for Web panel visibility`)
+                }
+              } catch (storageSyncErr: unknown) {
+                getLogger().warn(`Failed to auto-sync ${this.type} '${instanceName}' to storage:`, storageSyncErr as never)
+              }
             }
           } catch (error) {
             getLogger().error(`Error loading ${this.type} from file '${file}':`, error as never)
