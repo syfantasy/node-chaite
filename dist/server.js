@@ -470,6 +470,93 @@ export function startWebServer(config) {
                 res.status(401).json(ChaiteResponse.fail(null, '密码错误，请输入正确的管理密码'));
             }
         });
+        // 增强接口：修改管理密码
+        expressApp.post('/api/auth/change-password', async (req, res) => {
+            try {
+                const { oldPassword, newPassword } = req.body || {};
+                if (!newPassword || typeof newPassword !== 'string' || !newPassword.trim()) {
+                    return res.status(400).json(ChaiteResponse.fail(null, '新密码不能为空'));
+                }
+                const curConfig = getConfig();
+                const expectedToken = (curConfig.web?.adminToken || '').trim();
+                // 若此前已设定密码，则校验原密码
+                if (expectedToken) {
+                    if (!oldPassword || oldPassword !== expectedToken) {
+                        return res.status(403).json(ChaiteResponse.fail(null, '原密码错误，修改失败'));
+                    }
+                }
+                curConfig.web.adminToken = newPassword.trim();
+                saveConfig(curConfig);
+                Chaite.getInstance().setFrontendAuthHandler(new CustomAuthHandler(newPassword.trim()));
+                console.log('[Server] 管理员密码修改成功并已保存至 config.json');
+                return res.status(200).json(ChaiteResponse.okm({ success: true }, '密码修改成功，请使用新密码重新登录'));
+            }
+            catch (err) {
+                console.error('[Server] 修改密码失败:', err);
+                return res.status(500).json(ChaiteResponse.fail(null, err?.message || '修改密码失败'));
+            }
+        });
+        // 自动更新 Chaite（自适应独立部署版或宿主依赖版）
+        expressApp.post('/api/system/update', async (_req, res) => {
+            try {
+                const { exec } = await import('node:child_process');
+                const { promisify } = await import('node:util');
+                const execAsync = promisify(exec);
+                const isGitRepo = fs.existsSync(path.resolve(process.cwd(), '.git'));
+                let mode = 'standalone';
+                let log = '';
+                let hasUpdate = false;
+                if (isGitRepo) {
+                    mode = 'standalone';
+                    console.log('[System Update] 检测到 Git 独立部署环境，执行 git pull...');
+                    const res = await execAsync('git pull', { cwd: process.cwd() });
+                    log = (res.stdout || res.stderr || '').trim();
+                    hasUpdate = !log.includes('Already up to date') && !log.includes('已经是最新');
+                }
+                else {
+                    mode = 'dependency';
+                    console.log('[System Update] 检测到依赖环境，嗅探包管理器更新 @syfantasy/chaite...');
+                    const targetDir = process.cwd();
+                    let pm = 'npm';
+                    if (fs.existsSync(path.resolve(targetDir, 'pnpm-lock.yaml'))) {
+                        pm = 'pnpm';
+                    }
+                    else if (fs.existsSync(path.resolve(targetDir, 'yarn.lock'))) {
+                        pm = 'yarn';
+                    }
+                    const cmd = pm === 'pnpm'
+                        ? 'pnpm update @syfantasy/chaite@latest'
+                        : (pm === 'yarn' ? 'yarn upgrade @syfantasy/chaite@latest' : 'npm install @syfantasy/chaite@latest');
+                    const res = await execAsync(cmd, { cwd: targetDir });
+                    log = (res.stdout || res.stderr || '').trim();
+                    hasUpdate = !log.includes('up to date') && !log.includes('Already up to date');
+                }
+                if (hasUpdate) {
+                    setTimeout(() => {
+                        console.log('[System Update] 更新流程已完成，正在重启进程...');
+                        process.exit(0);
+                    }, 1500);
+                    return res.status(200).json(ChaiteResponse.ok({
+                        mode,
+                        hasUpdate: true,
+                        log,
+                        message: '已成功拉取最新版本，服务正在自动重启，请稍候...',
+                    }));
+                }
+                else {
+                    return res.status(200).json(ChaiteResponse.ok({
+                        mode,
+                        hasUpdate: false,
+                        log,
+                        message: '当前已是最新版本，无需更新！',
+                    }));
+                }
+            }
+            catch (err) {
+                console.error('[System Update] 自动更新失败:', err);
+                return res.status(500).json(ChaiteResponse.fail(null, `自动更新失败: ${err?.message || String(err)}`));
+            }
+        });
         // ==================== Bridge API (供外部 Bot / chatgpt-plugin 对接) ====================
         // 1. 旁路群聊消息流水录入
         expressApp.post('/api/bridge/record', async (req, res) => {

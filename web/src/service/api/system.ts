@@ -28,3 +28,7 @@ export function fetchDictList(code?: string) {
 export function fetchSystemInfo() {
   return request.Get<Service.ResponseResult<Entity.SystemInfo>>('/api/system/info')
 }
+
+export function fetchSystemUpdate() {
+  return request.Post<Service.ResponseResult<{ mode: string; log: string; message: string }>>('/api/system/update')
+}

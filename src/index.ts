@@ -834,7 +834,10 @@ export async function handleMessage(
         } else if (triggerReason === 'at_bot') {
           triggerWay = '@你提问'
         } else if (triggerReason?.startsWith('preset_prefix')) {
-          triggerWay = `命中触发词 (${triggerReason.replace('preset_prefix', '').trim()})`
+          const rawMatch = triggerReason.match(/\((.*?)(?:\s+anywhere)?\)/)
+          const matchedPrefix = rawMatch ? rawMatch[1] : (preset?.prefix || '')
+          const presetName = preset?.name || '默认预设'
+          triggerWay = `命中预设触发词 "${matchedPrefix}" (激活预设: ${presetName})`
         } else if (triggerReason) {
           triggerWay = triggerReason
         }

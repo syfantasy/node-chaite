@@ -11,6 +11,10 @@ export function fetchLogin(data: Ilogin) {
   }
   return methodInstance
 }
+
+export function fetchChangePassword(data: { oldPassword?: string; newPassword: string }) {
+  return request.Post<Service.ResponseResult<{ success: boolean }>>('/api/auth/change-password', data)
+}
 export function fetchUpdateToken(data: any) {
   const method = request.Post<Service.ResponseResult<Api.Login.Info>>('/updateToken', data)
   method.meta = {

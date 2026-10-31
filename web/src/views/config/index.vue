@@ -27,21 +27,16 @@ import IconLinkStar from '~icons/icon-park-outline/star-one'
 import IconLinkSystem from '~icons/icon-park-outline/system'
 import IconLinkPermission from '~icons/icon-park-outline/permissions'
 import IconLinkLock from '~icons/icon-park-outline/electronic-locks-open'
-import IconLinkMemory from '~icons/icon-park-outline/brain'
 import IconLinkVision from '~icons/icon-park-outline/preview-open'
+import { useAuthStore } from '@/store/auth'
+import { fetchChangePassword } from '@/service/api/login'
+import { fetchSystemUpdate } from '@/service/api/system'
 import type { CustomConfig } from '@/service/api/config'
 import { fetchConfig, saveConfig } from '@/service/api/config'
 import { fetchAllPresetList } from '@/service/api/presets'
 import { fetchVisionChannelModels } from '@/service/api/channels'
 import { cleanUnusedImages, fetchMaintenanceStats, pruneHistory } from '@/service/api/maintenance'
 import type { MaintenanceStats } from '@/service/api/maintenance'
-import type { DownloadSimpleExtensionParams, MemoryConfig, SimpleExtensionStatus } from '@/service/api/memory'
-import {
-  downloadSimpleExtension,
-  fetchMemoryConfig,
-  fetchSimpleExtensionStatus,
-  updateMemoryConfig,
-} from '@/service/api/memory'
 // Create the message instance
 const message = useMessage()
 const activeTab = ref('basic')
@@ -68,11 +63,6 @@ const menuOptions: MenuOption[] = [
     icon: renderIcon(IconLinkLock),
   },
   {
-    label: '记忆配置',
-    key: 'memory',
-    icon: renderIcon(IconLinkMemory),
-  },
-  {
     label: '视觉配置',
     key: 'vision',
     icon: renderIcon(IconLinkVision),
@@ -88,9 +78,9 @@ const menuOptions: MenuOption[] = [
     icon: renderIcon(IconLinkStar),
   },
   {
-    label: 'Chaite配置',
-    key: 'chaite',
-    icon: renderIcon(IconLinkStar),
+    label: '安全与更新',
+    key: 'security',
+    icon: renderIcon(IconLinkLock),
   },
 ]
 
@@ -226,71 +216,92 @@ const config = reactive({
   },
 })
 
-// Memory configuration (separate API)
-const memoryConfig = reactive({
-  database: 'data/memory.db',
-  vectorDimensions: 1536,
-  group: {
-    enable: false,
-    enabledGroups: [],
-    extractionModel: '',
-    extractionPresetId: '',
-    minMessageCount: 80,
-    maxMessageWindow: 300,
-    retrievalMode: 'hybrid' as 'vector' | 'keyword' | 'hybrid',
-    hybridPrefer: 'vector-first' as 'vector-first' | 'keyword-first',
-    historyPollInterval: 300,
-    historyBatchSize: 120,
-    promptHeader: '# 群聊长期记忆',
-    promptItemTemplate: '- ${fact}${topicSuffix}',
-    promptFooter: '',
-    extractionSystemPrompt: '',
-    extractionUserPrompt: '',
-    vectorMaxDistance: 0,
-    textMaxBm25Score: 0,
-    maxFactsPerInjection: 5,
-    minImportanceForInjection: 0.3,
-  },
-  user: {
-    enable: false,
-    whitelist: [],
-    blacklist: [],
-    extractionModel: '',
-    extractionPresetId: '',
-    maxItemsPerInjection: 5,
-    maxRelevantItemsPerQuery: 3,
-    minImportanceForInjection: 0,
-    promptHeader: '# 用户画像',
-    promptItemTemplate: '- ${value}',
-    promptFooter: '',
-    extractionSystemPrompt: '',
-    extractionUserPrompt: '',
-  },
-  extensions: {
-    simple: {
-      enable: false,
-      libraryPath: '',
-      dictPath: '',
-      useJieba: false,
-    },
-  },
-}) as MemoryConfig
+// 安全与更新功能
+const authStore = useAuthStore()
 
-const simpleAssetOptions = [
-  { label: '自动识别 (推荐)', value: 'auto' },
-  { label: 'Linux x64', value: 'linux-x64' },
-  { label: 'Linux ARM64', value: 'linux-arm64' },
-  { label: 'Windows x64', value: 'win32-x64' },
-  { label: 'Windows x86 (32位)', value: 'win32-ia32' },
-  { label: 'Windows ARM64', value: 'win32-arm64' },
-  { label: 'macOS x64', value: 'darwin-x64' },
-] as const
+const pwdForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+const pwdLoading = ref(false)
 
-const simpleStatus = ref<SimpleExtensionStatus | null>(null)
-const simpleStatusLoading = ref(false)
-const simpleDownloadLoading = ref(false)
-const simpleSelectedAsset = ref<typeof simpleAssetOptions[number]['value']>('auto')
-const simpleCustomAssetName = ref('')
+async function handleChangePassword() {
+  if (!pwdForm.newPassword || !pwdForm.newPassword.trim()) {
+    message.warning('请输入新密码')
+    return
+  }
+  if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+    message.error('两次输入的新密码不一致，请重新核对')
+    return
+  }
+
+  pwdLoading.value = true
+  try {
+    const res = await fetchChangePassword({
+      oldPassword: pwdForm.oldPassword.trim() || undefined,
+      newPassword: pwdForm.newPassword.trim(),
+    })
+    if (res.isSuccess) {
+      message.success('密码修改成功！正在退出登录，请使用新密码重新登录...')
+      setTimeout(async () => {
+        await authStore.logout()
+      }, 1200)
+    }
+    else {
+      message.error(res.message || '密码修改失败')
+    }
+  }
+  catch (err: any) {
+    message.error(`修改失败: ${err?.message || err}`)
+  }
+  finally {
+    pwdLoading.value = false
+  }
+}
+
+// 自动更新功能
+const updateLoading = ref(false)
+const updateLog = ref('')
+const updateFinished = ref(false)
+const restartCountdown = ref(0)
+
+async function handleSystemUpdate() {
+  updateLoading.value = true
+  updateLog.value = ''
+  updateFinished.value = false
+  try {
+    const res = await fetchSystemUpdate()
+    if (res.isSuccess && res.data) {
+      updateLog.value = res.data.log || '执行完成，无输出'
+      if ((res.data as any).hasUpdate) {
+        message.success(res.data.message || '更新命令已执行，服务正在自动重启')
+        updateFinished.value = true
+        restartCountdown.value = 6
+        const timer = setInterval(() => {
+          restartCountdown.value--
+          if (restartCountdown.value <= 0) {
+            clearInterval(timer)
+            window.location.reload()
+          }
+        }, 1000)
+      }
+      else {
+        message.info(res.data.message || '当前已是最新版本，无需更新')
+      }
+    }
+    else {
+      message.error(res.message || '自动更新失败')
+    }
+  }
+  catch (err: any) {
+    message.error(`自动更新请求出错: ${err?.message || err}`)
+  }
+  finally {
+    updateLoading.value = false
+  }
+}
+
 const visionChannels = ref<Array<{ id: string; name: string; models: Array<{ name: string; features: string[] }> }>>([])
 const visionChannelsLoaded = ref(false)
 
@@ -325,27 +336,6 @@ async function loadVisionChannels() {
   }
   catch (error) {
     console.error('加载视觉渠道失败:', error)
-  }
-}
-
-function applyMemoryConfigPayload(payload?: Partial<MemoryConfig>) {
-  if (!payload) {
-    return
-  }
-  if (typeof payload.database === 'string') {
-    memoryConfig.database = payload.database
-  }
-  if (typeof payload.vectorDimensions === 'number') {
-    memoryConfig.vectorDimensions = payload.vectorDimensions
-  }
-  if (payload.group) {
-    Object.assign(memoryConfig.group, payload.group)
-  }
-  if (payload.user) {
-    Object.assign(memoryConfig.user, payload.user)
-  }
-  if (payload.extensions?.simple) {
-    Object.assign(memoryConfig.extensions.simple, payload.extensions.simple)
   }
 }
 
@@ -436,6 +426,7 @@ async function getConfig(): Promise<CustomConfig> {
   }
   const rawMgmt = (data.data?.management || {}) as Record<string, any>
   const rawLlm = (data.data?.llm || {}) as Record<string, any>
+  const rawGc = (data.data?.groupContext || {}) as Record<string, any>
   // Keep defaults introduced by newer plugin versions when loading older
   // persisted nested config objects that do not yet contain them.
   Object.assign(config, {
@@ -467,14 +458,22 @@ async function getConfig(): Promise<CustomConfig> {
       ...config.vision,
       ...(data.data?.vision || {}),
     },
-    groupContext: {
-      ...config.groupContext,
-      ...(data.data?.groupContext || {}),
-    },
     maintenance: {
       ...config.maintenance,
       ...(data.data?.maintenance || {}),
     },
+  })
+  Object.assign(config.groupContext, {
+    ...config.groupContext,
+    ...rawGc,
+    minMessages: Number(rawGc.minMessages) || config.groupContext.minMessages || 20,
+    minTokens: Number(rawGc.minTokens) || config.groupContext.minTokens || 2000,
+    maxMessages: Number(rawGc.maxMessages) || config.groupContext.maxMessages || 100,
+    maxTokens: Number(rawGc.maxTokens) || config.groupContext.maxTokens || 10000,
+    maxForwardMessages: Number(rawGc.maxForwardMessages) || config.groupContext.maxForwardMessages || 15,
+    enable: rawGc.enable !== undefined ? Boolean(rawGc.enable) : config.groupContext.enable,
+    enableRichCards: rawGc.enableRichCards !== undefined ? Boolean(rawGc.enableRichCards) : config.groupContext.enableRichCards,
+    enableForwardParse: rawGc.enableForwardParse !== undefined ? Boolean(rawGc.enableForwardParse) : config.groupContext.enableForwardParse,
   })
   if (!Array.isArray(config.bym.presetMap)) {
     config.bym.presetMap = []
@@ -501,94 +500,6 @@ async function updateConfig() {
   }
   else {
     message.error('配置保存失败')
-  }
-}
-
-// Memory config functions
-// eslint-disable-next-line unused-imports/no-unused-vars
-async function getMemoryConfig() {
-  try {
-    const data = await fetchMemoryConfig()
-    if (data.isSuccess) {
-      applyMemoryConfigPayload(data.data)
-    }
-    else {
-      message.error('记忆配置加载失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to load memory config:', error)
-  }
-}
-
-// eslint-disable-next-line unused-imports/no-unused-vars
-async function updateMemoryConfigData() {
-  try {
-    const res = await updateMemoryConfig(memoryConfig)
-    if (res.isSuccess) {
-      message.success('记忆配置保存成功')
-      applyMemoryConfigPayload(res.data)
-      await refreshSimpleExtensionStatus()
-    }
-    else {
-      message.error(res.message || '记忆配置保存失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to update memory config:', error)
-    message.error('记忆配置保存失败')
-  }
-}
-
-async function refreshSimpleExtensionStatus() {
-  simpleStatusLoading.value = true
-  try {
-    const res = await fetchSimpleExtensionStatus()
-    if (res.isSuccess) {
-      simpleStatus.value = res.data
-    }
-  }
-  catch (error) {
-    console.warn('Simple extension not active or installed:', error)
-  }
-  finally {
-    simpleStatusLoading.value = false
-  }
-}
-
-async function handleDownloadSimpleExtension() {
-  const payload: DownloadSimpleExtensionParams = {}
-  if (simpleSelectedAsset.value !== 'auto') {
-    payload.assetKey = simpleSelectedAsset.value
-  }
-  if (simpleCustomAssetName.value.trim().length > 0) {
-    payload.assetName = simpleCustomAssetName.value.trim()
-  }
-  simpleDownloadLoading.value = true
-  try {
-    const res = await downloadSimpleExtension(payload)
-    if (res.isSuccess) {
-      message.success('扩展下载完成，记得保存配置并启用分词。')
-      if (res.data.assetKey && simpleAssetOptions.some(option => option.value === res.data.assetKey)) {
-        simpleSelectedAsset.value = res.data.assetKey as typeof simpleAssetOptions[number]['value']
-      } else {
-        simpleSelectedAsset.value = 'auto'
-      }
-      simpleCustomAssetName.value = ''
-      memoryConfig.extensions.simple.libraryPath = res.data.libraryPath
-      memoryConfig.extensions.simple.dictPath = res.data.dictPath
-      await refreshSimpleExtensionStatus()
-    }
-    else {
-      message.error(res.message || '扩展下载失败')
-    }
-  }
-  catch (error) {
-    console.error('Failed to download simple extension:', error)
-    message.error('扩展下载失败')
-  }
-  finally {
-    simpleDownloadLoading.value = false
   }
 }
 
@@ -625,14 +536,6 @@ onMounted(async () => {
   } catch (error) {
     console.error('加载系统配置失败:', error)
     message.error('系统配置加载失败')
-  }
-
-  // 3. Fetch optional memory config and extension status
-  try {
-    await getMemoryConfig()
-    await refreshSimpleExtensionStatus()
-  } catch (error) {
-    console.warn('加载记忆或扩展配置失败:', error)
   }
 })
 </script>
@@ -870,8 +773,8 @@ onMounted(async () => {
                     </div>
                   </div>
                 </template>
-                <NForm label-placement="left" label-width="auto" :model="config.groupContext">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                <NForm label-placement="top" :model="config.groupContext">
+                  <NGrid :cols="24" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
                     <NFormItemGridItem span="24 s:24 m:12" label="全局启用群组上下文" path="enable">
                       <NSwitch v-model:value="config.groupContext.enable" />
                       <template #feedback>
@@ -1039,455 +942,6 @@ onMounted(async () => {
                           次/分钟
                         </template>
                       </NInputNumber>
-                    </NFormItemGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
-            </NTabPane>
-
-            <!-- 记忆配置选项卡 -->
-            <NTabPane name="memory" tab="记忆配置">
-              <NCard class="inner-card mb-4">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      基础配置
-                    </div>
-                    <div class="card-subtitle">
-                      配置记忆系统的基础参数
-                    </div>
-                  </div>
-                </template>
-                <NForm label-placement="left" label-width="auto" :model="memoryConfig">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                    <NFormItemGridItem span="24 s:24 m:12" label="数据库路径" path="database">
-                      <NInput v-model:value="memoryConfig.database" placeholder="data/memory.db" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="向量维度" path="vectorDimensions">
-                      <NInputNumber v-model:value="memoryConfig.vectorDimensions" :min="0" style="width: 100%" />
-                    </NFormItemGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
-
-              <NCard class="inner-card mb-4">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      群组记忆配置
-                    </div>
-                    <div class="card-subtitle">
-                      配置群组事实记忆的提取和检索参数
-                    </div>
-                  </div>
-                </template>
-                <NForm label-placement="left" label-width="auto" :model="memoryConfig.group">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                    <NFormItemGridItem span="24 s:24 m:12" label="启用群组记忆" path="enable">
-                      <NSwitch v-model:value="memoryConfig.group.enable" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="启用的群组" path="enabledGroups">
-                      <NDynamicTags v-model:value="memoryConfig.group.enabledGroups" placeholder="输入群组ID并按回车添加" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="提取模型" path="extractionModel">
-                      <NInput v-model:value="memoryConfig.group.extractionModel" placeholder="模型名称" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="提取预设ID" path="extractionPresetId">
-                      <NSelect
-                        v-model:value="memoryConfig.group.extractionPresetId"
-                        :options="presetOptions"
-                        filterable
-                        placeholder="选择预设"
-                        clearable
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="最少消息数" path="minMessageCount">
-                      <NInputNumber v-model:value="memoryConfig.group.minMessageCount" :min="0" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="最大消息窗口" path="maxMessageWindow">
-                      <NInputNumber v-model:value="memoryConfig.group.maxMessageWindow" :min="0" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="历史轮询间隔(秒)" path="historyPollInterval">
-                      <NInputNumber
-                        v-model:value="memoryConfig.group.historyPollInterval"
-                        :min="0"
-                        style="width: 100%"
-                      >
-                        <template #suffix>
-                          秒
-                        </template>
-                      </NInputNumber>
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="历史采样条数" path="historyBatchSize">
-                      <NInputNumber v-model:value="memoryConfig.group.historyBatchSize" :min="0" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="检索模式" path="retrievalMode">
-                      <NSelect
-                        v-model:value="memoryConfig.group.retrievalMode"
-                        :options="[
-                          { label: '向量检索', value: 'vector' },
-                          { label: '关键词检索', value: 'keyword' },
-                          { label: '混合检索', value: 'hybrid' },
-                        ]"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="混合检索优先" path="hybridPrefer">
-                      <NSelect
-                        v-model:value="memoryConfig.group.hybridPrefer"
-                        :options="[
-                          { label: '向量优先', value: 'vector-first' },
-                          { label: '关键词优先', value: 'keyword-first' },
-                        ]"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="每次注入最多Facts数" path="maxFactsPerInjection">
-                      <NInputNumber v-model:value="memoryConfig.group.maxFactsPerInjection" :min="0" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="注入最低重要度" path="minImportanceForInjection">
-                      <NInputNumber v-model:value="memoryConfig.group.minImportanceForInjection" :min="0" :max="1" :step="0.1" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="向量距离阈值" path="vectorMaxDistance">
-                      <NInputNumber
-                        v-model:value="memoryConfig.group.vectorMaxDistance"
-                        :min="0"
-                        :step="0.01"
-                        style="width: 100%"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="文本BM25阈值" path="textMaxBm25Score">
-                      <NInputNumber
-                        v-model:value="memoryConfig.group.textMaxBm25Score"
-                        :min="0"
-                        :step="0.1"
-                        style="width: 100%"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="Prompt标题模板" path="promptHeader">
-                      <NInput
-                        v-model:value="memoryConfig.group.promptHeader"
-                        type="textarea"
-                        :autosize="{ minRows: 1, maxRows: 3 }"
-                        placeholder="例如：# 群聊长期记忆"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="Prompt条目模板" path="promptItemTemplate">
-                      <NInput
-                        v-model:value="memoryConfig.group.promptItemTemplate"
-                        type="textarea"
-                        :autosize="{ minRows: 2, maxRows: 6 }"
-                        placeholder="可使用占位符：${fact}、${topicSuffix}、${order}、${distance} 等"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="Prompt结束模板" path="promptFooter">
-                      <NInput
-                        v-model:value="memoryConfig.group.promptFooter"
-                        type="textarea"
-                        :autosize="{ minRows: 1, maxRows: 3 }"
-                        placeholder="可选"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="抽取系统提示" path="extractionSystemPrompt">
-                      <NInput
-                        v-model:value="memoryConfig.group.extractionSystemPrompt"
-                        type="textarea"
-                        :autosize="{ minRows: 3, maxRows: 8 }"
-                        placeholder="可选，覆盖内置的群记忆抽取系统提示"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="抽取用户提示模板" path="extractionUserPrompt">
-                      <NInput
-                        v-model:value="memoryConfig.group.extractionUserPrompt"
-                        type="textarea"
-                        :autosize="{ minRows: 3, maxRows: 8 }"
-                        placeholder="可选，可使用 ${messages} 作为占位符"
-                      />
-                    </NFormItemGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
-
-              <NCard class="inner-card mb-4">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      用户记忆配置
-                    </div>
-                    <div class="card-subtitle">
-                      配置用户个性化记忆的提取参数
-                    </div>
-                  </div>
-                </template>
-                <NForm label-placement="left" label-width="auto" :model="memoryConfig.user">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                    <NFormItemGridItem span="24 s:24 m:12" label="启用用户记忆" path="enable">
-                      <NSwitch v-model:value="memoryConfig.user.enable" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="白名单用户" path="whitelist">
-                      <NDynamicTags v-model:value="memoryConfig.user.whitelist" placeholder="输入用户ID并按回车添加" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="黑名单用户" path="blacklist">
-                      <NDynamicTags v-model:value="memoryConfig.user.blacklist" placeholder="输入用户ID并按回车添加" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="提取模型" path="extractionModel">
-                      <NInput v-model:value="memoryConfig.user.extractionModel" placeholder="模型名称" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="提取预设ID" path="extractionPresetId">
-                      <NSelect
-                        v-model:value="memoryConfig.user.extractionPresetId"
-                        :options="presetOptions"
-                        filterable
-                        placeholder="选择预设"
-                        clearable
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="每次注入最多条目数" path="maxItemsPerInjection">
-                      <NInputNumber v-model:value="memoryConfig.user.maxItemsPerInjection" :min="0" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="检索返回数量" path="maxRelevantItemsPerQuery">
-                      <NInputNumber v-model:value="memoryConfig.user.maxRelevantItemsPerQuery" :min="0" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="最低重要度" path="minImportanceForInjection">
-                      <NInputNumber v-model:value="memoryConfig.user.minImportanceForInjection" :min="0" :max="1" :step="0.1" style="width: 100%" />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="Prompt标题模板" path="promptHeader">
-                      <NInput
-                        v-model:value="memoryConfig.user.promptHeader"
-                        type="textarea"
-                        :autosize="{ minRows: 1, maxRows: 3 }"
-                        placeholder="例如：# 用户画像"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="Prompt条目模板" path="promptItemTemplate">
-                      <NInput
-                        v-model:value="memoryConfig.user.promptItemTemplate"
-                        type="textarea"
-                        :autosize="{ minRows: 2, maxRows: 6 }"
-                        placeholder="可使用占位符：${value}、${order}、${importance} 等"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="Prompt结束模板" path="promptFooter">
-                      <NInput
-                        v-model:value="memoryConfig.user.promptFooter"
-                        type="textarea"
-                        :autosize="{ minRows: 1, maxRows: 3 }"
-                        placeholder="可选"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="抽取系统提示" path="extractionSystemPrompt">
-                      <NInput
-                        v-model:value="memoryConfig.user.extractionSystemPrompt"
-                        type="textarea"
-                        :autosize="{ minRows: 3, maxRows: 8 }"
-                        placeholder="可选，覆盖内置的用户记忆抽取系统提示"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24" label="抽取用户提示模板" path="extractionUserPrompt">
-                      <NInput
-                        v-model:value="memoryConfig.user.extractionUserPrompt"
-                        type="textarea"
-                        :autosize="{ minRows: 3, maxRows: 8 }"
-                        placeholder="可选，可使用 ${messages} 作为占位符"
-                      />
-                    </NFormItemGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
-              <NCard class="inner-card mb-4">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      中文分词扩展（Simple）
-                    </div>
-                    <div class="card-subtitle">
-                      可选安装的 FTS5 中文 tokenizer，提升检索效果
-                    </div>
-                  </div>
-                </template>
-                <NSpace vertical :size="16">
-                  <NAlert show-icon type="info">
-                    该扩展来自 <a href="https://github.com/wangfenjin/simple" target="_blank" rel="noopener noreferrer">wangfenjin/simple</a> 项目，
-                    用于提供中文和拼音分词能力。点击下方按钮自动下载，也可以手动填写库文件路径和词典目录。
-                  </NAlert>
-                  <NForm label-placement="left" label-width="auto" :model="memoryConfig.extensions.simple">
-                    <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                      <NFormItemGridItem span="24 s:24 m:12" label="启用扩展" path="enable">
-                        <NSwitch v-model:value="memoryConfig.extensions.simple.enable" />
-                      </NFormItemGridItem>
-                      <NFormItemGridItem span="24 s:24 m:12" label="使用结巴分词" path="useJieba">
-                        <NSwitch v-model:value="memoryConfig.extensions.simple.useJieba" />
-                      </NFormItemGridItem>
-                      <NFormItemGridItem span="24 s:24 m:12" label="库文件路径" path="libraryPath">
-                        <NInput
-                          v-model:value="memoryConfig.extensions.simple.libraryPath"
-                          placeholder="相对于插件目录或绝对路径，例如 resources/simple/linux-x64/libsimple.so"
-                        />
-                      </NFormItemGridItem>
-                      <NFormItemGridItem span="24 s:24 m:12" label="词典目录" path="dictPath">
-                        <NInput
-                          v-model:value="memoryConfig.extensions.simple.dictPath"
-                          placeholder="可选，使用结巴分词时需要，例如 resources/simple/linux-x64/dict"
-                        />
-                      </NFormItemGridItem>
-                    </NGrid>
-                  </NForm>
-                  <NForm label-placement="left" label-width="auto">
-                    <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                      <NFormItemGridItem span="24 s:24 m:12" label="目标平台">
-                        <NSelect v-model:value="simpleSelectedAsset" :options="simpleAssetOptions" />
-                      </NFormItemGridItem>
-                      <NFormItemGridItem span="24 s:24 m:12" label="自定义文件名">
-                        <NInput
-                          v-model:value="simpleCustomAssetName"
-                          placeholder="可选，例如 libsimple-osx-x64.zip"
-                        />
-                      </NFormItemGridItem>
-                      <NFormItemGridItem span="24" label=" ">
-                        <NSpace>
-                          <NButton type="primary" :loading="simpleDownloadLoading" @click="handleDownloadSimpleExtension">
-                            下载扩展
-                          </NButton>
-                          <NButton :loading="simpleStatusLoading" @click="refreshSimpleExtensionStatus">
-                            刷新状态
-                          </NButton>
-                        </NSpace>
-                      </NFormItemGridItem>
-                    </NGrid>
-                  </NForm>
-                  <div class="simple-extension-status">
-                    <NSpace align="center" wrap>
-                      <span>当前状态：</span>
-                      <NTag v-if="simpleStatus?.loaded" type="success">已加载</NTag>
-                      <NTag v-else-if="simpleStatus?.enabled" type="warning">等待加载</NTag>
-                      <NTag v-else type="default">未启用</NTag>
-                      <NTag v-if="simpleStatus?.libraryExists" type="success">库文件存在</NTag>
-                      <NTag v-else type="error">库文件缺失</NTag>
-                      <NTag
-                        v-if="memoryConfig.extensions.simple.useJieba"
-                        :type="simpleStatus?.dictExists ? 'success' : 'warning'"
-                      >
-                        词典{{ simpleStatus?.dictExists ? '可用' : '缺失' }}
-                      </NTag>
-                    </NSpace>
-                    <div class="simple-extension-paths">
-                      <div>
-                        库文件：{{ simpleStatus?.resolvedLibraryPath || '未配置' }}
-                      </div>
-                      <div>
-                        词典目录：{{ simpleStatus?.resolvedDictPath || '未配置' }}
-                      </div>
-                      <div>
-                        服务器平台：{{ simpleStatus?.platform || '未知' }} / {{ simpleStatus?.arch || '' }}
-                      </div>
-                      <div v-if="simpleStatus?.error">
-                        <NTag type="error" size="small">{{ simpleStatus.error }}</NTag>
-                      </div>
-                    </div>
-                  </div>
-                </NSpace>
-              </NCard>
-              <div class="action-bar" style="margin-top: 16px;">
-                <NSpace>
-                  <NButton type="primary" @click="updateMemoryConfigData">
-                    保存记忆配置
-                  </NButton>
-                </NSpace>
-              </div>
-              <NCard class="inner-card" title="说明">
-                <p>记忆功能配置通过独立的API接口管理（/api/memory/config）。</p>
-                <p>
-                  记忆数据的管理请前往 <router-link to="/memory">
-                    记忆管理
-                  </router-link> 页面。
-                </p>
-              </NCard>
-            </NTabPane>
-
-            <!-- Chaite配置选项卡 -->
-            <NTabPane name="chaite" tab="Chaite配置">
-              <NCard class="inner-card mb-4">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      文件与目录
-                    </div>
-                    <div class="card-subtitle">
-                      设置Chaite相关文件目录
-                    </div>
-                  </div>
-                </template>
-                <NForm label-placement="left" label-width="auto" :model="config.chaite">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                    <NFormItemGridItem span="24 s:24 m:12" label="数据目录" path="dataDir">
-                      <NInput v-model:value="config.chaite.dataDir" placeholder="相对于插件目录" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24 s:24 m:12" label="处理器目录" path="processorsDirPath">
-                      <NInput v-model:value="config.chaite.processorsDirPath" placeholder="相对于插件目录" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24" label="工具目录" path="toolsDirPath">
-                      <NInput v-model:value="config.chaite.toolsDirPath" placeholder="相对于插件目录" />
-                    </NFormItemGridItem>
-                  </NGrid>
-                </NForm>
-              </NCard>
-
-              <NCard class="inner-card">
-                <template #header>
-                  <div class="card-header">
-                    <div class="card-title">
-                      API与管理面板
-                    </div>
-                    <div class="card-subtitle">
-                      设置云端API和管理面板配置
-                    </div>
-                  </div>
-                </template>
-                <NForm label-placement="left" label-width="auto" :model="config.chaite">
-                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-                    <NFormItemGridItem span="24" label="云端API URL" path="cloudBaseUrl">
-                      <NInput v-model:value="config.chaite.cloudBaseUrl" placeholder="输入云端API URL" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24" label="云端API Key" path="cloudApiKey">
-                      <NInput
-                        v-model:value="config.chaite.cloudApiKey"
-                        type="password"
-                        show-password-on="click"
-                        placeholder="输入云端API Key"
-                      />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24" label="认证密钥" path="authKey">
-                      <NInput
-                        v-model:value="config.chaite.authKey"
-                        type="password"
-                        show-password-on="click"
-                        placeholder="非必要勿修改"
-                      />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24 s:24 m:12" label="监听地址" path="host">
-                      <NInput v-model:value="config.chaite.host" placeholder="管理面板监听地址" />
-                    </NFormItemGridItem>
-
-                    <NFormItemGridItem span="24 s:24 m:12" label="监听端口" path="port">
-                      <NInputNumber
-                        v-model:value="config.chaite.port"
-                        :min="1"
-                        :max="65535"
-                        style="width: 100%"
-                        placeholder="输入监听端口"
-                      />
-                    </NFormItemGridItem>
-                    <NFormItemGridItem span="24 s:24 m:12" label="日志保存条数" path="operationLogLimit">
-                      <NInputNumber
-                        v-model:value="config.chaite.operationLogLimit"
-                        :min="0"
-                        :precision="0"
-                        style="width: 100%"
-                        placeholder="50000；设为 0 不自动清理"
-                      />
                     </NFormItemGridItem>
                   </NGrid>
                 </NForm>
@@ -1702,6 +1156,98 @@ onMounted(async () => {
                   </NSpace>
                 </NCard>
               </NSpace>
+            </NTabPane>
+            <!-- 安全与更新选项卡 -->
+            <NTabPane name="security" tab="安全与更新">
+              <!-- 修改管理员密码 -->
+              <NCard class="inner-card mb-4">
+                <template #header>
+                  <div class="card-header">
+                    <div class="card-title">
+                      管理密码设置
+                    </div>
+                    <div class="card-subtitle">
+                      修改 Chaite 控制台的访问密码。修改成功后将自动退出登录，请使用新密码重新登录。
+                    </div>
+                  </div>
+                </template>
+                <NForm label-placement="left" label-width="auto" :model="pwdForm">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                    <NFormItemGridItem span="24 s:24 m:12" label="原密码" path="oldPassword">
+                      <NInput
+                        v-model:value="pwdForm.oldPassword"
+                        type="password"
+                        show-password-on="click"
+                        placeholder="初次未设置密码可留空"
+                      />
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:24 m:12" label="新密码" path="newPassword">
+                      <NInput
+                        v-model:value="pwdForm.newPassword"
+                        type="password"
+                        show-password-on="click"
+                        placeholder="请输入新管理密码"
+                      />
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:24 m:12" label="确认新密码" path="confirmPassword">
+                      <NInput
+                        v-model:value="pwdForm.confirmPassword"
+                        type="password"
+                        show-password-on="click"
+                        placeholder="请再次输入新密码核对"
+                      />
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24">
+                      <NButton
+                        type="primary"
+                        :loading="pwdLoading"
+                        @click="handleChangePassword"
+                      >
+                        修改密码并重新登录
+                      </NButton>
+                    </NFormItemGridItem>
+                  </NGrid>
+                </NForm>
+              </NCard>
+
+              <!-- Chaite 系统在线更新 -->
+              <NCard class="inner-card">
+                <template #header>
+                  <div class="card-header">
+                    <div class="card-title">
+                      Chaite 在线更新
+                    </div>
+                    <div class="card-subtitle">
+                      一键自动拉取最新版本更新。自适应 Git 源码独立部署版与 npm/pnpm 宿主依赖包。
+                    </div>
+                  </div>
+                </template>
+                <NSpace vertical size="large">
+                  <NAlert title="更新机制说明" type="info">
+                    点击更新后，系统会自动侦测当前部署环境：若为独立 Git 仓库将执行 <code>git pull</code>；若为宿主插件依赖引入则会自动执行包管理器更新 <code>@syfantasy/chaite@latest</code>，并在更新完成后自动退出进程由守护程序（如 systemd/pm2）自动拉起新版本。
+                  </NAlert>
+
+                  <NSpace align="center">
+                    <NButton
+                      type="warning"
+                      :loading="updateLoading"
+                      @click="handleSystemUpdate"
+                    >
+                      一键检查并更新 Chaite
+                    </NButton>
+                    <span v-if="restartCountdown > 0" class="text-sm text-green-500 font-medium">
+                      更新成功！服务正在重启，{{ restartCountdown }} 秒后自动刷新页面...
+                    </span>
+                  </NSpace>
+
+                  <div v-if="updateLog">
+                    <div class="text-xs text-gray-400 mb-1">
+                      执行输出日志：
+                    </div>
+                    <pre class="bg-black/80 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap max-h-60">{{ updateLog }}</pre>
+                  </div>
+                </NSpace>
+              </NCard>
             </NTabPane>
           </NTabs>
 
