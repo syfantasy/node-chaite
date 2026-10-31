@@ -133,6 +133,24 @@ export async function handleMessage(
   const rawEvent: any = event.raw || {}
   const onebotAdapter = event.client || (globalThis as any).onebotAdapter || rawEvent._adapter
 
+  // 规范化 isGroup/isPrivate：bridge/chat 与插件内嵌路径构造的是普通对象（非
+  // ChaiteEvent 类实例），没有 event.js 里的派生 getter。缺失时按 type/raw 推导，
+  // 否则群聊上下文注入（event.isGroup 判断）、群会话 ID 等全部失效。
+  if (event && typeof event === 'object') {
+    if (event.isGroup === undefined) {
+      ;(event as any).isGroup =
+        event.type === 'group_message' ||
+        rawEvent.message_type === 'group' ||
+        rawEvent.isGroup === true
+    }
+    if ((event as any).isPrivate === undefined) {
+      ;(event as any).isPrivate =
+        event.type === 'private_message' ||
+        rawEvent.message_type === 'private' ||
+        rawEvent.isPrivate === true
+    }
+  }
+
   // 1. Check permissions (Enforce dynamic black/white lists via config)
   if (rawEvent.post_type === 'message') {
     const perm = checkPermission(rawEvent, config)
