@@ -31,7 +31,6 @@ export function createApp (configure?: (app: Application) => void, options: ApiS
   app.use(express.json())
   app.use(cors())
   app.use('/api/system', SystemRouter)
-  app.use('/api/auth', AuthRouter)
   app.use('/api/channels', authenticateToken, ChannelsRouter)
   app.use('/api/tools', authenticateToken, ToolsRouter)
   app.use('/api/preset', authenticateToken, ChatPresetRouter)
@@ -45,6 +44,11 @@ export function createApp (configure?: (app: Application) => void, options: ApiS
   app.use('/api/maintenance', authenticateToken, MaintenanceRouter)
   app.use('/v1', authenticateToken, OpenAIRouter)
   configure?.(app)
+  // core AuthRouter 必须在 configure 之后挂载：宿主（server.ts）会在 configure 中注册
+  // 增强版 POST /api/auth/login（支持首次访问初始化管理密码）。若先挂载 core AuthRouter，
+  // Express 按注册顺序匹配会永远命中 core 的 /login（仅校验已有密码，未初始化时
+  // authKey 回退为 'admin'），导致首次设置密码时始终返回 401 "Invalid token"。
+  app.use('/api/auth', AuthRouter)
   const frontendDir = options.frontendDir
     ? path.resolve(options.frontendDir)
     : path.join(__dirname, '../frontend/build')
