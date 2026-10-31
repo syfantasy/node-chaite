@@ -216,9 +216,10 @@ export async function handleMessage(
       : `conv_private_${event.userId}_`
 
     try {
+      // SqlHistoryManager 的表名是 history（历史遗留 bug：曾写死 messages 导致 no such table）
       const historyDriver = drivers.get('history')
       await historyDriver.run(
-        `DELETE FROM messages WHERE conversationId LIKE ?`,
+        `DELETE FROM history WHERE conversationId LIKE ?`,
         [`${userPrefix}%`]
       )
       await event.reply('✨ 已结束并清空你当前所有的预设对话上下文。')
@@ -250,7 +251,7 @@ export async function handleMessage(
     }
     try {
       const historyDriver = drivers.get('history')
-      await historyDriver.run(`DELETE FROM messages`)
+      await historyDriver.run(`DELETE FROM history`)
       groupHistoryBuffer.clearAll()
       await event.reply('🧹 已成功结束并清空所有用户与所有群聊的全部预设对话上下文，并重置群聊流水缓冲。')
     } catch (err: any) {
