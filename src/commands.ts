@@ -24,7 +24,7 @@ export const CHAITE_COMMANDS: ChaiteCommand[] = [
   { name: 'help', aliases: ['chaite', '帮助', 'help', 'gpt帮助'], description: '查看 Chaite 指令帮助', permission: 'all' },
   { name: 'reset', aliases: ['结束对话', '重置对话', '清空对话', '清空上下文', 'reset'], description: '清空你的对话上下文', permission: 'all' },
   { name: 'clearGroup', aliases: ['清空群上下文', '重置群聊', '清空群聊上下文'], description: '清空本群消息流水（主人）', permission: 'master' },
-  { name: 'resetAll', aliases: ['结束全部对话', '重置全部对话', '清空全部会话', 'resetall'], description: '清空所有用户与群聊的全部会话（主人）', permission: 'master' },
+  { name: 'resetAll', aliases: ['结束全部对话', '结束所有对话', '结束全部会话', '结束所有会话', '重置全部对话', '清空全部会话', 'resetall'], description: '清空所有用户与群聊的全部会话（主人）', permission: 'master' },
   { name: 'banGroup', aliases: ['拉黑群'], description: '拉黑群聊：#拉黑群 [群号] [时长如1h]', permission: 'master', hasArgs: true },
   { name: 'unbanGroup', aliases: ['解黑群'], description: '解除群聊拉黑：#解黑群 [群号]', permission: 'master', hasArgs: true },
   { name: 'banUser', aliases: ['拉黑'], description: '拉黑用户：#拉黑 [@/QQ号] [时长如1h]', permission: 'master', hasArgs: true },

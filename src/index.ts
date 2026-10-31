@@ -688,41 +688,15 @@ export async function handleMessage(
 
         const badgeStr = roleBadge ? ` ${roleBadge}` : ''
 
-        // ── 完整上下文注入判定 ────────────────────────────────────────────
-        // 静态上下文（场景协议 + 流水 + 花名册 + 环境）只应在「会话起始」注入一次。
-        // 之前每轮都注入，而 user message 会被原样写入 history，导致历史里堆积 N 份
-        // 同一份群聊流水快照：token 爆炸、模型看到的时间线互相矛盾、本轮消息既在
-        // 流水里出现又在末尾重复。
-        // 仅在以下情况重新注入：
-        //   1) 伪人模式（不读历史，每轮都是全新会话）；
-        //   2) 随机唤醒（依赖最新群聊流水才能接梗）；
-        //   3) 历史为空（新会话 / 已 #结束对话）；
-        //   4) 历史里从未出现过上下文标记（老数据或上下文已被清理）。
-        // 注意：判定的是「整个会话是否注入过」，而不是「最后一条 user 是否带标记」——
-        // 精简轮次的 user 天然不带标记，若只看最后一条会导致每轮都重新注入。
-        const CTX_MARKER = '### 场景协议：'
-        let existingHistory: any[] = []
-        if (!isBym) {
-          try {
-            const historyMgr = chaite.getHistoryManager()
-            if (historyMgr) {
-              existingHistory = (await historyMgr.getHistory(undefined, conversationId)) || []
-            }
-          } catch (err: any) {
-            console.warn('[Runner] Failed to read conversation history for context gating:', err?.message || err)
-          }
-        }
-        const hasInjectedContextBefore = existingHistory.some((m: any) =>
-          m.role === 'user'
-          && Array.isArray(m.content)
-          && m.content.some((c: any) => c.type === 'text' && String(c.text || '').includes(CTX_MARKER))
-        )
-        const shouldInjectFullContext = isBym
-          || triggerReason === 'random_probability'
-          || existingHistory.length === 0
-          || !hasInjectedContextBefore
-
-
+        // ── 上下文注入策略 ──────────────────────────────────────────────
+        // 普通对话与伪人模式一样，**每轮都注入完整的静态上下文**（场景协议 + 流水 +
+        // 花名册 + 环境）。这样模型每一轮都能看到当下群里在聊什么、都有谁。
+        //
+        // 之前之所以改成「只在会话起始注入一次」，是因为 user message 会被原样写入
+        // history，每轮注入就在历史里堆 N 份流水快照（token 爆炸 + 时间线互相矛盾）。
+        // 现在改为：发给模型的完整内容不变，但**持久化时剥掉注入块**（只保留本轮
+        // 发言 + 附图），由 sendOptions.persistMessage 在 saveHistory 前裁剪。
+        // 于是每轮请求都是「干净的历史对话 + 新鲜的完整上下文」，两全其美。
         const mastersList: string[] = []
         for (const m of effectiveMasters) {
           if (!mastersList.includes(String(m))) {
@@ -771,7 +745,7 @@ export async function handleMessage(
         const shouldInjectGroupContext = presetGroupCtxSetting === 'enabled'
           || (presetGroupCtxSetting === 'use_system' && config.llm?.enableGroupContext !== false)
 
-        if (shouldInjectGroupContext && shouldInjectFullContext) {
+        if (shouldInjectGroupContext) {
           const groupContextResult = await groupHistoryBuffer.buildContext(
             event.groupId,
             {
@@ -984,30 +958,20 @@ export async function handleMessage(
             if (originalUserParts.length > 0) {
               userMessage.content.push(...originalUserParts)
             }
-          }
-        } else if (shouldInjectGroupContext) {
-          // ── 精简模式：本会话已经注入过静态上下文 ──────────────────────────
-          // 不再重复塞入场景协议 / 群聊流水 / 花名册（它们会被写入 history，重复注入
-          // 会让历史里堆叠 N 份同一快照），只发送带时间与身份的当前触发消息。
-          // 这样历史保持 user/assistant 严格交替，模型靠对话本身理解上下文即可。
-          const speakerHeader = `[${currentMsgTime}] ${speakerName}${badgeStr}: `
-          const firstTextIndex = userMessage.content.findIndex((p: any) => p.type === 'text')
-          if (firstTextIndex >= 0) {
-            const originText = (userMessage.content[firstTextIndex] as any).text || ''
-            ;(userMessage.content[firstTextIndex] as any).text = `${speakerHeader}${originText}`
-          } else {
-            userMessage.content.unshift({ type: 'text', text: speakerHeader } as TextContent)
-          }
 
-          if (isVisual && currentImages.length > 0) {
-            userMessage.content.push(...currentImages)
-          }
-
-          if (isMemoryEnabled && memoryBlock) {
-            userMessage.content.unshift({
-              type: 'text',
-              text: `### 长期记忆背景：\n${memoryBlock}`,
-            } as TextContent)
+            // ── 持久化裁剪 ────────────────────────────────────────────────
+            // 上面注入的「场景协议 / 流水 / 花名册 / 环境 / 附图索引」只对本轮请求
+            // 生效，写入 history 时剥掉，只保留附图 + 本轮发言。否则每轮注入的
+            // 快照都会堆进历史（token 爆炸、时间线互相矛盾）。
+            // 附图（视觉素材）保留：后续轮次仍需看到历史里的图片。
+            if (!isBym) {
+              const injectedCount = contextParts.length
+              sendOptions.persistMessage = (msg: any) => {
+                if (!msg || !Array.isArray(msg.content)) return msg
+                if (msg.content.length <= injectedCount) return { ...msg, content: [] }
+                return { ...msg, content: msg.content.slice(injectedCount) }
+              }
+            }
           }
         } else {
           // 未启用群聊历史上下文时，直接注入记忆与基础会话环境
@@ -1020,6 +984,15 @@ export async function handleMessage(
           contextParts.push(envPart)
           if (contextParts.length > 0) {
             userMessage.content.unshift(...contextParts)
+          }
+          // 同上：注入块只对本轮生效，写入 history 时剥掉
+          if (!isBym) {
+            const injectedCount = contextParts.length
+            sendOptions.persistMessage = (msg: any) => {
+              if (!msg || !Array.isArray(msg.content)) return msg
+              if (msg.content.length <= injectedCount) return { ...msg, content: [] }
+              return { ...msg, content: msg.content.slice(injectedCount) }
+            }
           }
         }
       } catch (err: any) {
@@ -1034,6 +1007,12 @@ export async function handleMessage(
           type: 'text',
           text: `### 长期记忆背景：\n${memoryBlock}`,
         })
+        // 私聊的长期记忆同样是「本轮临时注入」，不落库，避免每轮堆一份
+        sendOptions.persistMessage = (msg: any) => {
+          if (!msg || !Array.isArray(msg.content)) return msg
+          if (msg.content.length <= 1) return { ...msg, content: [] }
+          return { ...msg, content: msg.content.slice(1) }
+        }
       }
     }
 

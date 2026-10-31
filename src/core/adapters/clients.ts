@@ -473,7 +473,18 @@ export class AbstractClient implements IClient {
       }
       // save user request
       if (thisRequestMsg && this.shouldPersistHistory(thisRequestMsg)) {
-        await this.historyManager.saveHistory(thisRequestMsg, options.conversationId)
+        // 持久化视图：允许调用方只保存精简版（如剥离本轮临时注入的群聊上下文快照），
+        // 实际发给模型的完整内容不受影响。
+        // 若裁剪后变成空消息（例如本轮只剩注入块、用户没打字），回退保存完整内容，
+        // 保证 history 的 parentId 链不断。
+        let messageToPersist: HistoryMessage = thisRequestMsg
+        if (typeof options.persistMessage === 'function') {
+          const slim = options.persistMessage(thisRequestMsg)
+          if (slim && this.shouldPersistHistory(slim)) {
+            messageToPersist = slim
+          }
+        }
+        await this.historyManager.saveHistory(messageToPersist, options.conversationId)
         options.parentMessageId = thisRequestMsg.id
         modelResponse.parentId = thisRequestMsg.id
       } else if (thisRequestMsg && debug) {

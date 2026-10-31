@@ -61,6 +61,7 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
     this.enableMemory = option.enableMemory
     this.builtinToolCategories = option.builtinToolCategories
     this.geminiBuiltinTools = option.geminiBuiltinTools
+    this.persistMessage = option.persistMessage
   }
 
   static create(options?: SendMessageOption | Partial<SendMessageOption>): SendMessageOption {
@@ -189,6 +190,14 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
      * @param message
      */
   onMessageWithToolCall?(message: MessageContent): Promise<void>
+
+  /**
+   * 持久化视图：仅影响写入 history 的内容，不影响实际发给模型的请求。
+   * 用于「本轮临时注入的上下文（如群聊流水快照 / 会话环境）不落库」的场景，
+   * 避免同一份快照在历史里逐轮堆叠。
+   * 注意：实现必须保留 message.id，否则 parentMessageId 链会断。
+   */
+  persistMessage?(message: HistoryMessage): HistoryMessage
 
   fromString(str: string): SendMessageOption {
     return JSON.parse(str) as SendMessageOption
