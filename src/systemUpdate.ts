@@ -192,13 +192,45 @@ async function updateStandalone(hostDir: string): Promise<SystemUpdateResult> {
       message: '当前目录没有 .git，无法 git pull；请改用依赖方式更新，或重新 clone 仓库。',
     }
   }
-  const log = await run('git pull', hostDir)
+  // 本地分支没设置 upstream 时 `git pull` 会直接报错，退回「显式拉当前分支」
+  let command = 'git pull'
+  let log = ''
+  try {
+    log = await run(command, hostDir)
+  } catch (err: any) {
+    const first = `${err?.stderr || ''}${err?.stdout || ''}`.trim() || err?.message || ''
+    const branch = (await run('git rev-parse --abbrev-ref HEAD', hostDir).catch(() => '')).trim()
+    if (branch) {
+      command = `git pull origin ${branch}`
+      try {
+        log = await run(command, hostDir)
+      } catch (err2: any) {
+        const detail = `${err2?.stderr || ''}${err2?.stdout || ''}`.trim() || err2?.message || String(err2)
+        return {
+          mode: 'standalone',
+          hasUpdate: false,
+          command,
+          log: detail,
+          message: `git pull 失败：${detail.split('\n')[0] || '请检查仓库状态'}`,
+        }
+      }
+    } else {
+      return {
+        mode: 'standalone',
+        hasUpdate: false,
+        command,
+        log: first,
+        message: `git pull 失败：${first.split('\n')[0] || '请检查仓库状态'}`,
+      }
+    }
+  }
+
   const hasUpdate = !/Already up to date|已经是最新|Already up-to-date/i.test(log)
   return {
     mode: 'standalone',
     hasUpdate,
     log,
-    command: 'git pull',
+    command,
     message: hasUpdate
       ? '已拉取最新代码，服务正在自动重启，请稍候...'
       : '当前已是最新版本，无需更新！',
