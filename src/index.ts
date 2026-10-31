@@ -2,7 +2,7 @@ import { loadConfig, getConfig, saveConfig } from './config.js'
 import { matchChaiteCommand, buildHelpText } from './commands.js'
 import { initChaiteStorage } from './storage.js'
 import { startWebServer } from './server.js'
-import { checkPermission, banTarget, unbanTarget, parseDuration } from './guard.js'
+import { checkPermission, getEffectiveMasters, banTarget, unbanTarget, parseDuration } from './guard.js'
 import { oneBotToUserMessage, formatModelResponse } from './onebot/message.js'
 import { OneBotMessageEvent } from './onebot/types.js'
 import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer.js'
@@ -139,17 +139,27 @@ export async function handleMessage(
   if (event && typeof event === 'object') {
     if (event.isGroup === undefined) {
       ;(event as any).isGroup =
-        event.type === 'group_message' ||
+        (event as any).type === 'group_message' ||
         rawEvent.message_type === 'group' ||
         rawEvent.isGroup === true
     }
     if ((event as any).isPrivate === undefined) {
       ;(event as any).isPrivate =
-        event.type === 'private_message' ||
+        (event as any).type === 'private_message' ||
         rawEvent.message_type === 'private' ||
         rawEvent.isPrivate === true
     }
+    // selfId 规范化：bridge/插件内嵌路径的 virtualAdapter.getSelfId() 返回 0，
+    // 宿主（如 chatgpt-plugin）通过 raw.self_id 注入真实机器人 QQ 号
+    if ((event as any).selfId === undefined && rawEvent.self_id !== undefined && rawEvent.self_id !== 0) {
+      ;(event as any).selfId = String(rawEvent.self_id)
+    }
   }
+
+  // 主人列表：面板配置（config.management.masterUsers）优先；未配置时回退宿主注入的
+  // raw.masters（如 Yunzai 的 other.yaml masterQQ）；两者皆无则维持「全员主人」语义。
+  // 用于指令权限判定与群聊环境元信息展示。
+  const effectiveMasters = getEffectiveMasters(rawEvent, config).map(String)
 
   // 1. Check permissions (Enforce dynamic black/white lists via config)
   if (rawEvent.post_type === 'message') {
@@ -165,7 +175,16 @@ export async function handleMessage(
   }
 
   // 2. Convert message to Chaite format
-  const botUin = (onebotAdapter?.getSelfId ? onebotAdapter.getSelfId() : config.onebot?.botUin) || 0
+  // 自身 QQ 优先级：宿主注入的 event.selfId > 适配器 getSelfId() > 面板配置
+  const eventSelfId = (event as any).selfId ? String((event as any).selfId) : ''
+  const adapterSelfId = onebotAdapter?.getSelfId ? onebotAdapter.getSelfId() : undefined
+  const botUin = eventSelfId || adapterSelfId || config.onebot?.botUin || 0
+  // 回填运行时 config：群流水花名册/伪造消息标记等处直接读 config.onebot.botUin，
+  // bridge/内嵌路径原本永远拿不到真实 uin，这里仅在其为空时补齐（不覆盖面板显式配置）
+  if (botUin && !config.onebot?.botUin) {
+    config.onebot = { ...(config.onebot || {}), botUin: String(botUin) }
+  }
+
   const { userMessage, isAtBot, cleanText } = await oneBotToUserMessage(rawEvent, {
     botUin,
     maxRecentImages: config.vision?.maxRecentImages,
@@ -179,8 +198,8 @@ export async function handleMessage(
   const cmdPrefix = (config.chat.commandPrefix || '#').trim()
   const currentText = (event.text || cleanText || '').trim()
 
-  const masterUsers = (config.management?.masterUsers || []).map(Number)
-  const isMaster = masterUsers.length === 0 || masterUsers.includes(Number(event.userId))
+  const masterUsers = effectiveMasters.map(Number)
+  const isMaster = effectiveMasters.length === 0 || masterUsers.includes(Number(event.userId))
 
   const cmdHit = matchChaiteCommand(currentText, cmdPrefix)
   if (cmdHit) {
@@ -627,11 +646,9 @@ export async function handleMessage(
         const cstTimeStr = cstFormatter.format(now).replace(/\//g, '-')
 
         const mastersList: string[] = []
-        if (Array.isArray(config.management?.masterUsers)) {
-          for (const m of config.management.masterUsers) {
-            if (!mastersList.includes(String(m))) {
-              mastersList.push(String(m))
-            }
+        for (const m of effectiveMasters) {
+          if (!mastersList.includes(String(m))) {
+            mastersList.push(String(m))
           }
         }
         const mastersStr = mastersList.length > 0 ? mastersList.join(', ') : '无配置'
@@ -695,6 +712,7 @@ export async function handleMessage(
                 title: event.sender?.title,
                 level: event.sender?.level,
               },
+              masterUsers: effectiveMasters,
             },
             rawEvent.message_id,
             onebotAdapter

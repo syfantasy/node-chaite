@@ -523,7 +523,8 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
 
           const replies: any[] = []
           const virtualAdapter = {
-            getSelfId: () => 0,
+            // 宿主可通过 event.self_id 注入真实机器人 QQ 号（如 chatgpt-plugin bridge 模式）
+            getSelfId: () => event.self_id || 0,
             sendGroupMsg: async (_gid: any, msg: any) => {
               replies.push(msg)
             },

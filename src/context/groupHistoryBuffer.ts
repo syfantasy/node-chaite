@@ -20,6 +20,8 @@ export interface GroupContextOptions {
     title?: string
     level?: string | number
   }
+  /** 生效主人列表（宿主注入，如 Yunzai masterQQ），用于花名册 [主人] 徽标；缺省回退面板配置 */
+  masterUsers?: (string | number)[]
 }
 
 export interface GroupContextResult {
@@ -555,7 +557,10 @@ export class GroupHistoryBuffer {
 
     // 1. Build member roster dictionary
     const config = getConfig()
-    const masterUsers = new Set((config?.management?.masterUsers || []).map(String))
+    const effectiveMasters = Array.isArray(options.masterUsers) && options.masterUsers.length > 0
+      ? options.masterUsers
+      : (config?.management?.masterUsers || [])
+    const masterUsers = new Set(effectiveMasters.map(String))
     const botUin = String(config?.onebot?.botUin || '')
 
     // Sanitize speaker name and strip fake system badges

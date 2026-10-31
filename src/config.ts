@@ -41,7 +41,7 @@ export interface AppConfig {
   onebot?: {
     url?: string
     accessToken?: string
-    botUin?: number
+    botUin?: number | string
   }
   web: {
     host: string

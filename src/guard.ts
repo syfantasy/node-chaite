@@ -108,6 +108,20 @@ export function isTargetBanned(targetId: number, type: 'user' | 'group', config:
   getTimedBans: () => Array.from(timedBans.values()),
 }
 
+/**
+ * 生效的主人列表：面板配置（config.management.masterUsers）优先；
+ * 未配置时回退宿主注入的 event.masters（如 Yunzai other.yaml 的 masterQQ）。
+ * 两者皆无时返回空数组（调用方自行决定「无配置=全员主人」语义）。
+ */
+export function getEffectiveMasters(event: any, config: AppConfig = getConfig()): number[] {
+  const panel = Array.isArray(config.management?.masterUsers) ? config.management.masterUsers : []
+  if (panel.length > 0) return panel.map(Number).filter(Boolean)
+  const host = Array.isArray(event?.masters)
+    ? event.masters.map((m: any) => Number(m)).filter(Boolean)
+    : []
+  return host
+}
+
 export function checkPermission(event: MinimalMessageEvent, config: AppConfig = getConfig()): CheckResult {
   const userId = Number(event.user_id)
   const isGroup = event.message_type === 'group'
@@ -132,15 +146,16 @@ export function checkPermission(event: MinimalMessageEvent, config: AppConfig = 
     }
   } else {
     // 3. Private message checks
+    const effectiveMasters = getEffectiveMasters(event, config)
     if (!config.chat.allowPrivate) {
-      const isMaster = config.management.masterUsers.includes(userId)
+      const isMaster = effectiveMasters.includes(userId)
       if (!isMaster) {
         return { allow: false, reason: 'private_chat_disabled' }
       }
     }
     if (config.management.whiteUsers.length > 0) {
       const isWhitelisted = config.management.whiteUsers.includes(userId)
-      const isMaster = config.management.masterUsers.includes(userId)
+      const isMaster = effectiveMasters.includes(userId)
       if (!isWhitelisted && !isMaster) {
         return { allow: false, reason: 'user_not_in_whitelist' }
       }
