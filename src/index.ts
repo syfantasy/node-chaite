@@ -791,6 +791,9 @@ export async function handleMessage(
                 level: event.sender?.level,
               },
               masterUsers: effectiveMasters,
+              // 普通对话去掉流水行的流动序号（[12:36] 而不是 [#1 12:36]），
+              // 伪人模式保留序号，避免影响其短引用定位
+              includeSeqIndex: isBym,
             },
             rawEvent.message_id,
             onebotAdapter
@@ -798,6 +801,13 @@ export async function handleMessage(
 
           if (groupContextResult) {
             const { membersBlock, messagesBlock, recentImageRefs } = groupContextResult
+            if (!messagesBlock && config.logging?.enabled !== false) {
+              console.warn(
+                `[Runner] Group context stream is empty for group ${event.groupId} ` +
+                `(buffer=${groupHistoryBuffer.getBufferCount(event.groupId)}, ` +
+                `currentMessageRecorded=${groupContextResult.includesCurrentMessage})`
+              )
+            }
 
             // 待发送视觉附件列表
             interface VisualAttachmentItem {
@@ -932,11 +942,14 @@ export async function handleMessage(
               }
             }
 
-            // 3. 构建提问者真实输入：采用与 <group_messages> 流水完全统一的 [#N HH:mm] 发送者(身份): 格式
-            // 既能让大模型感知统一的流动序号与提问者身份（彻底防串用户），又能让该消息被虚拟短引用系统注册
+            // 3. 构建提问者真实输入：与 <group_messages> 流水保持同一种行格式
+            //    （普通对话 [HH:mm] 发送者(身份): 内容；伪人模式保留 [#N HH:mm]）
             // 发言者名称/身份徽标/时间已在注入段入口统一计算
             const currentSeq = (groupContextResult?.messageCount || 0) + 1
-            const speakerHeader = `[#${currentSeq} ${currentMsgTime}] ${speakerName}${badgeStr}: `
+            const tailSeqPrefix = isBym ? `#${currentSeq} ` : ''
+            const speakerHeader = `[${tailSeqPrefix}${currentMsgTime}] ${speakerName}${badgeStr}: `
+            // 流水里已经带上本轮消息（缓冲池里没有别的发言）时，末尾不再重复一次带头部的同一句
+            const tailHeader = groupContextResult?.includesCurrentMessage ? '' : speakerHeader
 
             // 注册当前消息至短期虚拟引用池，便于后续多轮对话或工具通过序号精准定位
             groupMessageRefStore.appendMessage(String(event.groupId), {
@@ -954,15 +967,17 @@ export async function handleMessage(
 
             const firstTextIndex = originalUserParts.findIndex((p: any) => p.type === 'text')
             if (firstTextIndex >= 0) {
-              const originText = (originalUserParts[firstTextIndex] as any).text || ''
-              originalUserParts[firstTextIndex] = {
-                type: 'text',
-                text: `${speakerHeader}${originText}`,
+              if (tailHeader) {
+                const originText = (originalUserParts[firstTextIndex] as any).text || ''
+                originalUserParts[firstTextIndex] = {
+                  type: 'text',
+                  text: `${tailHeader}${originText}`,
+                }
               }
-            } else {
+            } else if (tailHeader) {
               originalUserParts.unshift({
                 type: 'text',
-                text: speakerHeader,
+                text: tailHeader,
               })
             }
 

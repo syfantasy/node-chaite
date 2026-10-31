@@ -22,6 +22,11 @@ export interface GroupContextOptions {
   }
   /** 生效主人列表（宿主注入，如 Yunzai masterQQ），用于花名册 [主人] 徽标；缺省回退面板配置 */
   masterUsers?: (string | number)[]
+  /**
+   * 是否在流水行首输出流动序号 `[#N HH:mm]`。默认 true。
+   * 普通对话需要去掉序号（`[HH:mm]`），伪人模式仍保留序号以便短引用定位。
+   */
+  includeSeqIndex?: boolean
 }
 
 export interface GroupContextResult {
@@ -31,6 +36,12 @@ export interface GroupContextResult {
   fullText: string
   messageCount: number
   estimatedTokens: number
+  /**
+   * 流水里是否已包含「本轮触发消息」。
+   * 仅当缓冲池里除本轮消息外没有任何其它发言时（如机器人在本群重启后的首次触发），
+   * 才会退化为把本轮消息也放进流水，避免整个 `<group_messages>` 块缺失。
+   */
+  includesCurrentMessage: boolean
 }
 
 export interface EphemeralGroupMessage {
@@ -510,11 +521,21 @@ export class GroupHistoryBuffer {
     onebotClient?: any
   ): Promise<GroupContextResult | null> {
     const gid = String(groupId)
-    let list = this.buffers.get(gid) || []
+    const rawList = this.buffers.get(gid) || []
+    let list = rawList
+    let includesCurrentMessage = false
 
     if (excludeMessageId !== undefined) {
       const exId = String(excludeMessageId)
-      list = list.filter((m) => String(m.messageId) !== exId && m.dedupeKey !== `id:${exId}`)
+      const filtered = rawList.filter((m) => String(m.messageId) !== exId && m.dedupeKey !== `id:${exId}`)
+      // 兜底：若排除本轮消息后流水为空（机器人在本群重启后的首次触发、或本群只有这一条），
+      // 则保留本轮消息——否则 <group_messages> 整块缺失，模型完全看不到群聊上下文。
+      if (filtered.length === 0 && rawList.length > 0) {
+        list = rawList
+        includesCurrentMessage = true
+      } else {
+        list = filtered
+      }
     }
 
     const minMessages = options.minMessages ?? 20
@@ -706,6 +727,8 @@ export class GroupHistoryBuffer {
     // 2. Build concise message stream with verified badges and index/id
     const messageLines: string[] = []
     const recentImageRefs: string[] = []
+    // 普通对话不展示流动序号，仅保留时间；伪人模式保留 [#N] 以便短引用
+    const includeSeqIndex = options.includeSeqIndex === undefined ? true : Boolean(options.includeSeqIndex)
 
     // 统计展示名称频次，用于在发言流中对重名群友加注 QQ 唯一消歧
     const nameCounts = new Map<string, number>()
@@ -748,7 +771,8 @@ export class GroupHistoryBuffer {
 
       // Keep single line per message, escaping inner linebreaks if necessary
       const inlineText = msg.text.replace(/\r\n|\r|\n/g, ' ')
-      messageLines.push(`[#${seq} ${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
+      const seqPrefix = includeSeqIndex ? `#${seq} ` : ''
+      messageLines.push(`[${seqPrefix}${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`)
     }
 
     if (ephemeralList.length > 0) {
@@ -773,6 +797,7 @@ export class GroupHistoryBuffer {
       fullText: fullParts.join('\n\n'),
       messageCount: effectiveSlice.length,
       estimatedTokens: selectedTokens,
+      includesCurrentMessage,
     }
   }
 
