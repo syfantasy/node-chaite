@@ -343,13 +343,15 @@ export class PluginManager {
   }
 
   /**
-   * 影子拷贝会把插件移到 <宿主>/plugins/.cache/runtime/<id>/<ts>/ 下运行。
-   * 插件源码里的 `../../../xxx` 相对导入原本解析到 <宿主根>/xxx，影子化后
-   * 却指向 runtime 根，导致 ERR_MODULE_NOT_FOUND（如 Yunzai 插件的
-   * ../../../lib/plugins/plugin.js）。在 runtime 根建立指向宿主根各条目
-   * 的符号链接（跳过 plugins 与 .cache），使相对导入解析与原位置无损一致。
+   * 影子拷贝会把插件移到 <宿主>/plugins/.cache/runtime/<id>/<ts>/ 下运行，
+   * 相对导入的解析根整体下移一层，需要两层符号链接补偿：
+   *  1. runtime 根 ↔ 宿主根（pluginsDir/..）：插件里 `../../../x` 原解析到
+   *     <宿主根>/x（如 Yunzai 插件的 ../../../lib/plugins/plugin.js）；
+   *  2. runtime/<id> ↔ plugins 目录：插件里 `../../x` 原解析到兄弟插件
+   *     plugins/x（如 ../other 与 ../../other/restart.js）。
+   * 已存在的条目一律跳过。
    */
-  private ensureRuntimePathShim(): void {
+  private ensureRuntimePathShim(id: string): void {
     try {
       const hostRoot = path.resolve(this.pluginsDir, '..')
       for (const entry of fs.readdirSync(hostRoot, { withFileTypes: true })) {
@@ -360,11 +362,22 @@ export class PluginManager {
           fs.symlinkSync(path.join(hostRoot, entry.name), dest, 'junction')
         } catch {}
       }
+
+      const pluginCacheRoot = path.join(this.cacheDir, id)
+      fs.mkdirSync(pluginCacheRoot, { recursive: true })
+      for (const entry of fs.readdirSync(this.pluginsDir, { withFileTypes: true })) {
+        if (entry.name === id || entry.name === '.cache') continue
+        const dest = path.join(pluginCacheRoot, entry.name)
+        if (fs.existsSync(dest)) continue
+        try {
+          fs.symlinkSync(path.join(this.pluginsDir, entry.name), dest, 'junction')
+        } catch {}
+      }
     } catch {}
   }
 
   private prepareDirectoryRuntime(id: string, dirPath: string, relativeEntry: string): string {
-    this.ensureRuntimePathShim()
+    this.ensureRuntimePathShim(id)
 
     const pluginCacheRoot = path.join(this.cacheDir, id)
     if (!fs.existsSync(pluginCacheRoot)) {
@@ -412,13 +425,16 @@ export class PluginManager {
       } catch {}
     }
 
-    // 清理该插件旧版本的影子目录
+    // 清理该插件旧版本的影子目录（路径 shim 建的符号链接保留）
     try {
       const existing = fs.readdirSync(pluginCacheRoot)
       for (const oldVer of existing) {
-        if (oldVer !== version) {
-          fs.rmSync(path.join(pluginCacheRoot, oldVer), { recursive: true, force: true })
-        }
+        if (oldVer === version) continue
+        const oldPath = path.join(pluginCacheRoot, oldVer)
+        try {
+          if (fs.lstatSync(oldPath).isSymbolicLink()) continue
+        } catch {}
+        fs.rmSync(oldPath, { recursive: true, force: true })
       }
     } catch {}
 
