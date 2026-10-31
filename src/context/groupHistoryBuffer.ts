@@ -130,6 +130,14 @@ export const groupMessageRefStore = GroupMessageRefStore.getInstance()
 
 export interface BufferedMessage {
   messageId: string | number
+  /**
+   * 去重指纹。
+   * 宿主（如 chatgpt-plugin）会先调 /api/bridge/record 预记录一次，随后触发对话时
+   * handleMessage 又记录一次，同一条消息被写两遍（表现为流水里每条发言成对出现，
+   * 且本轮消息既在流水里又在末尾重复）。有 message_id 时按 id 去重，缺失时退化为
+   * 「发送者 + 时间 + 文本前缀」指纹。
+   */
+  dedupeKey?: string
   rawTime: number
   timeStr: string
   userId: string
@@ -276,10 +284,20 @@ export class GroupHistoryBuffer {
       imageRefs: imageRefs.length > 0 ? imageRefs : undefined,
     }
 
+    const rawMsgId = (event as any).message_id ?? (event as any).real_id
+    buffered.dedupeKey = rawMsgId !== undefined && rawMsgId !== null && String(rawMsgId) !== ''
+      ? `id:${String(rawMsgId)}`
+      : `fp:${buffered.userId}|${buffered.rawTime}|${messageText.slice(0, 80)}`
+
     let list = this.buffers.get(groupId)
     if (!list) {
       list = []
       this.buffers.set(groupId, list)
+    }
+
+    // 同一条消息可能从 bridge/record 与 handleMessage 两条路径各进来一次
+    if (list.some((m) => m.dedupeKey === buffered.dedupeKey)) {
+      return
     }
 
     list.push(buffered)
@@ -496,7 +514,7 @@ export class GroupHistoryBuffer {
 
     if (excludeMessageId !== undefined) {
       const exId = String(excludeMessageId)
-      list = list.filter((m) => String(m.messageId) !== exId)
+      list = list.filter((m) => String(m.messageId) !== exId && m.dedupeKey !== `id:${exId}`)
     }
 
     const minMessages = options.minMessages ?? 20

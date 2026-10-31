@@ -650,6 +650,79 @@ export async function handleMessage(
         })
         const cstTimeStr = cstFormatter.format(now).replace(/\//g, '-')
 
+        // ── 发言者时间戳/身份徽标：完整上下文与精简模式共用 ──────────────────
+        const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+          timeZone: 'Asia/Shanghai',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        })
+        const currentMsgTime = timeFormatter.format(now)
+
+        const uidStr = String(event.userId)
+        const isBotSelf = uidStr === String(config?.onebot?.botUin || '')
+        let roleBadge = ''
+        if (isBotSelf) {
+          roleBadge = '[机器人]'
+        } else if (isMaster) {
+          if (event.sender?.role === 'owner') {
+            roleBadge = '[群主/主人]'
+          } else if (event.sender?.role === 'admin') {
+            roleBadge = '[群管/主人]'
+          } else {
+            roleBadge = '[主人]'
+          }
+        } else if (event.sender?.role === 'owner') {
+          roleBadge = '[群主]'
+        } else if (event.sender?.role === 'admin') {
+          roleBadge = '[群管]'
+        }
+
+        const cleanCard = (event.sender?.card || '').replace(/[\s\u3000]+/g, ' ').trim()
+        const cleanNick = (event.sender?.nickname || '').replace(/[\s\u3000]+/g, ' ').trim()
+        let speakerName = cleanCard || cleanNick || (event.userId ? `QQ ${event.userId}` : '群友')
+        speakerName = speakerName
+          .replace(/\r\n|\r|\n/g, ' ')
+          .replace(/\[(主人|群主|群管|群主\/主人|群管\/主人|机器人|Admin|Bot)\]/gi, '')
+          .trim() || (event.userId ? `QQ ${event.userId}` : '群友')
+
+        const badgeStr = roleBadge ? ` ${roleBadge}` : ''
+
+        // ── 完整上下文注入判定 ────────────────────────────────────────────
+        // 静态上下文（场景协议 + 流水 + 花名册 + 环境）只应在「会话起始」注入一次。
+        // 之前每轮都注入，而 user message 会被原样写入 history，导致历史里堆积 N 份
+        // 同一份群聊流水快照：token 爆炸、模型看到的时间线互相矛盾、本轮消息既在
+        // 流水里出现又在末尾重复。
+        // 仅在以下情况重新注入：
+        //   1) 伪人模式（不读历史，每轮都是全新会话）；
+        //   2) 随机唤醒（依赖最新群聊流水才能接梗）；
+        //   3) 历史为空（新会话 / 已 #结束对话）；
+        //   4) 历史里从未出现过上下文标记（老数据或上下文已被清理）。
+        // 注意：判定的是「整个会话是否注入过」，而不是「最后一条 user 是否带标记」——
+        // 精简轮次的 user 天然不带标记，若只看最后一条会导致每轮都重新注入。
+        const CTX_MARKER = '### 场景协议：'
+        let existingHistory: any[] = []
+        if (!isBym) {
+          try {
+            const historyMgr = chaite.getHistoryManager()
+            if (historyMgr) {
+              existingHistory = (await historyMgr.getHistory(undefined, conversationId)) || []
+            }
+          } catch (err: any) {
+            console.warn('[Runner] Failed to read conversation history for context gating:', err?.message || err)
+          }
+        }
+        const hasInjectedContextBefore = existingHistory.some((m: any) =>
+          m.role === 'user'
+          && Array.isArray(m.content)
+          && m.content.some((c: any) => c.type === 'text' && String(c.text || '').includes(CTX_MARKER))
+        )
+        const shouldInjectFullContext = isBym
+          || triggerReason === 'random_probability'
+          || existingHistory.length === 0
+          || !hasInjectedContextBefore
+
+
         const mastersList: string[] = []
         for (const m of effectiveMasters) {
           if (!mastersList.includes(String(m))) {
@@ -698,7 +771,7 @@ export async function handleMessage(
         const shouldInjectGroupContext = presetGroupCtxSetting === 'enabled'
           || (presetGroupCtxSetting === 'use_system' && config.llm?.enableGroupContext !== false)
 
-        if (shouldInjectGroupContext) {
+        if (shouldInjectGroupContext && shouldInjectFullContext) {
           const groupContextResult = await groupHistoryBuffer.buildContext(
             event.groupId,
             {
@@ -861,43 +934,8 @@ export async function handleMessage(
 
             // 3. 构建提问者真实输入：采用与 <group_messages> 流水完全统一的 [#N HH:mm] 发送者(身份): 格式
             // 既能让大模型感知统一的流动序号与提问者身份（彻底防串用户），又能让该消息被虚拟短引用系统注册
+            // 发言者名称/身份徽标/时间已在注入段入口统一计算
             const currentSeq = (groupContextResult?.messageCount || 0) + 1
-            const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
-              timeZone: 'Asia/Shanghai',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            })
-            const currentMsgTime = timeFormatter.format(now)
-
-            const uidStr = String(event.userId)
-            const isBot = uidStr === String(config?.onebot?.botUin || '')
-            let roleBadge = ''
-            if (isBot) {
-              roleBadge = '[机器人]'
-            } else if (isMaster) {
-              if (event.sender?.role === 'owner') {
-                roleBadge = '[群主/主人]'
-              } else if (event.sender?.role === 'admin') {
-                roleBadge = '[群管/主人]'
-              } else {
-                roleBadge = '[主人]'
-              }
-            } else if (event.sender?.role === 'owner') {
-              roleBadge = '[群主]'
-            } else if (event.sender?.role === 'admin') {
-              roleBadge = '[群管]'
-            }
-
-            const cleanCard = (event.sender?.card || '').replace(/[\s\u3000]+/g, ' ').trim()
-            const cleanNick = (event.sender?.nickname || '').replace(/[\s\u3000]+/g, ' ').trim()
-            let speakerName = cleanCard || cleanNick || (event.userId ? `QQ ${event.userId}` : '群友')
-            speakerName = speakerName
-              .replace(/\r\n|\r|\n/g, ' ')
-              .replace(/\[(主人|群主|群管|群主\/主人|群管\/主人|机器人|Admin|Bot)\]/gi, '')
-              .trim() || (event.userId ? `QQ ${event.userId}` : '群友')
-
-            const badgeStr = roleBadge ? ` ${roleBadge}` : ''
             const speakerHeader = `[#${currentSeq} ${currentMsgTime}] ${speakerName}${badgeStr}: `
 
             // 注册当前消息至短期虚拟引用池，便于后续多轮对话或工具通过序号精准定位
@@ -931,6 +969,30 @@ export async function handleMessage(
             if (originalUserParts.length > 0) {
               userMessage.content.push(...originalUserParts)
             }
+          }
+        } else if (shouldInjectGroupContext) {
+          // ── 精简模式：本会话已经注入过静态上下文 ──────────────────────────
+          // 不再重复塞入场景协议 / 群聊流水 / 花名册（它们会被写入 history，重复注入
+          // 会让历史里堆叠 N 份同一快照），只发送带时间与身份的当前触发消息。
+          // 这样历史保持 user/assistant 严格交替，模型靠对话本身理解上下文即可。
+          const speakerHeader = `[${currentMsgTime}] ${speakerName}${badgeStr}: `
+          const firstTextIndex = userMessage.content.findIndex((p: any) => p.type === 'text')
+          if (firstTextIndex >= 0) {
+            const originText = (userMessage.content[firstTextIndex] as any).text || ''
+            ;(userMessage.content[firstTextIndex] as any).text = `${speakerHeader}${originText}`
+          } else {
+            userMessage.content.unshift({ type: 'text', text: speakerHeader } as TextContent)
+          }
+
+          if (isVisual && currentImages.length > 0) {
+            userMessage.content.push(...currentImages)
+          }
+
+          if (isMemoryEnabled && memoryBlock) {
+            userMessage.content.unshift({
+              type: 'text',
+              text: `### 长期记忆背景：\n${memoryBlock}`,
+            } as TextContent)
           }
         } else {
           // 未启用群聊历史上下文时，直接注入记忆与基础会话环境
