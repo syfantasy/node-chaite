@@ -626,6 +626,9 @@ export class AbstractClient implements IClient {
         options.toolChoice = {
           type: 'auto',
         }
+        // 工具调用递归时，必须允许读取存储的本轮工具结果历史，
+        // 否则单轮/伪人模式(disableHistoryRead)下会因 histories 为空导致模型请求无消息而报错
+        options.disableHistoryRead = false
         return await this.sendMessage(undefined, options)
       }
 
