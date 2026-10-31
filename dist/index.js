@@ -7,6 +7,7 @@ import { oneBotToUserMessage, formatModelResponse } from './onebot/message.js';
 import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer.js';
 import { mediaRefStore } from './onebot/refStore.js';
 import { pluginManager } from './plugin/index.js';
+import { runSystemUpdate, restartProcess } from './systemUpdate.js';
 import { Chaite, drivers, ChaiteContext } from './core/index.js';
 async function bootstrapOnce() {
     console.log('==============================================');
@@ -431,6 +432,34 @@ export async function handleMessage(event, storageCtx) {
                     '状态: 正常运行',
                 ].join('\n');
                 await event.reply(statusText);
+                return;
+            }
+            case 'update': {
+                if (!isMaster) {
+                    await event.reply('❌ 权限不足：该指令仅管理员/主人可用。');
+                    return;
+                }
+                await event.reply('⏳ 正在检查并更新 Chaite，请稍候...');
+                try {
+                    const result = await runSystemUpdate(process.cwd());
+                    if (!result.hasUpdate) {
+                        const detail = (result.log || '').trim();
+                        await event.reply(`✅ 当前已是最新版本，无需更新！${detail ? `\n\n${detail}` : ''}`);
+                        return;
+                    }
+                    const logPreview = (result.log || '').trim();
+                    const summaryMsg = [
+                        '🚀 Chaite 更新成功！',
+                        logPreview ? `\n【更新详情】\n${logPreview}` : '',
+                        '\n服务正在自动重启以加载新版本，请稍候...',
+                    ].filter(Boolean).join('\n');
+                    await event.reply(summaryMsg);
+                    restartProcess(process.cwd(), 1500);
+                }
+                catch (err) {
+                    console.error('[Runner] Error updating Chaite via command:', err);
+                    await event.reply(`❌ 更新失败：${err?.message || String(err)}`);
+                }
                 return;
             }
         }

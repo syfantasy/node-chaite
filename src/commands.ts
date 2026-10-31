@@ -31,6 +31,7 @@ export const CHAITE_COMMANDS: ChaiteCommand[] = [
   { name: 'unbanUser', aliases: ['解黑'], description: '解除用户拉黑：#解黑 [@/QQ号]', permission: 'master', hasArgs: true },
   { name: 'presets', aliases: ['预设列表', '查看预设', '预设', 'presets'], description: '查看可用预设列表', permission: 'all' },
   { name: 'status', aliases: ['ping', '状态', 'status'], description: '查看运行状态', permission: 'all' },
+  { name: 'update', aliases: ['更新', 'chaite更新', 'chaite升级', 'update'], description: '检查并在线更新 Chaite（主人）', permission: 'master' },
 ]
 
 export interface ChaiteCommandHit {
