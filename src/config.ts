@@ -170,6 +170,12 @@ let currentConfig: AppConfig = { ...DEFAULT_CONFIG }
 
 export function loadConfig(): AppConfig {
   try {
+    // 全新安装（data/chaite 还不存在）时，先把数据目录建出来，
+    // 否则下面的复制/写入会因目标目录缺失而 ENOENT，白丢一次初始化。
+    const configPath = resolveConfigPath()
+    if (!fs.existsSync(configPath)) {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    }
     if (!fs.existsSync(resolveConfigPath())) {
       if (fs.existsSync(EXAMPLE_PATH)) {
         fs.copyFileSync(EXAMPLE_PATH, resolveConfigPath())
