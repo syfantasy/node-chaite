@@ -540,6 +540,10 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
             raw: { ...event, _adapter: virtualAdapter },
             client: virtualAdapter,
             sender: event.sender,
+            // handleMessage 及其错误分支通过 event.reply 发送回复，必须收集到 replies
+            reply: async (msg: any) => {
+              replies.push(msg)
+            },
           }
 
           if (presetId) {
