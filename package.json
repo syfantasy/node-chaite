@@ -20,10 +20,19 @@
   "bin": {
     "chaite": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "frontend/build"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "build": "tsc --outDir dist --declaration",
+    "prepublishOnly": "tsc --outDir dist --declaration",
     "prepare": "tsc --outDir dist --declaration",
     "build:web": "pnpm --prefix web build",
     "postinstall": "node -e \"try { require('sqlite3') } catch { require('child_process').execSync('npm rebuild sqlite3', { stdio: 'inherit' }) }\"",
