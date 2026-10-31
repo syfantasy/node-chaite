@@ -16,6 +16,11 @@ const EXAMPLE_PATH = path.resolve(__dirname, '../config.example.json')
  * 3. 全新安装 → 落在宿主 cwd 的 data/chaite。
  */
 export function resolveRootDataDir(): string {
+  // 显式环境变量优先（相对路径基于 cwd 解析），便于宿主自定义数据位置
+  const envDir = process.env.CHAITE_DATA_DIR?.trim()
+  if (envDir) {
+    return path.resolve(envDir)
+  }
   const pkgDataDir = path.resolve(__dirname, '../data')
   const hostDataDir = path.resolve(process.cwd(), 'data/chaite')
   const hasData = (dir: string): boolean => fs.existsSync(path.join(dir, 'data.db'))
