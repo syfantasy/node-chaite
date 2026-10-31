@@ -626,6 +626,7 @@ export async function handleMessage(
   try {
     const chaite = Chaite.getInstance()
     const eMsg: EventMessage = {
+      ...(event as any),
       sender: {
         user_id: Number(event.userId),
         nickname: event.sender?.nickname,
@@ -636,7 +637,15 @@ export async function handleMessage(
             group_id: Number(event.groupId),
           }
         : undefined,
+      reply: event.reply,
+      callAction: event.callAction,
+      client: event.client,
+      raw: event.raw,
+      isGroup: event.isGroup,
+      groupId: event.groupId,
+      userId: event.userId,
     }
+    ;(globalThis as any).lastChaiteEvent = eMsg
 
     let preset = matchedPreset
     if (!preset) {

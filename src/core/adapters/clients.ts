@@ -549,6 +549,7 @@ export class AbstractClient implements IClient {
                 level: 'info',
                 summary: `Tool call: ${fcName}`,
                 toolName: fcName,
+                detail: typeof toolResult === 'string' && toolResult.length > 500 ? toolResult.slice(0, 500) + '...' : toolResult,
                 durationMs: Date.now() - _toolCallStart,
                 userId: _toolUserId,
                 conversationId: options.conversationId,
@@ -561,6 +562,45 @@ export class AbstractClient implements IClient {
                 model: options.model,
                 presetId: this.context.presetId,
                 presetName: this.context.presetName,
+                metadata: {
+                  requestPayload: {
+                    userMessage: {
+                      role: 'user',
+                      content: [
+                        {
+                          type: 'text',
+                          text: `[工具调用] ${fcName}\n参数: ${JSON.stringify(fcArgs, null, 2)}`,
+                        },
+                      ],
+                    },
+                  },
+                  responsePayload: {
+                    contents: [
+                      {
+                        type: 'text',
+                        text: toolResult,
+                      },
+                    ],
+                    toolCalls: [
+                      {
+                        id: r.id,
+                        type: 'function',
+                        function: {
+                          name: fcName,
+                          arguments: fcArgs,
+                        },
+                      },
+                    ],
+                  },
+                  rawRequest: {
+                    tool: fcName,
+                    arguments: fcArgs,
+                  },
+                  rawResponse: {
+                    tool: fcName,
+                    result: toolResult,
+                  },
+                },
               })
             } catch (err: unknown) {
               toolResult = (err as Error).message
@@ -583,6 +623,35 @@ export class AbstractClient implements IClient {
                 model: options.model,
                 presetId: this.context.presetId,
                 presetName: this.context.presetName,
+                metadata: {
+                  requestPayload: {
+                    userMessage: {
+                      role: 'user',
+                      content: [
+                        {
+                          type: 'text',
+                          text: `[工具调用失败] ${fcName}\n参数: ${JSON.stringify(fcArgs, null, 2)}`,
+                        },
+                      ],
+                    },
+                  },
+                  responsePayload: {
+                    contents: [
+                      {
+                        type: 'text',
+                        text: `Error: ${toolResult}`,
+                      },
+                    ],
+                  },
+                  rawRequest: {
+                    tool: fcName,
+                    arguments: fcArgs,
+                  },
+                  rawResponse: {
+                    tool: fcName,
+                    error: toolResult,
+                  },
+                },
               })
             }
           } else {
