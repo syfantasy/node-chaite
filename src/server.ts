@@ -16,6 +16,7 @@ import { pluginManager } from './plugin/index.js'
 import { groupHistoryBuffer } from './context/groupHistoryBuffer.js'
 import { handleMessage } from './index.js'
 import { getStorageContext, initChaiteStorage } from './storage.js'
+import { runSystemUpdate } from './systemUpdate.js'
 
 const cwd = process.cwd()
 // 面板目录查找顺序：
@@ -531,67 +532,28 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
       })
 
       // 自动更新 Chaite（自适应独立部署版或宿主依赖版）
+      // 统一走 GitHub：依赖版不再嗅探 npm registry，直接按宿主 package.json 里的
+      // github:owner/repo 重新解析安装；独立版仍是 git pull（dist/frontend 随仓库分发）。
       expressApp.post('/api/system/update', async (_req: any, res: any) => {
         try {
-          const { exec } = await import('node:child_process')
-          const { promisify } = await import('node:util')
-          const execAsync = promisify(exec)
+          const result = await runSystemUpdate(process.cwd())
 
-          const isGitRepo = fs.existsSync(path.resolve(process.cwd(), '.git'))
-          let mode = 'standalone'
-          let log = ''
-          let hasUpdate = false
-
-          if (isGitRepo) {
-            mode = 'standalone'
-            console.log('[System Update] 检测到 Git 独立部署环境，执行 git pull...')
-            const res = await execAsync('git pull', { cwd: process.cwd() })
-            log = (res.stdout || res.stderr || '').trim()
-            hasUpdate = !log.includes('Already up to date') && !log.includes('已经是最新')
-          } else {
-            mode = 'dependency'
-            console.log('[System Update] 检测到依赖环境，嗅探包管理器更新 @syfantasy/chaite...')
-            const targetDir = process.cwd()
-            let pm = 'npm'
-            if (fs.existsSync(path.resolve(targetDir, 'pnpm-lock.yaml'))) {
-              pm = 'pnpm'
-            } else if (fs.existsSync(path.resolve(targetDir, 'yarn.lock'))) {
-              pm = 'yarn'
-            }
-
-            const cmd = pm === 'pnpm'
-              ? 'pnpm update @syfantasy/chaite@latest'
-              : (pm === 'yarn' ? 'yarn upgrade @syfantasy/chaite@latest' : 'npm install @syfantasy/chaite@latest')
-
-            const res = await execAsync(cmd, { cwd: targetDir })
-            log = (res.stdout || res.stderr || '').trim()
-            hasUpdate = !log.includes('up to date') && !log.includes('Already up to date')
-          }
-
-          if (hasUpdate) {
+          if (result.hasUpdate) {
             setTimeout(() => {
               console.log('[System Update] 更新流程已完成，正在重启进程...')
               process.exit(0)
             }, 1500)
-
-            return res.status(200).json(
-              ChaiteResponse.ok({
-                mode,
-                hasUpdate: true,
-                log,
-                message: '已成功拉取最新版本，服务正在自动重启，请稍候...',
-              })
-            )
-          } else {
-            return res.status(200).json(
-              ChaiteResponse.ok({
-                mode,
-                hasUpdate: false,
-                log,
-                message: '当前已是最新版本，无需更新！',
-              })
-            )
           }
+
+          return res.status(200).json(
+            ChaiteResponse.ok({
+              mode: result.mode,
+              hasUpdate: result.hasUpdate,
+              command: result.command,
+              log: result.log,
+              message: result.message,
+            })
+          )
         } catch (err: any) {
           console.error('[System Update] 自动更新失败:', err)
           return res.status(500).json(ChaiteResponse.fail(null, `自动更新失败: ${err?.message || String(err)}`))

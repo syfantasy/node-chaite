@@ -1,1 +1,0 @@
-import{_ as r}from"./ErrorTip.vue_vue_type_script_setup_true_lang-CDrpNccN.js";import{j as c,o as e,b as n}from"./index-DUI5DuVi.js";const t={};function _(s,a){const o=r;return e(),n(o,{type:"500"})}const i=c(t,[["render",_]]);export{i as default};

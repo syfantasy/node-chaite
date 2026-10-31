@@ -273,7 +273,10 @@ async function handleSystemUpdate() {
   try {
     const res = await fetchSystemUpdate()
     if (res.isSuccess && res.data) {
-      updateLog.value = res.data.log || '执行完成，无输出'
+      const cmd = (res.data as any).command
+      updateLog.value = [cmd ? `$ ${cmd}` : '', res.data.log || '执行完成，无输出']
+        .filter(Boolean)
+        .join('\n')
       if ((res.data as any).hasUpdate) {
         message.success(res.data.message || '更新命令已执行，服务正在自动重启')
         updateFinished.value = true
@@ -1218,13 +1221,13 @@ onMounted(async () => {
                       Chaite 在线更新
                     </div>
                     <div class="card-subtitle">
-                      一键自动拉取最新版本更新。自适应 Git 源码独立部署版与 npm/pnpm 宿主依赖包。
+                      一键自动拉取最新版本更新。自适应 Git 源码独立部署版与 GitHub 依赖版（宿主 package.json 里的 github: 地址）。
                     </div>
                   </div>
                 </template>
                 <NSpace vertical size="large">
                   <NAlert title="更新机制说明" type="info">
-                    点击更新后，系统会自动侦测当前部署环境：若为独立 Git 仓库将执行 <code>git pull</code>；若为宿主插件依赖引入则会自动执行包管理器更新 <code>@syfantasy/chaite@latest</code>，并在更新完成后自动退出进程由守护程序（如 systemd/pm2）自动拉起新版本。
+                    点击更新后，系统会自动侦测当前部署环境：若为独立 Git 仓库，执行 <code>git pull</code>（dist 与面板产物随仓库分发）；若为宿主依赖引入，则按宿主 <code>package.json</code> 里声明的 GitHub 仓库重新解析安装（例如 <code>pnpm add -w chaite@github:syfantasy/node-chaite</code>），不会去 npm registry 找包。更新完成后自动退出进程，由守护程序（如 systemd/pm2）拉起新版本。
                   </NAlert>
 
                   <NSpace align="center">

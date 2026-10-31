@@ -30,5 +30,5 @@ export function fetchSystemInfo() {
 }
 
 export function fetchSystemUpdate() {
-  return request.Post<Service.ResponseResult<{ mode: string; log: string; message: string }>>('/api/system/update')
+  return request.Post<Service.ResponseResult<{ mode: string; hasUpdate: boolean; command?: string; log: string; message: string }>>('/api/system/update')
 }
