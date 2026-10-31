@@ -927,22 +927,26 @@ export async function handleMessage(
             // 3. 紧接着推入本轮动态的会话环境与时间戳（后置下移，避免每秒变化的时间戳击穿头部缓存）
             contextParts.push(envPart)
 
-            // 4. 推入多模态附图索引清单
+            // 4. 多模态附图索引清单：跟随附图走（不放进置顶上下文块，避免索引与附图被拉开）
+            let imageIndexPart: TextContent | null = null
             if (visualAttachments.length > 0) {
               const imageIndexLines = visualAttachments.map(
                 (att) => `- 附图 ${att.seq}: ${att.detail}`
               )
-              contextParts.push({
+              imageIndexPart = {
                 type: 'text',
-                text: `### 本轮会话附带的多模态图像索引（按顺序严格对应下方图文交错附图）：\n<attached_images>\n${imageIndexLines.join('\n')}\n</attached_images>`,
-              })
+                text: `### 本轮会话附带的多模态图像索引（按顺序严格对应紧随其后的图文交错附图）：\n<attached_images>\n${imageIndexLines.join('\n')}\n</attached_images>`,
+              }
             }
 
             // 提取提问者原始的用户消息部件（保持原样，避免被伪造/注入人造前缀）
             const originalUserParts = [...userMessage.content]
             userMessage.content = []
 
-            // 1. 注入图文交错的视觉素材（随本轮发言走，与上方附图索引顺序严格对应）
+            // 1. 附图索引 + 图文交错的视觉素材（随本轮发言走）
+            if (imageIndexPart) {
+              userMessage.content.push(imageIndexPart)
+            }
             if (visualAttachments.length > 0) {
               for (const att of visualAttachments) {
                 userMessage.content.push({
