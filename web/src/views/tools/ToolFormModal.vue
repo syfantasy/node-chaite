@@ -151,56 +151,63 @@ watch(showModal, (val) => {
 </script>
 
 <template>
-  <div>
-    <NModal v-if="showModal" v-model:show="showModal" preset="card" style="width: 700px; max-width: 90vw">
-      <NCard :title="editMode ? '编辑工具' : '添加工具'">
-        <NForm ref="formRef" :rules="toolRules" :model="addTool">
-          <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-            <!-- 工具名称 -->
-            <NFormItemGridItem span="24" label="名称" path="name">
-              <NInput v-model:value="addTool.name" placeholder="请输入工具名称" />
-            </NFormItemGridItem>
-            <!-- 工具描述 -->
-            <NFormItemGridItem span="24" label="描述" path="description">
-              <NInput v-model:value="addTool.description" type="textarea" placeholder="请输入工具描述" />
-            </NFormItemGridItem>
+  <NModal
+    v-if="showModal"
+    v-model:show="showModal"
+    preset="card"
+    :title="editMode ? '编辑工具' : '添加工具'"
+    style="width: 780px; max-width: 92vw; max-height: 88vh; display: flex; flex-direction: column;"
+    :content-style="{ overflowY: 'auto', flex: 1, paddingRight: '6px' }"
+  >
+    <NForm ref="formRef" :rules="toolRules" :model="addTool">
+      <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+        <!-- 工具名称 -->
+        <NFormItemGridItem span="24" label="名称" path="name">
+          <NInput v-model:value="addTool.name" placeholder="请输入工具名称" />
+        </NFormItemGridItem>
+        <!-- 工具描述 -->
+        <NFormItemGridItem span="24" label="描述" path="description">
+          <NInput v-model:value="addTool.description" type="textarea" placeholder="请输入工具描述" />
+        </NFormItemGridItem>
 
-            <!-- 工具专属配置 (JSON) -->
-            <NFormItemGridItem span="24" label="工具专属配置 (JSON，选填)" path="config">
-              <NInput
-                v-model:value="configJson"
-                type="textarea"
-                :autosize="{ minRows: 2, maxRows: 6 }"
-                placeholder='选填，请输入 JSON 配置（如: {"apiKey": "sk-xxx", "timeout": 5000}），可在工具内通过 this.config 读取'
-                style="font-family: monospace;"
-              />
-            </NFormItemGridItem>
+        <!-- 工具专属配置 (JSON) -->
+        <NFormItemGridItem span="24" label="工具专属配置 (JSON，选填)" path="config">
+          <NInput
+            v-model:value="configJson"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 5 }"
+            placeholder='选填，请输入 JSON 配置（如: {"apiKey": "sk-xxx"}），可在工具内通过 this.config 读取'
+            style="font-family: monospace;"
+          />
+        </NFormItemGridItem>
 
-            <!-- 代码编辑器 -->
-            <NFormItemGridItem span="24" label="代码" path="code">
-              <CodeMirror
-                v-model="addTool.code"
-                style="width: 100%"
-                :lang="lang"
-                basic
-              />
-            </NFormItemGridItem>
-          </NGrid>
-
-          <div style="display: flex; justify-content: flex-end; margin-top: 24px;">
-            <NSpace>
-              <NButton @click="showModal = false">
-                取消
-              </NButton>
-              <NButton type="primary" @click="handleAddChannel">
-                确定
-              </NButton>
-            </NSpace>
+        <!-- 代码编辑器 -->
+        <NFormItemGridItem span="24" label="代码" path="code">
+          <div style="width: 100%; max-height: 360px; overflow-y: auto; border: 1px solid var(--n-border-color); border-radius: 4px;">
+            <CodeMirror
+              v-model="addTool.code"
+              style="width: 100%"
+              :lang="lang"
+              basic
+            />
           </div>
-        </NForm>
-      </NCard>
-    </NModal>
-  </div>
+        </NFormItemGridItem>
+      </NGrid>
+    </NForm>
+
+    <template #action>
+      <div style="display: flex; justify-content: flex-end; width: 100%;">
+        <NSpace>
+          <NButton @click="showModal = false">
+            取消
+          </NButton>
+          <NButton type="primary" @click="handleAddChannel">
+            确定保存
+          </NButton>
+        </NSpace>
+      </div>
+    </template>
+  </NModal>
 </template>
 
 <style scoped>
