@@ -191,6 +191,12 @@ export async function handleMessage(
     onebot: onebotAdapter,
   })
 
+  // 本轮注入的上下文（场景协议/流水/花名册/环境/附图）最终放在了哪里：
+  //   · 并入历史首条 user 时，它不在 userMessage.content 里 —— 日志要单独补上；
+  //   · 并入本轮消息时，userMessage.content 已包含它 —— 日志不能再补。
+  // 由 installPrependContext 在真正发请求时确定，供操作日志还原「模型实际看到的本轮输入」。
+  let logPrependedParts: any[] = []
+
   // 3. Handle Chaite internal management & utility commands
   // 指令注册表见 src/commands.ts（单一来源）：分发按表匹配执行，宿主适配器
   // （如 chatgpt-plugin）通过 GET /api/bridge/commands 获取同一张表来决定
@@ -649,8 +655,12 @@ export async function handleMessage(
           let ctxAttachedToCurrent = false
           sendOptions.prependContext = (histories: any[], current?: any) => {
             ctxAttachedToCurrent = false
+            logPrependedParts = []
             if (!Array.isArray(histories) || histories.length === 0) return
             const cloned = parts.map((p) => ({ ...p }))
+            // 无论最终并入「历史首条」还是「本轮消息」，userMessage.content 本身都不含注入块
+            // （clients 内部是 new 了一个 thisRequestMsg，改的是副本），所以日志统一补这一段
+            logPrependedParts = cloned
             // 列表里只有本轮这一条（无历史）：上下文与发言同属最前面的一条消息
             if (histories.length === 1 && (!current || histories[0] === current)) {
               const target = current || histories[0]
@@ -1183,7 +1193,14 @@ export async function handleMessage(
               rawRequest: (response as any)?.rawRequest,
               rawResponse: (response as any)?.rawResponse,
               requestPayload: {
-                userMessage,
+                // 日志要还原「模型本轮实际看到的输入」：上下文并入历史首条时，
+                // 它不在 userMessage.content 里，这里补回来（并入本轮时不能再补，否则重复）
+                userMessage: logPrependedParts.length > 0
+                  ? {
+                    ...userMessage,
+                    content: [...logPrependedParts, ...(Array.isArray(userMessage.content) ? userMessage.content : [])],
+                  }
+                  : userMessage,
                 sendOptions: cleanOptionsForLog(sendOptions),
               },
               responsePayload: errorCaught ? null : {
