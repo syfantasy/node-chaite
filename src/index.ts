@@ -1,4 +1,5 @@
 import { loadConfig, getConfig, saveConfig } from './config.js'
+import { matchChaiteCommand, buildHelpText } from './commands.js'
 import { initChaiteStorage } from './storage.js'
 import { startWebServer } from './server.js'
 import { checkPermission, banTarget, unbanTarget, parseDuration } from './guard.js'
@@ -154,59 +155,25 @@ export async function handleMessage(
   })
 
   // 3. Handle Chaite internal management & utility commands
-  // 匹配 #chaite 及旗下的一系列内置指令（如 #状态、#管理面板、#重置对话等）
-  // 插件指令（如 #打招呼）由插件自己独立注册调度，不在此处拦截
+  // 指令注册表见 src/commands.ts（单一来源）：分发按表匹配执行，宿主适配器
+  // （如 chatgpt-plugin）通过 GET /api/bridge/commands 获取同一张表来决定
+  // 转发哪些消息，宿主侧不再各自硬编码指令。
   const cmdPrefix = (config.chat.commandPrefix || '#').trim()
   const currentText = (event.text || cleanText || '').trim()
 
   const masterUsers = (config.management?.masterUsers || []).map(Number)
   const isMaster = masterUsers.length === 0 || masterUsers.includes(Number(event.userId))
 
-  const matchCmd = (cmd: string): boolean => {
-    const prefixes = Array.from(new Set([cmdPrefix, '#'])).filter(Boolean)
-    for (const p of prefixes) {
-      if (currentText === `${p}${cmd}` || currentText === `${p}chaite ${cmd}`) {
-        return true
-      }
-    }
-    return false
-  }
+  const cmdHit = matchChaiteCommand(currentText, cmdPrefix)
+  if (cmdHit) {
+    switch (cmdHit.command.name) {
 
-  const matchCmdWithArg = (cmd: string): { matched: boolean; arg: string } => {
-    const prefixes = Array.from(new Set([cmdPrefix, '#'])).filter(Boolean)
-    for (const p of prefixes) {
-      for (const base of [`${p}${cmd}`, `${p}chaite ${cmd}`]) {
-        if (currentText === base) {
-          return { matched: true, arg: '' }
-        }
-        if (currentText.startsWith(`${base} `) || currentText.startsWith(`${base}\n`)) {
-          return { matched: true, arg: currentText.slice(base.length).trim() }
-        }
-      }
-    }
-    return { matched: false, arg: '' }
-  }
-
-  if (matchCmd('chaite') || matchCmd('帮助') || matchCmd('help') || matchCmd('gpt帮助')) {
-    const helpText = [
-      ' Chaite 交互指令',
-      '──────────────────',
-      `• ${cmdPrefix}chaite / ${cmdPrefix}帮助`,
-      `• ${cmdPrefix}结束对话 / ${cmdPrefix}重置对话`,
-      `• ${cmdPrefix}清空群上下文 / ${cmdPrefix}重置群聊 (主人)`,
-      `• ${cmdPrefix}结束全部对话 / ${cmdPrefix}清空全部会话 (主人)`,
-      `• ${cmdPrefix}预设列表 / ${cmdPrefix}查看预设`,
-      `• ${cmdPrefix}状态 / ${cmdPrefix}ping`,
-      `• ${cmdPrefix}拉黑群 [群号] / ${cmdPrefix}解黑群 [群号]`,
-      `• ${cmdPrefix}拉黑 [@某人/QQ] / ${cmdPrefix}解黑 [@某人/QQ]`,
-      '──────────────────',
-    ].join('\n')
-
-    await event.reply(helpText)
+  case 'help': {
+    await event.reply(buildHelpText(cmdPrefix, isMaster))
     return
   }
 
-  if (matchCmd('结束对话') || matchCmd('重置对话') || matchCmd('清空对话') || matchCmd('清空上下文') || matchCmd('reset')) {
+  case 'reset': {
     const userPrefix = event.isGroup
       ? `conv_group_${event.groupId}_${event.userId}_`
       : `conv_private_${event.userId}_`
@@ -225,7 +192,7 @@ export async function handleMessage(
     return
   }
 
-  if (matchCmd('清空群上下文') || matchCmd('重置群聊') || matchCmd('清空群聊上下文')) {
+  case 'clearGroup': {
     if (!event.isGroup) {
       await event.reply('❌ 该指令仅在群聊中可用。')
       return
@@ -239,7 +206,7 @@ export async function handleMessage(
     return
   }
 
-  if (matchCmd('结束全部对话') || matchCmd('重置全部对话') || matchCmd('清空全部会话') || matchCmd('resetall')) {
+  case 'resetAll': {
     if (!isMaster) {
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
       return
@@ -256,13 +223,12 @@ export async function handleMessage(
     return
   }
 
-  const banGroupMatch = matchCmdWithArg('拉黑群')
-  if (banGroupMatch.matched) {
+  case 'banGroup': {
     if (!isMaster) {
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
       return
     }
-    const parts = banGroupMatch.arg.trim().split(/\s+/)
+    const parts = cmdHit.arg.trim().split(/\s+/)
     const targetGroup = Number(parts[0]) || (event.groupId ? Number(event.groupId) : 0)
     const durationStr = parts[1] || ''
 
@@ -288,13 +254,12 @@ export async function handleMessage(
     return
   }
 
-  const unbanGroupMatch = matchCmdWithArg('解黑群')
-  if (unbanGroupMatch.matched) {
+  case 'unbanGroup': {
     if (!isMaster) {
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
       return
     }
-    const targetGroup = Number(unbanGroupMatch.arg.trim().split(/\s+/)[0]) || (event.groupId ? Number(event.groupId) : 0)
+    const targetGroup = Number(cmdHit.arg.trim().split(/\s+/)[0]) || (event.groupId ? Number(event.groupId) : 0)
     if (!targetGroup) {
       await event.reply(`⚠️ 请指定要解除拉黑的群号，例如: ${cmdPrefix}解黑群 123456`)
       return
@@ -306,15 +271,14 @@ export async function handleMessage(
     return
   }
 
-  const banUserMatch = matchCmdWithArg('拉黑')
-  if (banUserMatch.matched) {
+  case 'banUser': {
     if (!isMaster) {
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
       return
     }
     let targetUser = 0
     let durationStr = ''
-    const parts = banUserMatch.arg.trim().split(/\s+/).filter(Boolean)
+    const parts = cmdHit.arg.trim().split(/\s+/).filter(Boolean)
 
     if (Array.isArray(rawEvent.message)) {
       const atSeg = rawEvent.message.find((seg: any) => seg.type === 'at')
@@ -350,8 +314,7 @@ export async function handleMessage(
     return
   }
 
-  const unbanUserMatch = matchCmdWithArg('解黑')
-  if (unbanUserMatch.matched) {
+  case 'unbanUser': {
     if (!isMaster) {
       await event.reply('❌ 权限不足：该指令仅管理员/主人可用。')
       return
@@ -364,7 +327,7 @@ export async function handleMessage(
       }
     }
     if (!targetUser) {
-      targetUser = Number(unbanUserMatch.arg.trim().split(/\s+/)[0])
+      targetUser = Number(cmdHit.arg.trim().split(/\s+/)[0])
     }
     if (!targetUser) {
       await event.reply(`⚠️ 请指定要解除拉黑的用户，例如: ${cmdPrefix}解黑 10001 或 ${cmdPrefix}解黑 @群友`)
@@ -377,7 +340,7 @@ export async function handleMessage(
     return
   }
 
-  if (matchCmd('预设列表') || matchCmd('查看预设') || matchCmd('预设') || matchCmd('presets')) {
+  case 'presets': {
     try {
       const allPresets = await storageCtx.presetManager.getAllPresets()
       if (!allPresets || allPresets.length === 0) {
@@ -399,7 +362,7 @@ export async function handleMessage(
     return
   }
 
-  if (matchCmd('ping') || matchCmd('状态') || matchCmd('status')) {
+  case 'status': {
     const channels = await storageCtx.channelsManager.storage.listItems()
     const presets = await storageCtx.presetManager.getAllPresets()
     const statusText = [
@@ -414,6 +377,8 @@ export async function handleMessage(
     await event.reply(statusText)
     return
   }
+  }
+}
 
   // 4. Trigger & Preset Resolution
   let isTriggered = false
@@ -1211,6 +1176,7 @@ export * from './config.js'
 export * from './storage.js'
 export * from './server.js'
 export * from './plugin/index.js'
+export { CHAITE_COMMANDS, matchChaiteCommand, buildHelpText } from './commands.js'
 export { groupHistoryBuffer, groupMessageRefStore }
 
 /**

@@ -11,6 +11,7 @@ import {
   FrontEndAuthHandler,
 } from './core/index.js'
 import { AppConfig, getConfig, saveConfig } from './config.js'
+import { CHAITE_COMMANDS } from './commands.js'
 import { pluginManager } from './plugin/index.js'
 import { groupHistoryBuffer } from './context/groupHistoryBuffer.js'
 import { handleMessage } from './index.js'
@@ -633,6 +634,20 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
             }))
             .filter((x: any) => x.prefixes.length > 0)
           res.status(200).json(ChaiteResponse.ok({ items }))
+        } catch (err: any) {
+          res.status(500).json(ChaiteResponse.fail(null, err?.message || '获取失败'))
+        }
+      })
+
+      // 指令注册表（单一来源见 src/commands.ts）：宿主适配器据此把命中
+      // 指令的消息原样转发到 /api/bridge/chat，由 handleMessage 执行。
+      expressApp.get('/api/bridge/commands', async (_req: any, res: any) => {
+        try {
+          const cfg = getConfig()
+          res.status(200).json(ChaiteResponse.ok({
+            prefix: (cfg.chat?.commandPrefix || '#').trim(),
+            commands: CHAITE_COMMANDS,
+          }))
         } catch (err: any) {
           res.status(500).json(ChaiteResponse.fail(null, err?.message || '获取失败'))
         }
