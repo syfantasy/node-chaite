@@ -589,6 +589,10 @@ export async function handleMessage(
       {},
       preset?.sendMessageOption || {},
       {
+        // 必须显式传递命中的预设：sendMessage 内部若拿不到 chatPreset，
+        // 会回退到 userModeSelector 的默认预设（通常是第一个预设），
+        // 导致前缀命中的预设只影响会话 ID/触发词，模型与系统提示词仍走默认预设。
+        chatPreset: preset,
         conversationId,
         presetId: targetPresetId,
         customOptions: preset?.customOptions,
