@@ -1,1 +1,0 @@
-import{$ as a}from"./index-UD-DIZ9S.js";function s(t={}){return a.Get("/api/logs",{params:t})}function o(t){return a.Get(`/api/logs/${t}`)}function r(){return a.Get("/api/logs/stats")}function n(t={}){return a.Delete("/api/logs",{params:t})}export{s as a,o as b,n as c,r as f};

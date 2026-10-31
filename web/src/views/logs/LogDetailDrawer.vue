@@ -78,9 +78,17 @@ const requestContents = computed(() => {
   return []
 })
 
+// 伪人模式不读历史、不落库，每轮都是独立会话，没有「对话上下文」；
+// 后端已不再为伪人生成该区块，这里再拦一道，旧日志记录也不会显示。
+const isBymLog = computed(() => {
+  const meta = (props.log?.metadata as any) || {}
+  return meta.isBymMode === true || meta.triggerType === 'bym_mode'
+})
+
 // 对话上下文区块：后端把本轮实际送出的对话（历史 + 本轮发言）渲染成一问一答的
 // <chat_history>，与群聊流水/花名册等注入块切开，日志按这个区块阅读更清晰。
 const chatHistoryText = computed(() => {
+  if (isBymLog.value) return ''
   const text = reqPayload.value?.chatHistoryText
   return typeof text === 'string' && text.trim() ? text : ''
 })

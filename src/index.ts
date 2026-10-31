@@ -1236,8 +1236,9 @@ export async function handleMessage(
             ? rawPresetModel.slice(rawPresetModel.indexOf("/") + 1).trim()
             : rawPresetModel
 
-          // 日志展示用：把本轮对话（历史 + 本轮发言）渲染成一问一答区块，与群聊流水切割
-          const chatHistoryText = buildChatHistoryBlock(
+          // 日志展示用：把本轮对话（历史 + 本轮发言）渲染成一问一答区块，与群聊流水切割。
+          // 伪人模式不读历史、不落库，每轮都是独立会话，没有「对话上下文」可言，不生成该区块。
+          const chatHistoryText = (isBym || sendOptions.disableHistoryRead === true) ? null : buildChatHistoryBlock(
             logConversationMessages.length > 0
               ? logConversationMessages
               : [{
