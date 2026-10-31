@@ -1,0 +1,327 @@
+import { promises as fsPromises } from 'fs';
+import path from 'path';
+import chokidar from 'chokidar';
+import { getLogger } from '../utils/index.js';
+import { getMd5 } from '../utils/hash.js';
+/**
+ * T是DTO
+ * C是T对应的可执行的实例类型
+ * @interface ExecutableShareableManager
+ */
+export class ExecutableShareableManager {
+    constructor(type, codeDirectory, storage) {
+        this.type = type;
+        this.storage = storage;
+        this.watcher = null;
+        /**
+         * 存储示例名称和文件名的映射
+         * @private
+         */
+        this.instanceMap = new Map();
+        this.codeDirectory = codeDirectory;
+    }
+    setCloudService(cloudService) {
+        this.cloudService = cloudService;
+    }
+    /**
+     * 只有可执行类型的实例才需要，如工具、处理器等。设置类不需要
+     * @private
+     */
+    async initialize() {
+        // 初始扫描加载所有实例
+        await this.scanInstances();
+        // 设置文件监听
+        await this.setupFileWatcher();
+    }
+    async setupFileWatcher() {
+        if (this.watcher) {
+            await this.watcher.close();
+        }
+        this.watcher = chokidar.watch(this.codeDirectory, {
+            persistent: true,
+            ignoreInitial: true,
+            ignorePermissionErrors: true,
+            depth: 1,
+        }).on('all', async (event, filepath) => {
+            // Only react to add/change/unlink events
+            if (!['add', 'change', 'unlink'].includes(event))
+                return;
+            // Only react to JS files
+            if (path.extname(filepath) !== '.js')
+                return;
+            // Re-scan instances when files change
+            await this.scanInstances();
+            getLogger().debug(`File ${filepath} ${event}, rescanned instances`);
+        });
+        getLogger().debug(`File watcher set up for directory: ${this.codeDirectory}`);
+    }
+    async scanInstances() {
+        try {
+            const files = await fsPromises.readdir(this.codeDirectory);
+            const newInstanceMap = new Map();
+            for (const file of files) {
+                if (path.extname(file) === '.js') {
+                    try {
+                        const filePath = path.join(this.codeDirectory, file);
+                        const fileURL = `file://${path.resolve(filePath).replace(/\\/g, '/')}`;
+                        // 清除模块缓存以确保获取最新版本
+                        const module = await import(fileURL + `?t=${Date.now()}`);
+                        const instance = this.resolveModuleInstance(module);
+                        if (instance && typeof instance === 'object' && typeof instance.name === 'string') {
+                            // 使用实例自己的 name 作为键，支持 default 实例、default 类和具名导出类。
+                            const instanceName = instance.name;
+                            getLogger().debug(`Loaded ${this.type} '${instanceName}' from file '${file}'`);
+                            newInstanceMap.set(instanceName, file);
+                        }
+                    }
+                    catch (error) {
+                        getLogger().error(`Error loading ${this.type} from file '${file}':`, error);
+                    }
+                }
+            }
+            this.instanceMap = newInstanceMap;
+            getLogger().info(`Scanned ${this.instanceMap.size} ${this.type}: [${[...this.instanceMap.keys()].join(', ')}]`);
+        }
+        catch (error) {
+            getLogger().error(`Error scanning ${this.type} directory:`, error);
+        }
+    }
+    /**
+     * 返回实例名字们
+     * @returns 实例名字列表
+     */
+    async listInstanceNames() {
+        return Array.from(this.instanceMap.keys());
+    }
+    async listInstances() {
+        return this.storage.listItems();
+    }
+    async getInstanceT(id) {
+        return this.storage.getItem(id);
+    }
+    /**
+     * 获取实例对象而非Shareable DTO
+     * @param name
+     */
+    async getInstance(name) {
+        const filename = this.instanceMap.get(name);
+        if (!filename)
+            return undefined;
+        const filePath = path.join(this.codeDirectory, filename);
+        const fileURL = `file://${path.resolve(filePath).replace(/\\/g, '/')}`;
+        try {
+            // 清除模块缓存，确保获取最新版本
+            const module = await import(fileURL + `?t=${Date.now()}`);
+            const instance = this.resolveModuleInstance(module);
+            return instance;
+        }
+        catch (error) {
+            getLogger().error(`Error loading tool '${name}':`, error);
+            return undefined;
+        }
+    }
+    /**
+     * Plugins historically used both `export default new Tool()` and
+     * `export class MyProcessor ...`. Resolve both shapes from the same loader.
+     */
+    resolveModuleInstance(module) {
+        const candidates = [module.default, ...Object.entries(module)
+                .filter(([key]) => key !== 'default')
+                .map(([, value]) => value)];
+        for (const candidate of candidates) {
+            if (candidate && typeof candidate === 'object' && typeof candidate.name === 'string') {
+                return candidate;
+            }
+            if (typeof candidate === 'function') {
+                try {
+                    const instance = new candidate();
+                    if (instance && typeof instance === 'object' && typeof instance.name === 'string') {
+                        return instance;
+                    }
+                }
+                catch {
+                    // Ignore unrelated exported helpers/classes and try the next export.
+                }
+            }
+        }
+        return undefined;
+    }
+    /**
+     * 新增或更新
+     * 有id就是更新，靠storage实现去控制，这里不管
+     * @param instance
+     * @return id
+     */
+    async addInstance(instance) {
+        const cleanObj = JSON.parse(JSON.stringify(instance));
+        cleanObj.md5 = '';
+        instance.md5 = getMd5(JSON.stringify(cleanObj));
+        const id = await this.storage.setItem(instance.id, instance);
+        await this.addInstanceCode(instance.name, instance.code);
+        return id;
+    }
+    async addInstanceCode(name, code) {
+        const filename = `${name.replace(/[^a-zA-Z0-9_]/g, '_')}.js`;
+        const filePath = path.join(this.codeDirectory, filename);
+        await fsPromises.writeFile(filePath, code);
+        // 文件监听器会自动触发扫描
+    }
+    async upsertInstanceT(t) {
+        const { name, code } = t;
+        if (!name || !code) {
+            throw new Error('name and code are required');
+        }
+        const existInstance = await this.storage.getItem(t.id);
+        if (existInstance) {
+            const existName = existInstance.name;
+            if (existName !== name) {
+                const oldFilename = this.instanceMap.get(existName);
+                if (oldFilename) {
+                    getLogger().debug(`Removing old file for instance '${existName}'`);
+                    await fsPromises.unlink(path.join(this.codeDirectory, oldFilename));
+                }
+            }
+        }
+        return this.addInstance(t);
+    }
+    async getInstanceTByCloudId(cloudId) {
+        return this.storage.listItemsByEqFilter({ cloudId });
+    }
+    async renameFile(id, oldName, newName) {
+        const filename = `${oldName.replace(/[^a-zA-Z0-9_]/g, '_')}.js`;
+        if (filename) {
+            const filePath = path.join(this.codeDirectory, filename);
+            const newFilename = `${newName.replace(/[^a-zA-Z0-9_]/g, '_')}.js`;
+            const newFilePath = path.join(this.codeDirectory, newFilename);
+            await fsPromises.rename(filePath, newFilePath);
+            // 文件监听器会自动触发扫描
+        }
+    }
+    async deleteInstance(id) {
+        const t = await this.storage.getItem(id);
+        if (!t) {
+            return;
+        }
+        const filename = this.instanceMap.get(t.name);
+        if (filename) {
+            const filePath = path.join(this.codeDirectory, filename);
+            await fsPromises.unlink(filePath);
+            // 文件监听器会自动触发扫描
+        }
+        await this.storage.removeItem(id);
+        // todo transactional?
+    }
+    // Cloud sharing methods
+    checkCloudService() {
+        if (!this.cloudService) {
+            throw new Error('Cloud service is not initialized');
+        }
+        return this.cloudService;
+    }
+    async shareToCloud(id) {
+        const service = this.checkCloudService();
+        const t = await this.getInstanceT(id);
+        if (!t)
+            throw new Error(`${this.type} not found`);
+        const instance = await service.upload(t);
+        if (instance) {
+            instance.cloudId = instance.id;
+            instance.id = t.id;
+            await this.storage.setItem(id, instance);
+        }
+        return instance?.id;
+    }
+    async listFromCloud(filter, query, searchOption) {
+        const service = this.checkCloudService();
+        const result = await service.list(filter, query, searchOption);
+        const downloaded = await this.storage.listItemsByInQuery([{ field: 'cloudId', values: result.items.map(item => item.id) }]);
+        result.items.forEach(item => {
+            const local = downloaded.find(d => d.cloudId === item.id);
+            if (local) {
+                item.downloaded = local.id;
+            }
+        });
+        return result;
+    }
+    async getFromCloud(shareId) {
+        const service = this.checkCloudService();
+        return await service.download(shareId);
+    }
+    async shareP2P(name) {
+        const service = this.checkCloudService();
+        const serialized = await this.serializeInstance(name);
+        if (!serialized)
+            throw new Error(`${this.type} not found`);
+        return service.initializeTransfer(serialized);
+    }
+    async dispose() {
+        if (this.watcher) {
+            await this.watcher.close();
+            this.watcher = null;
+        }
+    }
+}
+export class NonExecutableShareableManager {
+    constructor(type, storage) {
+        this.type = type;
+        this.storage = storage;
+    }
+    setCloudService(cloudService) {
+        this.cloudService = cloudService;
+    }
+    async addInstance(instance) {
+        return await this.storage.setItem(instance.id, instance);
+    }
+    async deleteInstance(key) {
+        await this.storage.removeItem(key);
+    }
+    async listInstances() {
+        return await this.storage.listItems();
+    }
+    async getInstance(key) {
+        return await this.storage.getItem(key);
+    }
+    async upsertInstance(t) {
+        const { name } = t;
+        if (!name) {
+            throw new Error('name is required');
+        }
+        return this.addInstance(t);
+    }
+    async getInstanceByCloudId(cloudId) {
+        return this.storage.listItemsByEqFilter({ cloudId });
+    }
+    checkCloudService() {
+        if (!this.cloudService) {
+            throw new Error('Cloud service is not initialized');
+        }
+        return this.cloudService;
+    }
+    async shareToCloud(key) {
+        const service = this.checkCloudService();
+        const item = await this.storage.getItem(key);
+        if (!item)
+            throw new Error(`${this.type} not found`);
+        const instance = await service.upload(item);
+        return instance?.id;
+    }
+    async shareP2P(key) {
+        const service = this.checkCloudService();
+        const item = await this.storage.getItem(key);
+        if (!item)
+            throw new Error(`${this.type} not found`);
+        return service.initializeTransfer(item);
+    }
+    async getFromCloud(shareId) {
+        const service = this.checkCloudService();
+        return await service.download(shareId);
+    }
+    async listFromCloud(filter, query, searchOption) {
+        const service = this.checkCloudService();
+        return await service.list(filter, query, searchOption);
+    }
+    async deleteFromCloud(key) {
+        const service = this.checkCloudService();
+        await service.delete(key);
+    }
+}

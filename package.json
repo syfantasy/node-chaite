@@ -33,7 +33,6 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc --outDir dist --declaration",
     "prepublishOnly": "tsc --outDir dist --declaration",
-    "prepare": "tsc --outDir dist --declaration",
     "build:web": "pnpm --prefix web build",
     "postinstall": "node -e \"try { require('sqlite3') } catch { require('child_process').execSync('npm rebuild sqlite3', { stdio: 'inherit' }) }\"",
     "check": "tsc --noEmit"

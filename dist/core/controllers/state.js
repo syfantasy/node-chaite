@@ -1,0 +1,62 @@
+import express from 'express';
+import { Chaite, ChaiteResponse } from '../index.js';
+const router = express.Router();
+function paginate(items, req) {
+    const page = Math.max(1, parseInt(req.query['page']) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query['pageSize']) || 20));
+    return { items: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize };
+}
+async function wrap(res, fn) {
+    try {
+        const data = await fn();
+        if (!res.headersSent)
+            res.status(200).json(ChaiteResponse.ok(data));
+    }
+    catch (e) {
+        if (!res.headersSent) {
+            Chaite.getInstance().getLogger().error(e);
+            res.status(500).json(ChaiteResponse.fail(null, e instanceof Error ? e.message : 'Unknown error'));
+        }
+    }
+}
+/** GET /api/state/list?page=1&pageSize=20 */
+router.get('/list', (req, res) => {
+    wrap(res, async () => {
+        const items = await Chaite.getInstance().getUserStateStorage().listItems();
+        return paginate(items, req);
+    });
+});
+/** GET /api/state/:userId */
+router.get('/:userId', (req, res) => {
+    wrap(res, async () => {
+        const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+        const state = await Chaite.getInstance().getUserStateStorage().getItem(userId);
+        if (!state) {
+            res.status(404).json(ChaiteResponse.fail(null, 'User state not found'));
+            return null;
+        }
+        return state;
+    });
+});
+/** DELETE /api/state/:userId */
+router.delete('/:userId', (req, res) => {
+    wrap(res, async () => {
+        const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+        await Chaite.getInstance().getUserStateStorage().removeItem(userId);
+        return { deleted: true };
+    });
+});
+/**
+ * GET /api/state/history/:conversationId?messageId=xxx
+ * Fixed: req.params.messageId was undefined (param not in route).
+ * messageId is now an optional query parameter.
+ */
+router.get('/history/:conversationId', (req, res) => {
+    wrap(res, async () => {
+        const conversationId = Array.isArray(req.params.conversationId) ? req.params.conversationId[0] : req.params.conversationId;
+        const messageId = req.query['messageId'];
+        const history = await Chaite.getInstance().getHistoryManager().getHistory(messageId, conversationId);
+        return history;
+    });
+});
+export default router;

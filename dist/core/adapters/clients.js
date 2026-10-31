@@ -1,0 +1,753 @@
+import { BaseClientOptions, ChaiteContext, DefaultLogger, MultipleKeyStrategyChoice, } from '../types/index.js';
+import { McpToolProxy } from '../agent/tool-executors/proxy.js';
+import { McpToolExecutor } from '../agent/tool-executors/mcp.js';
+import { createMcpCapabilityTools } from '../agent/tools/mcp-capability-tools.js';
+import { createMcpManagementTools } from '../agent/tools/mcp-management-tools.js';
+import { createSelfTools } from '../agent/tools/self-tools.js';
+import DefaultHistoryManager from '../utils/history.js';
+import { asyncLocalStorage, extractClassName, getKey } from '../utils/index.js';
+import { SendMessageOption } from '../types/index.js';
+import { ProcessorsManager } from '../share/index.js';
+import * as crypto from 'node:crypto';
+export class AbstractClient {
+    constructor(options, context) {
+        options = BaseClientOptions.create(options);
+        this.features = options.features || [];
+        this.tools = options.tools || [];
+        this.baseUrl = options.baseUrl || '';
+        this.apiKey = options.apiKey || '';
+        this.multipleKeyStrategy = options.multipleKeyStrategy || MultipleKeyStrategyChoice.RANDOM;
+        this.logger = options.logger || DefaultLogger;
+        this.historyManager = options.historyManager || DefaultHistoryManager;
+        this.context = new ChaiteContext(this.logger);
+        this.options = options;
+        if (context) {
+            this.context = context;
+            this.context.setClient(this);
+        }
+    }
+    async fullfillProcessors(preIds, postIds) {
+        const processorsManager = await ProcessorsManager.getInstance();
+        if (!this.preProcessors) {
+            this.preProcessors = [];
+        }
+        if (!this.postProcessors) {
+            this.postProcessors = [];
+        }
+        if (processorsManager) {
+            if (preIds !== undefined) {
+                const preProcessors = [];
+                for (const preProcessorId of preIds || []) {
+                    const existProcessor = this.preProcessors.find(p => p.id === preProcessorId);
+                    if (!existProcessor) {
+                        const preProcessor = await processorsManager.getInstanceT(preProcessorId);
+                        if (preProcessor && preProcessor.type === 'pre') {
+                            const processorName = extractClassName(preProcessor.code) || preProcessor.name;
+                            const p = await processorsManager.getInstance(processorName);
+                            if (p) {
+                                preProcessors.push(p);
+                            }
+                        }
+                        else {
+                            this.logger.warn(`preProcessor ${preProcessorId} not found`);
+                        }
+                    }
+                    else {
+                        preProcessors.push(existProcessor);
+                    }
+                }
+                this.preProcessors = preProcessors;
+            }
+            else {
+                this.preProcessors = this.options.getPreProcessors() || [];
+            }
+            if (postIds !== undefined) {
+                const postProcessors = [];
+                for (const postProcessorId of postIds || []) {
+                    const existProcessor = this.postProcessors.find(p => p.id === postProcessorId);
+                    if (!existProcessor) {
+                        const postProcessor = await processorsManager.getInstanceT(postProcessorId);
+                        if (postProcessor && postProcessor.type === 'post') {
+                            const postProcessorName = extractClassName(postProcessor.code) || postProcessor.name;
+                            const p = await processorsManager.getInstance(postProcessorName);
+                            if (p) {
+                                postProcessors.push(p);
+                            }
+                        }
+                        else {
+                            this.logger.warn(`preProcessor ${postProcessorId} not found`);
+                        }
+                    }
+                    else {
+                        postProcessors.push(existProcessor);
+                    }
+                }
+                this.postProcessors = postProcessors;
+            }
+            else {
+                this.postProcessors = this.options.getPostProcessors() || [];
+            }
+        }
+        return {
+            pre: this.preProcessors,
+            post: this.postProcessors,
+        };
+    }
+    async fullfillTools(toolGroupIds) {
+        const resolvedTools = [];
+        const pushUnique = (tool) => {
+            if (tool && !resolvedTools.find(t => t.name === tool.name)) {
+                resolvedTools.push(tool);
+            }
+        };
+        (this.options.tools || []).forEach(pushUnique);
+        const toolsGroupManager = this.context.chaite.getToolsGroupManager();
+        const toolManager = this.context.chaite.getToolsManager();
+        const groupIds = toolGroupIds ? [...toolGroupIds] : [];
+        const mountMode = this.context.getOptions()?.toolMountMode || 'basic';
+        if (mountMode === 'basic' && groupIds.length === 0) {
+            groupIds.push('default_local');
+        }
+        const builtinCategories = new Set(this.context.getOptions()?.builtinToolCategories ?? []);
+        // These compact MCP discovery tools are only mounted when MCP servers are configured or active.
+        const presetOptions = this.context.getOptions();
+        const hasPresetMcp = Array.isArray(presetOptions?.mcpServerIds) && presetOptions.mcpServerIds.length > 0;
+        let hasActiveMcp = hasPresetMcp;
+        if (!hasActiveMcp) {
+            try {
+                const mcpMgr = this.context.chaite?.getMcpServerManager?.();
+                if (mcpMgr) {
+                    const list = await mcpMgr.listEnabled();
+                    if (Array.isArray(list) && list.length > 0)
+                        hasActiveMcp = true;
+                }
+            }
+            catch { }
+        }
+        if (hasActiveMcp && builtinCategories.has('mcp-discovery') && this.context.chaite?.getMcpCapabilityManager?.()) {
+            for (const tool of createMcpCapabilityTools())
+                pushUnique(tool);
+        }
+        // Configuration-changing tools are never exposed in normal group chats.
+        // The host application decides who is the owner through this guard.
+        if (this.context.chaite?.canManageMcp?.(this.context)) {
+            if (builtinCategories.has('mcp-management')) {
+                for (const tool of createMcpManagementTools())
+                    pushUnique(tool);
+            }
+            if (builtinCategories.has('skill-management')) {
+                for (const tool of createSelfTools())
+                    pushUnique(tool);
+            }
+        }
+        // Memory tools: mounted when preset enables memory
+        if (this.context.getOptions()?.enableMemory && this.context.chaite?.getMemoryManager?.()) {
+            const memoryTools = this.context.chaite.getMemoryManager().getActiveProvider().getTools();
+            for (const tool of memoryTools)
+                pushUnique(tool);
+        }
+        if (groupIds.includes('default_local')) {
+            const toolDTOS = await toolManager.listInstances();
+            for (const toolDTO of toolDTOS) {
+                const toolName = extractClassName(toolDTO.code) || toolDTO.name;
+                const toolC = await toolManager.getInstance(toolName);
+                pushUnique(toolC);
+            }
+        }
+        for (const toolGroupId of groupIds.filter(id => id !== 'default_local')) {
+            const toolGroup = await toolsGroupManager.getInstance(toolGroupId);
+            if (!toolGroup) {
+                this.logger.warn(`tool group ${toolGroupId} not found`);
+                continue;
+            }
+            const toolIds = toolGroup.toolIds || [];
+            for (const toolId of toolIds) {
+                const tool = await toolManager.getInstanceT(toolId);
+                if (!tool) {
+                    this.logger.warn(`tool ${toolId} not found`);
+                    continue;
+                }
+                const toolName = extractClassName(tool.code) || tool.name;
+                const toolC = await toolManager.getInstance(toolName);
+                if (!toolC) {
+                    this.logger.warn(`tool ${toolId} can not be instantiated`);
+                    continue;
+                }
+                pushUnique(toolC);
+            }
+        }
+        // Append MCP / remote tools discovered via toolExecutor.
+        // These are wrapped as McpToolProxy so they look like normal Tool objects
+        // to the model and to the execution loop — no special-casing needed.
+        const toolExecutor = this.options.toolExecutor;
+        if (toolExecutor?.listAvailableTools) {
+            const execCtxBuilder = () => ({
+                runId: crypto.randomUUID(),
+                userId: this.context.getEvent()?.sender?.user_id?.toString() ?? 'unknown',
+                groupId: this.context.getEvent()?.group?.group_id?.toString(),
+                skillName: this.context.skillName,
+                jobId: this.context.jobId,
+                planId: this.context.planId,
+                timeoutMs: this.options.toolTimeoutMs,
+            });
+            try {
+                const remoteSchemas = await toolExecutor.listAvailableTools(execCtxBuilder());
+                for (const schema of remoteSchemas) {
+                    // Local tool takes priority if same name exists
+                    if (!resolvedTools.find(t => t.function.name === schema.name)) {
+                        resolvedTools.push(new McpToolProxy(schema, toolExecutor, execCtxBuilder));
+                    }
+                }
+            }
+            catch (err) {
+                this.logger.warn(`[fullfillTools] Failed to fetch remote tools: ${err.message}`);
+            }
+        }
+        // Only the small subset selected through MCP discovery is exposed. We
+        // reconnect here so the actual execution uses the server's live tool view.
+        const capabilityManager = this.context.chaite?.getMcpCapabilityManager?.();
+        const mcpManager = this.context.chaite?.getMcpServerManager?.();
+        // Load statically mounted MCP servers configured in preset (mcpServerIds)
+        const mcpServerIds = this.options.mcpServerIds || [];
+        if (mcpServerIds.length > 0 && mcpManager) {
+            for (const serverId of mcpServerIds) {
+                const server = await mcpManager.get(serverId);
+                if (!server || !server.enabled)
+                    continue;
+                const executor = new McpToolExecutor(server);
+                const execCtxBuilder = () => ({
+                    runId: crypto.randomUUID(),
+                    userId: this.context.getEvent()?.sender?.user_id?.toString() ?? 'unknown',
+                    groupId: this.context.getEvent()?.group?.group_id?.toString(),
+                    skillName: this.context.skillName,
+                    jobId: this.context.jobId,
+                    planId: this.context.planId,
+                    timeoutMs: server.timeoutMs ?? this.options.toolTimeoutMs,
+                });
+                try {
+                    const liveSchemas = await executor.listAvailableTools(execCtxBuilder());
+                    for (const schema of liveSchemas) {
+                        if (!resolvedTools.find(tool => tool.function.name === schema.name)) {
+                            resolvedTools.push(new McpToolProxy(schema, executor, execCtxBuilder));
+                        }
+                    }
+                }
+                catch (error) {
+                    this.logger.warn(`[fullfillTools] Static MCP server "${server.name}" unavailable: ${error.message}`);
+                }
+            }
+        }
+        if (capabilityManager) {
+            for (const active of capabilityManager.getActive(this.context)) {
+                const server = active.server;
+                const executor = new McpToolExecutor(server);
+                const execCtxBuilder = () => ({
+                    runId: crypto.randomUUID(),
+                    userId: this.context.getEvent()?.sender?.user_id?.toString() ?? 'unknown',
+                    groupId: this.context.getEvent()?.group?.group_id?.toString(),
+                    skillName: this.context.skillName,
+                    jobId: this.context.jobId,
+                    planId: this.context.planId,
+                    timeoutMs: server.timeoutMs ?? this.options.toolTimeoutMs,
+                });
+                try {
+                    const liveSchemas = await executor.listAvailableTools(execCtxBuilder());
+                    const schemas = liveSchemas.filter(schema => active.toolNames.includes(schema.name));
+                    await mcpManager?.update(server.id, { tools: liveSchemas, toolsDiscoveredAt: Date.now() });
+                    for (const schema of schemas) {
+                        // A local tool, or an earlier MCP server, wins on duplicate names.
+                        if (!resolvedTools.find(tool => tool.function.name === schema.name)) {
+                            resolvedTools.push(new McpToolProxy(schema, executor, execCtxBuilder));
+                        }
+                    }
+                }
+                catch (error) {
+                    this.logger.warn(`[fullfillTools] MCP server "${server.name}" unavailable: ${error.message}`);
+                }
+            }
+        }
+        // Append dynamically activated skill tools (allowedTools & mcpTools)
+        const activeSkillName = this.context.skillName || this.options?.skillName;
+        if (activeSkillName) {
+            const skillRegistry = this.context.chaite?.getSkillRegistry?.();
+            const activeSkill = skillRegistry?.getSkillByName(activeSkillName);
+            if (activeSkill) {
+                // 1. Local allowed tools
+                if (Array.isArray(activeSkill.frontmatter.allowedTools)) {
+                    for (const toolName of activeSkill.frontmatter.allowedTools) {
+                        try {
+                            const tool = await toolManager.getInstance(toolName);
+                            if (tool)
+                                pushUnique(tool);
+                        }
+                        catch (err) {
+                            this.logger.warn(`[fullfillTools] Skill "${activeSkillName}" failed to load allowedTool "${toolName}": ${err.message}`);
+                        }
+                    }
+                }
+                // 2. Skill-specific MCP server / tools
+                const mcpServerName = activeSkill.frontmatter.mcpServer;
+                const mcpToolNames = activeSkill.frontmatter.mcpTools;
+                if (mcpServerName && this.context.chaite?.getMcpServerManager) {
+                    try {
+                        const mcpMgr = this.context.chaite.getMcpServerManager();
+                        const server = (await mcpMgr.listEnabled()).find((s) => s.name === mcpServerName || s.id === mcpServerName);
+                        if (server) {
+                            const executor = new McpToolExecutor(server);
+                            const execCtxBuilder = () => ({
+                                runId: crypto.randomUUID(),
+                                userId: this.context.getEvent()?.sender?.user_id?.toString() ?? 'unknown',
+                                groupId: this.context.getEvent()?.group?.group_id?.toString(),
+                                skillName: activeSkillName,
+                                jobId: this.context.jobId,
+                                planId: this.context.planId,
+                                timeoutMs: server.timeoutMs ?? this.options.toolTimeoutMs,
+                            });
+                            const liveSchemas = await executor.listAvailableTools(execCtxBuilder());
+                            const schemas = mcpToolNames && mcpToolNames.length > 0
+                                ? liveSchemas.filter(s => mcpToolNames.includes(s.name))
+                                : liveSchemas;
+                            for (const schema of schemas) {
+                                if (!resolvedTools.find(t => t.function.name === schema.name)) {
+                                    resolvedTools.push(new McpToolProxy(schema, executor, execCtxBuilder));
+                                }
+                            }
+                        }
+                    }
+                    catch (err) {
+                        this.logger.warn(`[fullfillTools] Failed to load MCP tools for skill "${activeSkillName}": ${err.message}`);
+                    }
+                }
+            }
+        }
+        this.tools = resolvedTools;
+        return this.tools;
+    }
+    sendMessage(message, options) {
+        const debug = this.context.chaite?.getGlobalConfig()?.getDebug();
+        options = SendMessageOption.create(options);
+        const logicFn = async () => {
+            this.context.setOptions(options);
+            await this.options.ready();
+            this.preProcessors = this.options.getPreProcessors();
+            this.postProcessors = this.options.getPostProcessors();
+            const apiKey = await getKey(this.apiKey, this.multipleKeyStrategy);
+            let histories = options.disableHistoryRead ? [] : await this.historyManager.getHistory(options.parentMessageId, options.conversationId);
+            this.context.setHistoryMessages(histories);
+            if (!options.conversationId) {
+                options.conversationId = crypto.randomUUID();
+            }
+            let thisRequestMsg;
+            await this.fullfillProcessors(options.preProcessorIds, options.postProcessorIds);
+            if (debug) {
+                this.logger.debug(`using ${this.preProcessors.length} preProcessors: [${this.preProcessors.map(p => p.name).join(', ')}]`);
+                this.logger.debug(`using ${this.postProcessors.length} postProcessors: [${this.postProcessors.map(p => p.name).join(', ')}]`);
+            }
+            await this.fullfillTools(options.toolGroupId);
+            if (debug) {
+                this.logger.debug(`using ${this.tools.length} tools: [${this.tools.map(t => t.name).join(', ')}]`);
+            }
+            if (message) {
+                // 前处理器
+                for (const preProcessors of this.preProcessors || []) {
+                    const processorStartedAt = Date.now();
+                    try {
+                        if (debug) {
+                            this.logger.debug(`into preProcessor ${preProcessors.name}}`);
+                        }
+                        message = await preProcessors.process(message);
+                        this.context.chaite.getOperationLogManager()?.addSync({
+                            type: 'processor.call', level: 'info', summary: `前处理器：${preProcessors.name}`,
+                            processorName: preProcessors.name, durationMs: Date.now() - processorStartedAt,
+                            ...this.getUsageLogContext(options),
+                        });
+                    }
+                    catch (err) {
+                        if (err instanceof Error) {
+                            this.logger.warn(`error happened with preProcessor ${preProcessors.name}: ${err.message}`);
+                            this.context.chaite.getOperationLogManager()?.addSync({
+                                type: 'processor.error', level: 'error', summary: `前处理器失败：${preProcessors.name}`,
+                                detail: err.message, processorName: preProcessors.name,
+                                durationMs: Date.now() - processorStartedAt,
+                                ...this.getUsageLogContext(options),
+                            });
+                        }
+                    }
+                }
+                // 用户消息不会分裂
+                const userMsgId = crypto.randomUUID();
+                thisRequestMsg = {
+                    id: userMsgId,
+                    parentId: options.parentMessageId,
+                    ...message,
+                };
+                if (!this.isEffectivelyEmptyMessage(thisRequestMsg)) {
+                    histories.push(thisRequestMsg);
+                }
+                else if (debug) {
+                    this.logger.debug('skip sending empty user message to model');
+                }
+            }
+            // 上下文置顶：允许调用方把「本轮注入的上下文」挪到对话最前面（稳定头部利于前缀缓存），
+            // 历史非空时通常合并进历史首条 user 消息，避免出现连续的 user 消息。
+            if (typeof options.prependContext === 'function') {
+                try {
+                    const injected = options.prependContext(histories, thisRequestMsg);
+                    if (Array.isArray(injected) && injected !== histories) {
+                        histories = injected;
+                        this.context.setHistoryMessages(histories);
+                    }
+                }
+                catch (err) {
+                    this.logger.warn(`prependContext failed: ${err.message}`);
+                }
+            }
+            const _llmCallStart = Date.now();
+            let modelResponse;
+            try {
+                modelResponse = await this._sendMessage(histories, apiKey, options);
+            }
+            catch (error) {
+                throw error;
+            }
+            const _llmCallDuration = Date.now() - _llmCallStart;
+            // 后处理器
+            if (modelResponse.role === 'assistant') {
+                let tempResponse = {
+                    content: modelResponse.content,
+                    role: 'assistant',
+                };
+                for (const postProcessor of this.postProcessors || []) {
+                    const processorStartedAt = Date.now();
+                    try {
+                        if (debug) {
+                            this.logger.debug(`into postProcessor ${postProcessor.name}}`);
+                        }
+                        const posted = await postProcessor.process(tempResponse);
+                        if (posted) {
+                            tempResponse = posted;
+                        }
+                        this.context.chaite.getOperationLogManager()?.addSync({
+                            type: 'processor.call', level: 'info', summary: `后处理器：${postProcessor.name}`,
+                            processorName: postProcessor.name, durationMs: Date.now() - processorStartedAt,
+                            ...this.getUsageLogContext(options),
+                        });
+                    }
+                    catch (error) {
+                        if (error instanceof Error) {
+                            this.logger.warn(`error happened with postProcessor ${postProcessor.name}: ${error.message}`);
+                            this.context.chaite.getOperationLogManager()?.addSync({
+                                type: 'processor.error', level: 'error', summary: `后处理器失败：${postProcessor.name}`,
+                                detail: error.message, processorName: postProcessor.name,
+                                durationMs: Date.now() - processorStartedAt,
+                                ...this.getUsageLogContext(options),
+                            });
+                        }
+                    }
+                }
+                modelResponse.content = tempResponse.content;
+            }
+            const toolCallLimitConfig = this.getEffectiveToolCallLimit(options);
+            if (modelResponse.toolCalls?.length) {
+                const limitReason = this.updateToolCallTracking(options, modelResponse.toolCalls, toolCallLimitConfig);
+                if (limitReason) {
+                    this.logger.warn(limitReason);
+                    modelResponse.toolCalls = undefined;
+                    if (this.isEffectivelyEmptyMessage(modelResponse)) {
+                        modelResponse.content = [{
+                                type: 'text',
+                                text: limitReason,
+                            }];
+                    }
+                    this.resetToolCallTracking(options);
+                }
+            }
+            else {
+                this.resetToolCallTracking(options);
+            }
+            // save user request
+            if (thisRequestMsg && this.shouldPersistHistory(thisRequestMsg)) {
+                // 持久化视图：允许调用方只保存精简版（如剥离本轮临时注入的群聊上下文快照），
+                // 实际发给模型的完整内容不受影响。
+                // 若裁剪后变成空消息（例如本轮只剩注入块、用户没打字），回退保存完整内容，
+                // 保证 history 的 parentId 链不断。
+                let messageToPersist = thisRequestMsg;
+                if (typeof options.persistMessage === 'function') {
+                    const slim = options.persistMessage(thisRequestMsg);
+                    if (slim && this.shouldPersistHistory(slim)) {
+                        messageToPersist = slim;
+                    }
+                }
+                await this.historyManager.saveHistory(messageToPersist, options.conversationId);
+                options.parentMessageId = thisRequestMsg.id;
+                modelResponse.parentId = thisRequestMsg.id;
+            }
+            else if (thisRequestMsg && debug) {
+                this.logger.debug('skip saving empty user message to history');
+            }
+            // save model response
+            // this.logger.info(JSON.stringify(rspToSave))
+            if (this.shouldPersistHistory(modelResponse)) {
+                await this.historyManager.saveHistory(modelResponse, options.conversationId);
+            }
+            else if (debug) {
+                this.logger.debug('skip saving empty assistant message to history');
+            }
+            options.parentMessageId = modelResponse.id;
+            if (modelResponse.toolCalls && modelResponse.toolCalls?.length > 0) {
+                if (options.onMessageWithToolCall) {
+                    for (const messageContent of modelResponse.content) {
+                        try {
+                            await options.onMessageWithToolCall(messageContent);
+                        }
+                        catch (err) {
+                            if (err instanceof Error) {
+                                this.logger.warn(err);
+                            }
+                        }
+                    }
+                }
+                const toolCallResults = [];
+                for (const r of modelResponse.toolCalls) {
+                    const fcName = r.function.name;
+                    const fcArgs = r.function.arguments;
+                    this.logger.info(`run tool ${fcName} with args ${JSON.stringify(fcArgs)}`);
+                    // Unified execution: local Tool.run() for local tools,
+                    // McpToolProxy.run() for remote tools — routing is transparent.
+                    const tool = this.tools.find(t => t.function.name === fcName);
+                    let toolResult;
+                    const _toolCallStart = Date.now();
+                    const _toolUserId = (this.context.getEvent?.()?.sender?.user_id ?? this.context.jobId ?? undefined)?.toString();
+                    if (tool) {
+                        try {
+                            toolResult = await tool.run(fcArgs, this.context);
+                            if (typeof toolResult !== 'string') {
+                                toolResult = JSON.stringify(toolResult);
+                            }
+                            // ── Operation log: tool call success ──────────────────────────────
+                            asyncLocalStorage.getStore()?.chaite?.getOperationLogManager?.()?.addSync({
+                                type: 'tool.call',
+                                level: 'info',
+                                summary: `Tool call: ${fcName}`,
+                                toolName: fcName,
+                                durationMs: Date.now() - _toolCallStart,
+                                userId: _toolUserId,
+                                conversationId: options.conversationId,
+                                skillName: this.context.skillName,
+                                jobId: this.context.jobId,
+                                planId: this.context.planId,
+                                groupId: this.context.getEvent?.()?.group?.group_id?.toString(),
+                                channelId: this.context.channelId,
+                                channelName: this.context.channelName,
+                                model: options.model,
+                                presetId: this.context.presetId,
+                                presetName: this.context.presetName,
+                            });
+                        }
+                        catch (err) {
+                            toolResult = err.message;
+                            // ── Operation log: tool call error ────────────────────────────────
+                            asyncLocalStorage.getStore()?.chaite?.getOperationLogManager?.()?.addSync({
+                                type: 'tool.error',
+                                level: 'error',
+                                summary: `Tool error: ${fcName}`,
+                                toolName: fcName,
+                                detail: toolResult,
+                                durationMs: Date.now() - _toolCallStart,
+                                userId: _toolUserId,
+                                conversationId: options.conversationId,
+                                skillName: this.context.skillName,
+                                jobId: this.context.jobId,
+                                planId: this.context.planId,
+                                groupId: this.context.getEvent?.()?.group?.group_id?.toString(),
+                                channelId: this.context.channelId,
+                                channelName: this.context.channelName,
+                                model: options.model,
+                                presetId: this.context.presetId,
+                                presetName: this.context.presetName,
+                            });
+                        }
+                    }
+                    else {
+                        toolResult = `ERROR: Tool "${fcName}" not found`;
+                        asyncLocalStorage.getStore()?.chaite?.getOperationLogManager?.()?.addSync({
+                            type: 'tool.error',
+                            level: 'error',
+                            summary: `Tool not found: ${fcName}`,
+                            toolName: fcName,
+                            detail: toolResult,
+                            userId: _toolUserId,
+                            conversationId: options.conversationId,
+                            groupId: this.context.getEvent?.()?.group?.group_id?.toString(),
+                            channelId: this.context.channelId,
+                            channelName: this.context.channelName,
+                            model: options.model,
+                            presetId: this.context.presetId,
+                            presetName: this.context.presetName,
+                        });
+                    }
+                    this.logger.info(`tool ${fcName} result ${toolResult}`);
+                    toolCallResults.push({
+                        tool_call_id: r.id,
+                        ...(r.providerCallId !== undefined ? { providerCallId: r.providerCallId } : {}),
+                        content: toolResult,
+                        type: 'tool',
+                        name: r.function.name,
+                    });
+                }
+                const tcMsgId = crypto.randomUUID();
+                const toolCallResultMessage = {
+                    role: 'tool',
+                    content: toolCallResults,
+                    id: tcMsgId,
+                    parentId: options.parentMessageId,
+                };
+                options.parentMessageId = tcMsgId;
+                await this.historyManager.saveHistory(toolCallResultMessage, options.conversationId);
+                // 把toolChoice恢复auto避免无限调用
+                options.toolChoice = {
+                    type: 'auto',
+                };
+                return await this.sendMessage(undefined, options);
+            }
+            if (options.disableHistorySave) {
+                // 由于工具调用逻辑依赖存储，选择在完成后删除会话而不是中途不存储。
+                await this.historyManager.deleteConversation(options.conversationId);
+            }
+            return {
+                id: modelResponse.id,
+                model: options.model,
+                contents: modelResponse.content,
+                usage: modelResponse.usage,
+                rawRequest: modelResponse?.rawRequest,
+                rawResponse: modelResponse?.rawResponse,
+            };
+        };
+        if (!asyncLocalStorage.getStore()) {
+            return asyncLocalStorage.run(this.context, async () => {
+                return logicFn();
+            });
+        }
+        else {
+            return logicFn();
+        }
+    }
+    shouldPersistHistory(message) {
+        if (!message) {
+            return false;
+        }
+        if (message.role === 'tool') {
+            return this.hasMeaningfulContent(message);
+        }
+        if (message.role === 'assistant' || message.role === 'user') {
+            return this.hasMeaningfulContent(message) || (message.toolCalls?.length ?? 0) > 0;
+        }
+        return true;
+    }
+    getUsageLogContext(options) {
+        const event = this.context.getEvent?.();
+        return {
+            userId: (event?.sender?.user_id ?? this.context.jobId ?? undefined)?.toString(),
+            groupId: event?.group?.group_id?.toString(),
+            conversationId: options.conversationId,
+            channelId: this.context.channelId,
+            channelName: this.context.channelName,
+            model: options.model,
+            presetId: this.context.presetId,
+            presetName: this.context.presetName,
+            skillName: this.context.skillName,
+            jobId: this.context.jobId,
+            planId: this.context.planId,
+        };
+    }
+    isEffectivelyEmptyMessage(message) {
+        if (!message) {
+            return true;
+        }
+        const hasContent = this.hasMeaningfulContent(message);
+        const hasToolCall = (message.toolCalls?.length ?? 0) > 0;
+        return !hasContent && !hasToolCall;
+    }
+    hasMeaningfulContent(message) {
+        if (!message || !Array.isArray(message.content) || message.content.length === 0) {
+            return false;
+        }
+        return message.content.some(part => this.isMessagePartMeaningful(part));
+    }
+    isMessagePartMeaningful(part) {
+        if (!part) {
+            return false;
+        }
+        switch (part.type) {
+            case 'text': {
+                const text = part.text;
+                return typeof text === 'string' && text.trim().length > 0;
+            }
+            case 'reasoning': {
+                const text = part.text;
+                return typeof text === 'string' && text.trim().length > 0;
+            }
+            case 'image':
+                return Boolean(part.image);
+            case 'audio':
+                return Boolean(part.data);
+            case 'tool':
+                return Boolean(part.content);
+            default:
+                return true;
+        }
+    }
+    setToolCallLimitConfig(config) {
+        this.toolCallLimitConfig = config;
+    }
+    getEffectiveToolCallLimit(options) {
+        if (!options.toolCallLimit && this.toolCallLimitConfig) {
+            options.toolCallLimit = { ...this.toolCallLimitConfig };
+        }
+        return options.toolCallLimit;
+    }
+    updateToolCallTracking(options, toolCalls, limitConfig) {
+        if (!limitConfig) {
+            return undefined;
+        }
+        const consecutiveTotal = (options._consecutiveToolCallCount ?? 0) + 1;
+        options._consecutiveToolCallCount = consecutiveTotal;
+        const signature = this.buildToolCallSignature(toolCalls);
+        if (options._lastToolCallSignature === signature) {
+            options._consecutiveIdenticalToolCallCount = (options._consecutiveIdenticalToolCallCount ?? 0) + 1;
+        }
+        else {
+            options._lastToolCallSignature = signature;
+            options._consecutiveIdenticalToolCallCount = 1;
+        }
+        if (limitConfig.maxConsecutiveCalls && limitConfig.maxConsecutiveCalls > 0 && consecutiveTotal > limitConfig.maxConsecutiveCalls) {
+            return 'Maximum consecutive tool call limit reached, stop invoking tools.';
+        }
+        const identicalCount = options._consecutiveIdenticalToolCallCount ?? 0;
+        if (limitConfig.maxConsecutiveIdenticalCalls && limitConfig.maxConsecutiveIdenticalCalls > 0 && identicalCount > limitConfig.maxConsecutiveIdenticalCalls) {
+            return 'Maximum identical tool call limit reached, stop invoking tools.';
+        }
+        return undefined;
+    }
+    resetToolCallTracking(options) {
+        options._consecutiveToolCallCount = 0;
+        options._consecutiveIdenticalToolCallCount = 0;
+        options._lastToolCallSignature = undefined;
+    }
+    buildToolCallSignature(toolCalls) {
+        return JSON.stringify(toolCalls.map(tc => ({
+            name: tc.function?.name,
+            arguments: tc.function?.arguments,
+        })));
+    }
+    _sendMessage(_histories, _apiKey, _options) {
+        throw new Error('Abstract class not implemented');
+    }
+    async sendMessageWithHistory(history, options) {
+        const apiKey = await getKey(this.apiKey, this.multipleKeyStrategy || MultipleKeyStrategyChoice.RANDOM);
+        return this._sendMessage(history, apiKey, SendMessageOption.create(options));
+    }
+    getEmbedding(_text, _options) {
+        throw new Error('Method not implemented.');
+    }
+}
