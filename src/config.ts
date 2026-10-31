@@ -34,7 +34,27 @@ export function resolveRootDataDir(): string {
 }
 
 function resolveConfigPath(): string {
-  return path.join(resolveRootDataDir(), 'config.json')
+  const dataConfig = path.join(resolveRootDataDir(), 'config.json')
+  if (fs.existsSync(dataConfig)) {
+    return dataConfig
+  }
+  // 向后兼容历史独立部署布局：若 data/config.json 尚不存在，但包根或 cwd 下有 config.json，则自动迁移过来
+  const candidateDirs = [
+    path.resolve(__dirname, '..'),
+    process.cwd(),
+  ]
+  for (const dir of candidateDirs) {
+    const legacyPath = path.join(dir, 'config.json')
+    if (fs.existsSync(legacyPath) && legacyPath !== dataConfig) {
+      try {
+        fs.mkdirSync(path.dirname(dataConfig), { recursive: true })
+        fs.copyFileSync(legacyPath, dataConfig)
+        console.log(`[Config] 自动从历史路径迁移 config.json: ${legacyPath} -> ${dataConfig}`)
+        return dataConfig
+      } catch {}
+    }
+  }
+  return dataConfig
 }
 
 export interface AppConfig {
