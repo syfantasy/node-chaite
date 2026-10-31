@@ -228,6 +228,7 @@
       <li class="nav-item"><a href="#media-ref" class="nav-link">5. 多媒体 Ref 体系规范</a></li>
       <li class="nav-item"><a href="#renderer-service" class="nav-link">6. 服务总线与原生渲染</a></li>
       <li class="nav-item"><a href="#storage-advanced" class="nav-link">7. 存储、工具与时限管理</a></li>
+      <li class="nav-item"><a href="#memory-tools-config" class="nav-link">8. 认知记忆与工具配置</a></li>
     </ul>
   </aside>
 
@@ -734,8 +735,57 @@ await ctx.storage.delete('user_level_' + e.userId)</code></pre>
             <td>解除群聊的黑名单限制</td>
             <td>管理员 (Master)</td>
           </tr>
+          <tr>
+            <td><code>#chaite更新</code></td>
+            <td>一键从 Git 拉取最新代码、自动构建前端后端并优雅安全自重启生效</td>
+            <td>管理员 (Master)</td>
+          </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- 8. 认知记忆与工具配置 (双轨记忆、作用域隔离、工具配置文件持久化与动态表单视图) -->
+    <h2 id="memory-tools-config">8. 认知记忆与工具配置</h2>
+    <div class="card">
+      <h3>认知记忆系统（Memory & Cognitive Architecture）</h3>
+      <p>Chaite 采用「短期会话流水 + 长期认知事实」的双轨记忆机制：短期上下文依靠双水位线滑动窗口维系当前会话；长期记忆由专属模块维护，提炼出不受时间截断影响的跨会话事实。</p>
+      
+      <h4>作用域隔离（Scope Isolation）</h4>
+      <ul>
+        <li><strong>群组记忆 (<code>group:&lt;groupId&gt;</code>)</strong>：全群成员共享，记录群规、共同约定、群友外号与群体决策，群间物理隔离绝不串群；</li>
+        <li><strong>用户私聊记忆 (<code>user:&lt;userId&gt;</code>)</strong>：单用户专属认知，记录用户的个人喜好、特征与个性化需求。</li>
+      </ul>
+
+      <h4>重要度打分与置换淘汰机制</h4>
+      <p>记忆支持 1~100 的重要度评分（90+ 为不可遗忘核心准则，60~89 为稳定事实，1~59 为临时认知）。当单会话记忆达到上限时，基于「重要度 × 访问活跃衰减」算法自动置换淘汰最低权重事实，防止上下文无限膨胀。</p>
+
+      <h4>内置自主认知工具（Cognitive Tools）</h4>
+      <pre><code class="language-javascript">// 智能体可在对话中自发调用认知工具（无需人工干预）
+remember({ content: "用户非常喜欢听周杰伦的经典老歌", importance: 80 })
+update_memory_importance({ id: 12, importance: 95 })
+get_memories({ scope: "user" })
+forget_memory({ id: 5 })</code></pre>
+    </div>
+
+    <div class="card">
+      <h3>工具专属配置与动态表单视图</h3>
+      <p>对于移植或扩展的自定义 Tool（如网易云点歌等），Chaite 提供了免编码的文件配置持久化与动态可视化表单：</p>
+      
+      <h4>配置文件映射与热同步</h4>
+      <ul>
+        <li><strong>独立路径解析</strong>：优先映射 <code>data/&lt;toolName&gt;/config.json</code>（如 <code>netease_music_tool</code>），降级映射 <code>data/tools_config/&lt;toolName&gt;.json</code>；</li>
+        <li><strong>双向热同步</strong>：通过 Web 控制台保存配置时，同步写入物理 JSON 文件并热更新 SQLite <code>tools</code> 表内配置项，无需重启。</li>
+      </ul>
+
+      <h4>动态表单与 JSON 源码双重视图</h4>
+      <p>在 Web 控制台「工具管理」点击【配置】即可打开配置面板：</p>
+      <ul>
+        <li><strong>📝 表单视图</strong>：智能类型推导，布尔值渲染为开关、数字为步进器，<code>cookie_str</code> / <code>token</code> 等敏感长文本自动渲染为折叠等宽编辑区，支持点击「➕ 添加配置项」动态增删属性；</li>
+        <li><strong>📄 源码视图</strong>：支持直接编辑原始 JSON 格式，提供实时语法校验与一键格式化，双视图无缝同步。</li>
+      </ul>
+
+      <h4>音频下发与抗风控实践</h4>
+      <p>针对 QQ NT 客户端对非官方 Bot 发送 Ark / XML 音乐卡片拦截（提示“发送者版本过低”），Chaite 的音频类工具采用原生语音条（<code>type: 'record'</code>，高音质 VIP 音频流直链）下发，彻底绕过版本拦截风控，群友点击即可直接收听。</p>
     </div>
   </main>
 
