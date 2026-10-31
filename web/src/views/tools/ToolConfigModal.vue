@@ -222,7 +222,8 @@ watch(() => props.show, (val) => {
     :show="show"
     preset="card"
     :title="`工具配置 · ${tool?.name || ''}`"
-    style="width: min(850px, calc(100vw - 32px))"
+    style="width: min(850px, calc(100vw - 32px)); max-height: 88vh; display: flex; flex-direction: column;"
+    :content-style="{ overflowY: 'auto', flex: 1, paddingRight: '6px' }"
     @update:show="emit('update:show', $event)"
   >
     <NSpin :show="loading">
@@ -373,30 +374,30 @@ watch(() => props.show, (val) => {
           style="font-family: monospace; font-size: 13px"
         />
       </div>
-
-      <!-- 弹窗底部操作栏 -->
-      <template #footer>
-        <NFlex justify="space-between" align="center" style="width: 100%">
-          <div>
-            <NButton
-              v-if="viewMode === 'json'"
-              secondary
-              size="small"
-              @click="formatJson"
-            >
-              格式化 JSON
-            </NButton>
-          </div>
-          <NFlex align="center">
-            <NButton @click="emit('update:show', false)">
-              取消
-            </NButton>
-            <NButton type="primary" :loading="saving" @click="handleSave">
-              保存配置
-            </NButton>
-          </NFlex>
-        </NFlex>
-      </template>
     </NSpin>
+
+    <!-- 弹窗底部操作栏（吸底常驻） -->
+    <template #action>
+      <NFlex justify="space-between" align="center" style="width: 100%">
+        <div>
+          <NButton
+            v-if="viewMode === 'json'"
+            secondary
+            size="small"
+            @click="formatJson"
+          >
+            格式化 JSON
+          </NButton>
+        </div>
+        <NFlex align="center">
+          <NButton @click="emit('update:show', false)">
+            取消
+          </NButton>
+          <NButton type="primary" :loading="saving" @click="handleSave">
+            保存配置
+          </NButton>
+        </NFlex>
+      </NFlex>
+    </template>
   </NModal>
 </template>
