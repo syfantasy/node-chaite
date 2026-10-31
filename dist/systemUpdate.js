@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exec as execCb } from 'node:child_process';
+import { exec as execCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 const exec = promisify(execCb);
 /** 依赖里可能出现的名字：宿主自己安装时可以叫 chaite，也可以直接引 scoped 名 */
@@ -237,4 +237,60 @@ export function isStandaloneDeployment(hostDir = process.cwd()) {
 }
 export async function runSystemUpdate(hostDir = process.cwd()) {
     return isStandaloneDeployment(hostDir) ? updateStandalone(hostDir) : updateDependency(hostDir);
+}
+/**
+ * 触发进程平滑重启：
+ * 1. 若宿主存在外部守护（PM2 / Systemd 等），直接 process.exit(0) 交由守护拉起；
+ * 2. 若无外部守护（如 nohup、终端后台运行），则在退出前主动 spawn 一个 detached 新进程，
+ *    确保无需任何外部守护也能自愈并拉起最新版本。
+ */
+export function restartProcess(hostDir = process.cwd(), delayMs = 1500) {
+    setTimeout(() => {
+        console.log('[System Update] 正在执行自动重启流程...');
+        const hasSupervisor = Boolean(process.env.pm_id !== undefined ||
+            process.env.PM2_HOME ||
+            process.env.INVOCATION_ID ||
+            process.env.SUPERVISOR_ENABLED);
+        if (hasSupervisor) {
+            console.log('[System Update] 检测到外部守护进程 (PM2 / Systemd)，退出由守护拉起...');
+            process.exit(0);
+            return;
+        }
+        try {
+            console.log('[System Update] 未检测到外部守护进程，正在主动派生新进程自拉起...');
+            const isStandalone = isStandaloneDeployment(hostDir);
+            const logFile = path.resolve(hostDir, 'bot.log');
+            const out = fs.openSync(logFile, 'a');
+            const err = fs.openSync(logFile, 'a');
+            let child;
+            if (isStandalone) {
+                const pm = fs.existsSync(path.resolve(hostDir, 'pnpm-lock.yaml')) ? 'pnpm' : 'npm';
+                child = spawn(pm, ['start'], {
+                    cwd: hostDir,
+                    detached: true,
+                    stdio: ['ignore', out, err],
+                    env: process.env,
+                });
+            }
+            else {
+                const [bin, ...rest] = process.argv;
+                child = spawn(bin, [...process.execArgv, ...rest], {
+                    cwd: hostDir,
+                    detached: true,
+                    stdio: ['ignore', out, err],
+                    env: process.env,
+                });
+            }
+            if (child) {
+                child.unref();
+                console.log(`[System Update] 新实例已后台拉起 (PID: ${child.pid})，当前进程即将退出释放端口...`);
+            }
+        }
+        catch (e) {
+            console.error('[System Update] 自动派生新进程失败:', e);
+        }
+        setTimeout(() => {
+            process.exit(0);
+        }, 400);
+    }, delayMs);
 }

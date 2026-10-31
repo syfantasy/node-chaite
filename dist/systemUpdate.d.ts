@@ -47,3 +47,10 @@ export interface SystemUpdateResult {
  */
 export declare function isStandaloneDeployment(hostDir?: string): boolean;
 export declare function runSystemUpdate(hostDir?: string): Promise<SystemUpdateResult>;
+/**
+ * 触发进程平滑重启：
+ * 1. 若宿主存在外部守护（PM2 / Systemd 等），直接 process.exit(0) 交由守护拉起；
+ * 2. 若无外部守护（如 nohup、终端后台运行），则在退出前主动 spawn 一个 detached 新进程，
+ *    确保无需任何外部守护也能自愈并拉起最新版本。
+ */
+export declare function restartProcess(hostDir?: string, delayMs?: number): void;

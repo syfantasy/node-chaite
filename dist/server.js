@@ -8,7 +8,7 @@ import { pluginManager } from './plugin/index.js';
 import { groupHistoryBuffer } from './context/groupHistoryBuffer.js';
 import { handleMessage } from './index.js';
 import { getStorageContext, initChaiteStorage } from './storage.js';
-import { runSystemUpdate } from './systemUpdate.js';
+import { runSystemUpdate, restartProcess } from './systemUpdate.js';
 const cwd = process.cwd();
 // 面板目录查找顺序：
 // 1. cwd 相对（本地开发 / 手动构建场景）
@@ -504,10 +504,7 @@ export function startWebServer(config) {
             try {
                 const result = await runSystemUpdate(process.cwd());
                 if (result.hasUpdate) {
-                    setTimeout(() => {
-                        console.log('[System Update] 更新流程已完成，正在重启进程...');
-                        process.exit(0);
-                    }, 1500);
+                    restartProcess(process.cwd(), 1500);
                 }
                 return res.status(200).json(ChaiteResponse.ok({
                     mode: result.mode,
