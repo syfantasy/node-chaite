@@ -78,6 +78,13 @@ const requestContents = computed(() => {
   return []
 })
 
+// 对话上下文区块：后端把本轮实际送出的对话（历史 + 本轮发言）渲染成一问一答的
+// <chat_history>，与群聊流水/花名册等注入块切开，日志按这个区块阅读更清晰。
+const chatHistoryText = computed(() => {
+  const text = reqPayload.value?.chatHistoryText
+  return typeof text === 'string' && text.trim() ? text : ''
+})
+
 const responseContents = computed(() => {
   const contents = respPayload.value?.contents
   if (Array.isArray(contents)) return contents
@@ -185,7 +192,17 @@ const foldedRawResponse = computed(() => {
         <!-- Tab 1: 请求报文 -->
         <NTabPane name="request" tab="请求内容">
           <div class="space-y-3">
-            <div style="font-weight: 600; font-size: 13px; color: #555; margin-bottom: 6px;">
+            <!-- 对话上下文：一问一答，与群聊流水/花名册等注入块切割 -->
+            <div v-if="chatHistoryText">
+              <div style="font-weight: 600; font-size: 13px; color: #555; margin-bottom: 6px;">
+                对话上下文：
+              </div>
+              <div class="p-3 rounded bg-gray-50 dark:bg-gray-800 border text-sm whitespace-pre-wrap leading-relaxed">
+                {{ chatHistoryText }}
+              </div>
+            </div>
+
+            <div v-if="!chatHistoryText" style="font-weight: 600; font-size: 13px; color: #555; margin-bottom: 6px;">
               用户输入与多模态数据：
             </div>
 
@@ -195,8 +212,8 @@ const foldedRawResponse = computed(() => {
             </div>
 
             <div v-for="(item, idx) in requestContents" :key="idx" class="mb-3">
-              <!-- Text content -->
-              <div v-if="item.type === 'text'" class="p-3 rounded bg-gray-50 dark:bg-gray-800 border text-sm whitespace-pre-wrap leading-relaxed">
+              <!-- Text content（已有对话上下文区块时不再重复渲染正文） -->
+              <div v-if="item.type === 'text' && !chatHistoryText" class="p-3 rounded bg-gray-50 dark:bg-gray-800 border text-sm whitespace-pre-wrap leading-relaxed">
                 {{ item.text }}
               </div>
 

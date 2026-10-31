@@ -125,6 +125,58 @@ async function isModelVisualCapable(preset: any): Promise<boolean> {
   }
 }
 
+/**
+ * 把本轮请求实际携带的对话消息渲染成操作日志用的 <chat_history> 区块。
+ *
+ * 只用于日志展示，不参与真实请求：模型看到的仍然是被注入过群聊上下文的原始
+ * 消息数组。日志里把「对话上下文」和「群聊流水/花名册/环境」切开，方便按
+ * 一问一答阅读，也不会因为流水每轮变长而看不清对话本身。
+ */
+function buildChatHistoryBlock(
+  messages: { role: string; content: any[] }[],
+  opts: { fallbackTime?: string; botLabel?: string },
+): string | null {
+  const lines: string[] = []
+  let lastTime = opts.fallbackTime || ''
+  const botLabel = opts.botLabel || '机器人'
+
+  for (const msg of messages) {
+    const role = msg?.role
+    if (role !== 'user' && role !== 'assistant') continue
+
+    const texts: string[] = []
+    let imageCount = 0
+    for (const part of msg.content || []) {
+      if (!part) continue
+      if (part.type === 'text') {
+        const t = String(part.text ?? '').trim()
+        if (t) texts.push(t)
+      } else if (part.type === 'image') {
+        imageCount++
+      }
+    }
+
+    let text = texts.join('\n').trim()
+    if (!text && imageCount === 0) continue
+
+    // 兼容老数据：历史消息里可能还留着 `[#3 13:41]` 的流水序号前缀
+    text = text.replace(/^\[#\d+\s+(\d{1,2}:\d{2})\]/, '[$1]')
+    const timeMatch = text.match(/^\[(\d{1,2}:\d{2})\]/)
+    if (timeMatch) lastTime = timeMatch[1]
+
+    const imageNote = imageCount > 0 ? `[图片×${imageCount}]` : ''
+    if (role === 'user') {
+      lines.push([text, imageNote].filter(Boolean).join(' ').trim())
+    } else {
+      // assistant 消息本身不带时间戳，沿用上一条 user 的时间（同一轮对话）
+      lines.push(`[${lastTime}] ${botLabel}: ${[text, imageNote].filter(Boolean).join(' ')}`.trim())
+    }
+  }
+
+  if (lines.length === 0) return null
+  return `### 对话上下文\n<chat_history>\n${lines.join('\n')}\n</chat_history>`
+}
+
 export async function handleMessage(
   event: ChaiteEvent,
   storageCtx: any
@@ -196,6 +248,12 @@ export async function handleMessage(
   //   · 并入本轮消息时，userMessage.content 已包含它 —— 日志不能再补。
   // 由 installPrependContext 在真正发请求时确定，供操作日志还原「模型实际看到的本轮输入」。
   let logPrependedParts: any[] = []
+
+  // 日志展示用：本轮请求实际携带的「对话上下文」（历史 + 本轮发言，不含注入块）。
+  // prependContext 在注入之前抓一份快照，操作日志据此渲染 <chat_history> 一问一答区块。
+  let logConversationMessages: { role: string; content: any[] }[] = []
+  // 本轮发言时间（[HH:mm]），供日志补 assistant 行时间；群聊分支里赋值
+  let logCurrentMsgTime = ''
 
   // 3. Handle Chaite internal management & utility commands
   // 指令注册表见 src/commands.ts（单一来源）：分发按表匹配执行，宿主适配器
@@ -657,6 +715,12 @@ export async function handleMessage(
             ctxAttachedToCurrent = false
             logPrependedParts = []
             if (!Array.isArray(histories) || histories.length === 0) return
+            // 注入前抓一份对话快照（历史 + 本轮发言），供操作日志渲染一问一答的
+            // <chat_history> 区块；注入块不属于对话上下文，不进这份快照。
+            logConversationMessages = histories.map((m: any) => ({
+              role: String(m.role),
+              content: Array.isArray(m.content) ? [...m.content] : [],
+            }))
             const cloned = parts.map((p) => ({ ...p }))
             // 无论最终并入「历史首条」还是「本轮消息」，userMessage.content 本身都不含注入块
             // （clients 内部是 new 了一个 thisRequestMsg，改的是副本），所以日志统一补这一段
@@ -714,6 +778,7 @@ export async function handleMessage(
           hour12: false,
         })
         const currentMsgTime = timeFormatter.format(now)
+        logCurrentMsgTime = currentMsgTime
 
         const uidStr = String(event.userId)
         const isBotSelf = uidStr === String(config?.onebot?.botUin || '')
@@ -965,11 +1030,14 @@ export async function handleMessage(
             const originalUserParts = [...userMessage.content]
             userMessage.content = []
 
-            // 构建提问者真实输入：与 <group_messages> 流水保持同一种行格式
-            //    `[#N HH:mm] 发送者(身份): 内容` —— 普通对话与伪人模式完全一致
-            // 发言者名称/身份徽标/时间已在注入段入口统一计算
+            // 构建提问者真实输入：
+            //   · 普通对话：[HH:mm] 发送者(身份): 内容 —— 刻意不带流水序号。序号是相对
+            //     「当前这批流水」算出来的，流水刷新换批后就失去意义；对话上下文（历史）
+            //     里存着的序号更是永远对不上新流水，所以对话侧与群聊流水彻底切割。
+            //   · 伪人模式：[#N HH:mm] ... —— 依赖流水序号做短引用定位，保持不变。
             const currentSeq = (groupContextResult?.messageCount || 0) + 1
-            const speakerHeader = `[#${currentSeq} ${currentMsgTime}] ${speakerName}${badgeStr}: `
+            const seqPrefix = isBym ? `#${currentSeq} ` : ''
+            const speakerHeader = `[${seqPrefix}${currentMsgTime}] ${speakerName}${badgeStr}: `
             // 流水里已经带上本轮消息（缓冲池里没有别的发言）时，末尾不再重复一次带头部的同一句
             const tailHeader = groupContextResult?.includesCurrentMessage ? '' : speakerHeader
 
@@ -1168,6 +1236,20 @@ export async function handleMessage(
             ? rawPresetModel.slice(rawPresetModel.indexOf("/") + 1).trim()
             : rawPresetModel
 
+          // 日志展示用：把本轮对话（历史 + 本轮发言）渲染成一问一答区块，与群聊流水切割
+          const chatHistoryText = buildChatHistoryBlock(
+            logConversationMessages.length > 0
+              ? logConversationMessages
+              : [{
+                role: 'user',
+                content: Array.isArray(userMessage.content) ? userMessage.content : [],
+              }],
+            {
+              fallbackTime: logCurrentMsgTime,
+              botLabel: preset?.name ? `${preset.name} [机器人]` : '机器人',
+            },
+          )
+
           storageCtx.operationLogManager.addSync({
             type: "llm.call",
             level: errorCaught ? "error" : "info",
@@ -1193,6 +1275,9 @@ export async function handleMessage(
               rawRequest: (response as any)?.rawRequest,
               rawResponse: (response as any)?.rawResponse,
               requestPayload: {
+                // 日志新展示区块：把本轮实际送出的对话（历史 + 本轮发言）渲染成一问一答的
+                // <chat_history>；群聊流水/花名册/环境属于注入块，不在这块里（完整报文见原始请求）
+                chatHistoryText,
                 // 日志要还原「模型本轮实际看到的输入」：上下文并入历史首条时，
                 // 它不在 userMessage.content 里，这里补回来（并入本轮时不能再补，否则重复）
                 userMessage: logPrependedParts.length > 0
