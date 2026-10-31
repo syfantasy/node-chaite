@@ -192,18 +192,9 @@ const foldedRawResponse = computed(() => {
         <!-- Tab 1: 请求报文 -->
         <NTabPane name="request" tab="请求内容">
           <div class="space-y-3">
-            <!-- 对话上下文：一问一答，与群聊流水/花名册等注入块切割 -->
-            <div v-if="chatHistoryText">
-              <div style="font-weight: 600; font-size: 13px; color: #555; margin-bottom: 6px;">
-                对话上下文：
-              </div>
-              <div class="p-3 rounded bg-gray-50 dark:bg-gray-800 border text-sm whitespace-pre-wrap leading-relaxed">
-                {{ chatHistoryText }}
-              </div>
-            </div>
-
-            <div v-if="!chatHistoryText" style="font-weight: 600; font-size: 13px; color: #555; margin-bottom: 6px;">
-              用户输入与多模态数据：
+            <!-- 本轮实际请求内容：场景协议 / 流水 / 花名册 / 环境 / 附图 + 本轮发言 -->
+            <div style="font-weight: 600; font-size: 13px; color: #555; margin-bottom: 6px;">
+              {{ chatHistoryText ? '本轮实际请求内容（含群聊上下文与多模态）：' : '用户输入与多模态数据：' }}
             </div>
 
             <!-- Content list -->
@@ -212,8 +203,8 @@ const foldedRawResponse = computed(() => {
             </div>
 
             <div v-for="(item, idx) in requestContents" :key="idx" class="mb-3">
-              <!-- Text content（已有对话上下文区块时不再重复渲染正文） -->
-              <div v-if="item.type === 'text' && !chatHistoryText" class="p-3 rounded bg-gray-50 dark:bg-gray-800 border text-sm whitespace-pre-wrap leading-relaxed">
+              <!-- Text content -->
+              <div v-if="item.type === 'text'" class="p-3 rounded bg-gray-50 dark:bg-gray-800 border text-sm whitespace-pre-wrap leading-relaxed">
                 {{ item.text }}
               </div>
 
@@ -244,6 +235,16 @@ const foldedRawResponse = computed(() => {
                 <div v-if="showRawBase64Map[`req_img_${idx}`]" class="mt-2 p-2 bg-gray-100 rounded text-xs font-mono break-all max-h-40 overflow-y-auto">
                   {{ item.image }}
                 </div>
+              </div>
+            </div>
+
+            <!-- 对话上下文：一问一答，与群聊流水/花名册等注入块切割（仅展示，不影响请求） -->
+            <div v-if="chatHistoryText" class="mt-4">
+              <div style="font-weight: 600; font-size: 13px; color: #555; margin-bottom: 6px;">
+                对话上下文：
+              </div>
+              <div class="p-3 rounded bg-gray-50 dark:bg-gray-800 border text-sm whitespace-pre-wrap leading-relaxed">
+                {{ chatHistoryText }}
               </div>
             </div>
 
