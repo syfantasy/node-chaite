@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 const exec = promisify(execCb);
@@ -142,6 +143,15 @@ async function run(cmd, cwd) {
 }
 /** 独立部署版：本仓库就是 Chaite，git pull 即可（dist 与 frontend 已随仓库分发） */
 async function updateStandalone(hostDir) {
+    if (!fs.existsSync(path.resolve(hostDir, '.git'))) {
+        return {
+            mode: 'standalone',
+            hasUpdate: false,
+            command: '',
+            log: '',
+            message: '当前目录没有 .git，无法 git pull；请改用依赖方式更新，或重新 clone 仓库。',
+        };
+    }
     const log = await run('git pull', hostDir);
     const hasUpdate = !/Already up to date|已经是最新|Already up-to-date/i.test(log);
     return {
@@ -182,7 +192,15 @@ async function updateDependency(hostDir) {
         message: '已从 GitHub 拉取最新版本，服务正在自动重启，请稍候...',
     };
 }
+/**
+ * 独立部署版判定：当前工作目录就是 Chaite 包根本身。
+ * 不能用「cwd 下有 .git」判断 —— 宿主项目（如 Yunzai）自己也是 git 仓库，
+ * 那样会把宿主仓库当成 Chaite 去 git pull。
+ */
+export function isStandaloneDeployment(hostDir = process.cwd()) {
+    const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    return path.resolve(hostDir) === pkgRoot;
+}
 export async function runSystemUpdate(hostDir = process.cwd()) {
-    const isGitRepo = fs.existsSync(path.resolve(hostDir, '.git'));
-    return isGitRepo ? updateStandalone(hostDir) : updateDependency(hostDir);
+    return isStandaloneDeployment(hostDir) ? updateStandalone(hostDir) : updateDependency(hostDir);
 }

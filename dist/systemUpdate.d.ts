@@ -40,4 +40,10 @@ export interface SystemUpdateResult {
     message: string;
     command?: string;
 }
+/**
+ * 独立部署版判定：当前工作目录就是 Chaite 包根本身。
+ * 不能用「cwd 下有 .git」判断 —— 宿主项目（如 Yunzai）自己也是 git 仓库，
+ * 那样会把宿主仓库当成 Chaite 去 git pull。
+ */
+export declare function isStandaloneDeployment(hostDir?: string): boolean;
 export declare function runSystemUpdate(hostDir?: string): Promise<SystemUpdateResult>;
