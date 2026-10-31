@@ -13,6 +13,8 @@ export interface DependencyUpdatePlan {
     needsUpdate: boolean;
     /** 实际要执行的更新命令 */
     command: string;
+    /** 兜底强更命令：pnpm/yarn 会把「分支型 git 依赖」判定为已满足而跳过解析 */
+    forceCommand?: string;
     /** 命中 allowBuilds 白名单时，本次自动补写的那一行 */
     allowBuildEntry?: string;
 }

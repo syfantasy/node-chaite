@@ -27,6 +27,8 @@ export interface DependencyUpdatePlan {
   needsUpdate: boolean
   /** 实际要执行的更新命令 */
   command: string
+  /** 兜底强更命令：pnpm/yarn 会把「分支型 git 依赖」判定为已满足而跳过解析 */
+  forceCommand?: string
   /** 命中 allowBuilds 白名单时，本次自动补写的那一行 */
   allowBuildEntry?: string
 }
@@ -157,15 +159,21 @@ export async function planDependencyUpdate(hostDir: string): Promise<DependencyU
   const ghSpec = `github:${owner}/${repo}`
 
   let command: string
+  let forceCommand: string
   if (pm === 'pnpm') {
     command = `pnpm add ${isWorkspaceRoot ? '-w ' : ''}${depName}@${ghSpec}`
+    // pnpm 看到锁文件里已有 github:owner/repo 的解析结果就直接跳过 re-resolution，
+    // 只有 update 会重新去远端取分支 HEAD
+    forceCommand = `pnpm update ${isWorkspaceRoot ? '-w ' : ''}${depName}`
   } else if (pm === 'yarn') {
     command = `yarn add ${depName}@${ghSpec}`
+    forceCommand = `yarn upgrade ${depName}`
   } else {
     command = `npm install ${depName}@${ghSpec}`
+    forceCommand = `npm install ${depName}@${ghSpec} --force`
   }
 
-  return { depName, spec, owner, repo, latestCommit, currentCommit, needsUpdate, command }
+  return { depName, spec, owner, repo, latestCommit, currentCommit, needsUpdate, command, forceCommand }
 }
 
 export interface SystemUpdateResult {
@@ -264,14 +272,48 @@ async function updateDependency(hostDir: string): Promise<SystemUpdateResult> {
   )
 
   const log = await run(plan.command, hostDir)
+  let installed = readInstalledCommit(hostDir, plan.owner, plan.repo)
+
+  // pnpm / yarn 对「分支型 git 依赖」会判定依赖已满足而跳过解析（Lockfile is up to date,
+  // resolution step is skipped），此时命令成功退出但版本没动 —— 必须再强更一次，
+  // 否则会一直「提示有更新 → 重启 → 还是旧版本」。
+  let forceLog = ''
+  let forced = false
+  if (plan.latestCommit && installed !== plan.latestCommit && plan.forceCommand) {
+    forced = true
+    forceLog = await run(plan.forceCommand, hostDir).catch((e: any) => {
+      const detail = `${e?.stderr || ''}${e?.stdout || ''}`.trim() || e?.message || String(e)
+      return `[失败] ${detail}`
+    })
+    installed = readInstalledCommit(hostDir, plan.owner, plan.repo)
+  }
+
+  const logParts = [
+    allowBuildEntry ? `[allowBuilds] 已放行 ${allowBuildEntry}` : '',
+    `$ ${plan.command}`,
+    log,
+    forced ? `$ ${plan.forceCommand}` : '',
+    forced ? forceLog : '',
+    `当前: ${installed || '未知'}`,
+    `远端: ${plan.latestCommit || '获取失败'}`,
+  ].filter(Boolean)
+
+  // 只有安装结果真的换了 commit 才算更新成功，否则不要重启（重启也还是旧版本）
+  if (plan.latestCommit && installed !== plan.latestCommit) {
+    return {
+      mode: 'dependency',
+      hasUpdate: false,
+      command: plan.command,
+      log: logParts.join('\n'),
+      message: '安装命令已执行，但依赖版本未变化，已跳过重启。请查看执行日志。',
+    }
+  }
 
   return {
     mode: 'dependency',
     hasUpdate: true,
     command: plan.command,
-    log: [allowBuildEntry ? `[allowBuilds] 已放行 ${allowBuildEntry}` : '', log]
-      .filter(Boolean)
-      .join('\n'),
+    log: logParts.join('\n'),
     message: '已从 GitHub 拉取最新版本，服务正在自动重启，请稍候...',
   }
 }
