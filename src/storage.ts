@@ -1,6 +1,5 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import {
   Chaite,
   ChannelsManager,
@@ -30,9 +29,9 @@ import {
   getLogger,
 } from './core/index.js'
 import { StandaloneUserModeSelector } from './userMode.js'
+import { resolveRootDataDir } from './config.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const ROOT_DATA_DIR = path.resolve(__dirname, '../data')
+const ROOT_DATA_DIR = resolveRootDataDir()
 
 export interface StorageContext {
   mainDriver: any

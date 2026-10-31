@@ -3,8 +3,34 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const CONFIG_PATH = path.resolve(__dirname, '../config.json')
 const EXAMPLE_PATH = path.resolve(__dirname, '../config.example.json')
+
+/**
+ * 解析运行数据目录（SQLite 库、config.json、图片、工具/技能脚本等）。
+ *
+ * 历史上数据全部存放在包目录内（node_modules/<pkg>/data），嵌入式部署下
+ * 每次重装/升级依赖都会连带清空渠道、预设与对话历史。现在按以下优先级解析：
+ * 1. 宿主 cwd 下 data/chaite 已有数据（data.db 存在）→ 使用它（数据与
+ *    node_modules 解耦，重装不丢）。
+ * 2. 包目录 data 已有数据 → 沿用（独立部署的历史布局：cwd 即包根，零迁移）。
+ * 3. 全新安装 → 落在宿主 cwd 的 data/chaite。
+ */
+export function resolveRootDataDir(): string {
+  const pkgDataDir = path.resolve(__dirname, '../data')
+  const hostDataDir = path.resolve(process.cwd(), 'data/chaite')
+  const hasData = (dir: string): boolean => fs.existsSync(path.join(dir, 'data.db'))
+  if (hasData(hostDataDir)) {
+    return hostDataDir
+  }
+  if (hasData(pkgDataDir)) {
+    return pkgDataDir
+  }
+  return hostDataDir
+}
+
+function resolveConfigPath(): string {
+  return path.join(resolveRootDataDir(), 'config.json')
+}
 
 export interface AppConfig {
   onebot?: {
@@ -139,18 +165,18 @@ let currentConfig: AppConfig = { ...DEFAULT_CONFIG }
 
 export function loadConfig(): AppConfig {
   try {
-    if (!fs.existsSync(CONFIG_PATH)) {
+    if (!fs.existsSync(resolveConfigPath())) {
       if (fs.existsSync(EXAMPLE_PATH)) {
-        fs.copyFileSync(EXAMPLE_PATH, CONFIG_PATH)
+        fs.copyFileSync(EXAMPLE_PATH, resolveConfigPath())
         console.log('[Config] config.json 不存在，已自动从 config.example.json 复制初始化')
       } else {
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8')
+        fs.writeFileSync(resolveConfigPath(), JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8')
         console.log('[Config] config.json 不存在，已自动创建默认配置文件')
       }
     }
 
-    if (fs.existsSync(CONFIG_PATH)) {
-      const raw = fs.readFileSync(CONFIG_PATH, 'utf-8')
+    if (fs.existsSync(resolveConfigPath())) {
+      const raw = fs.readFileSync(resolveConfigPath(), 'utf-8')
       const parsed = JSON.parse(raw)
       currentConfig = {
         ...DEFAULT_CONFIG,
@@ -187,7 +213,7 @@ export function getConfig(): AppConfig {
 
 export function saveConfig(cfg: AppConfig): void {
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8')
+    fs.writeFileSync(resolveConfigPath(), JSON.stringify(cfg, null, 2), 'utf-8')
     currentConfig = cfg
   } catch (err) {
     console.error('[Config] Failed to save config.json:', err)
