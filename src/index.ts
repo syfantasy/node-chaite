@@ -633,7 +633,7 @@ export async function handleMessage(
     // 注入群聊环境与上下文 (Group Environment & History Stream)
     if (event.isGroup && event.groupId) {
       try {
-        const contextParts: TextContent[] = []
+        const contextParts: (TextContent | ImageContent)[] = []
 
         // ── 上下文置顶器 ──────────────────────────────────────────────────
         // 把本轮注入块（协议/流水/花名册/环境）放到「对话最前面」而不是塞在本轮
@@ -643,7 +643,7 @@ export async function handleMessage(
         // 这样对话结构是 [user: 上下文 + 首句] [assistant] [user] ... [user: 本轮发言]，
         // 稳定头部内容才能持续命中前缀缓存（KV Cache）。
         // 写入 history 时仍由 persistMessage 剥掉注入块，只在「并入本轮消息」时需要剥离。
-        const installPrependContext = (parts: TextContent[]) => {
+        const installPrependContext = (parts: (TextContent | ImageContent)[]) => {
           if (parts.length === 0) return
           const injectedCount = parts.length
           let ctxAttachedToCurrent = false
@@ -811,9 +811,9 @@ export async function handleMessage(
                 level: event.sender?.level,
               },
               masterUsers: effectiveMasters,
-              // 普通对话去掉流水行的流动序号（[12:36] 而不是 [#1 12:36]），
-              // 伪人模式保留序号，避免影响其短引用定位
-              includeSeqIndex: isBym,
+              // 流水行保留流动序号（[#N 12:36]）：普通对话与伪人模式结构完全一致，
+              // 且序号供虚拟短引用定位
+              includeSeqIndex: true,
             },
             rawEvent.message_id,
             onebotAdapter
@@ -927,33 +927,23 @@ export async function handleMessage(
             // 3. 紧接着推入本轮动态的会话环境与时间戳（后置下移，避免每秒变化的时间戳击穿头部缓存）
             contextParts.push(envPart)
 
-            // 4. 多模态附图索引清单：跟随附图走（不放进置顶上下文块，避免索引与附图被拉开）
-            let imageIndexPart: TextContent | null = null
+            // 4. 多模态附图索引 + 图文交错的视觉素材
+            //    附图是「流水里那张图」的补充素材，必须紧跟在流水/环境之后，和其他上下文
+            //    同处一块；放进本轮发言里会把末端那句 `[#N HH:mm] 谁: 说了什么` 冲散。
             if (visualAttachments.length > 0) {
               const imageIndexLines = visualAttachments.map(
                 (att) => `- 附图 ${att.seq}: ${att.detail}`
               )
-              imageIndexPart = {
+              contextParts.push({
                 type: 'text',
                 text: `### 本轮会话附带的多模态图像索引（按顺序严格对应紧随其后的图文交错附图）：\n<attached_images>\n${imageIndexLines.join('\n')}\n</attached_images>`,
-              }
-            }
-
-            // 提取提问者原始的用户消息部件（保持原样，避免被伪造/注入人造前缀）
-            const originalUserParts = [...userMessage.content]
-            userMessage.content = []
-
-            // 1. 附图索引 + 图文交错的视觉素材（随本轮发言走）
-            if (imageIndexPart) {
-              userMessage.content.push(imageIndexPart)
-            }
-            if (visualAttachments.length > 0) {
+              })
               for (const att of visualAttachments) {
-                userMessage.content.push({
+                contextParts.push({
                   type: 'text',
                   text: `【下方附图 ${att.seq} 对应 ${att.desc}】：\n`,
                 })
-                userMessage.content.push({
+                contextParts.push({
                   type: 'image',
                   mimeType: att.mimeType,
                   image: att.base64,
@@ -961,12 +951,15 @@ export async function handleMessage(
               }
             }
 
-            // 3. 构建提问者真实输入：与 <group_messages> 流水保持同一种行格式
-            //    （普通对话 [HH:mm] 发送者(身份): 内容；伪人模式保留 [#N HH:mm]）
+            // 提取提问者原始的用户消息部件（保持原样，避免被伪造/注入人造前缀）
+            const originalUserParts = [...userMessage.content]
+            userMessage.content = []
+
+            // 构建提问者真实输入：与 <group_messages> 流水保持同一种行格式
+            //    `[#N HH:mm] 发送者(身份): 内容` —— 普通对话与伪人模式完全一致
             // 发言者名称/身份徽标/时间已在注入段入口统一计算
             const currentSeq = (groupContextResult?.messageCount || 0) + 1
-            const tailSeqPrefix = isBym ? `#${currentSeq} ` : ''
-            const speakerHeader = `[${tailSeqPrefix}${currentMsgTime}] ${speakerName}${badgeStr}: `
+            const speakerHeader = `[#${currentSeq} ${currentMsgTime}] ${speakerName}${badgeStr}: `
             // 流水里已经带上本轮消息（缓冲池里没有别的发言）时，末尾不再重复一次带头部的同一句
             const tailHeader = groupContextResult?.includesCurrentMessage ? '' : speakerHeader
 
