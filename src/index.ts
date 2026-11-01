@@ -254,6 +254,9 @@ export async function handleMessage(
   // 日志展示用：本轮请求实际携带的「对话上下文」（历史 + 本轮发言，不含注入块）。
   // prependContext 在注入之前抓一份快照，操作日志据此渲染 <chat_history> 一问一答区块。
   let logConversationMessages: { role: string; content: any[] }[] = []
+  // 本轮是否注入了上下文块（场景协议/流水/花名册/环境/附图）。
+  // 有注入时即使本轮发言为空，请求本身仍然有效，不能按空消息跳过。
+  let hasInjectedContext = false
   // 本轮发言时间（[HH:mm]），供日志补 assistant 行时间；群聊分支里赋值
   let logCurrentMsgTime = ''
 
@@ -750,6 +753,7 @@ export async function handleMessage(
         // 写入 history 时仍由 persistMessage 剥掉注入块，只在「并入本轮消息」时需要剥离。
         const installPrependContext = (parts: (TextContent | ImageContent)[]) => {
           if (parts.length === 0) return
+          hasInjectedContext = true
           const injectedCount = parts.length
           let ctxAttachedToCurrent = false
           sendOptions.prependContext = (histories: any[], current?: any) => {
@@ -1275,6 +1279,22 @@ export async function handleMessage(
           }
         }
       }
+    }
+
+    // 空消息兜底：卡片/表情/戳一戳等消息转换后可能既没有文本也没有图片
+    // （content 为空数组），直接请求模型必然抛「OpenAI 请求没有可发送的消息」，
+    // 还会把面板的错误率刷到很高。这类请求本身没有意义，直接跳过并给用户提示。
+    const hasSendableContent = Array.isArray(userMessage.content) && userMessage.content.some((part: any) => {
+      if (!part) return false
+      if (part.type === 'text') return typeof part.text === 'string' && part.text.trim().length > 0
+      return part.type === 'image' || part.type === 'audio' || part.type === 'file'
+    })
+    if (!hasSendableContent && !hasInjectedContext) {
+      console.warn(`[Runner] 跳过空消息请求 (user=${event.userId}, preset=${targetPresetId || '-'})`)
+      try {
+        await event.reply('这条消息里没有可识别的文字或图片，我先跳过啦。')
+      } catch {}
+      return
     }
 
     const startTime = Date.now()

@@ -216,6 +216,43 @@ function getImageDimensions(buffer: Buffer): { width: number; height: number } |
 }
 
 /**
+ * 把 QQ 卡片消息（json / xml 段）压成一句可读摘要。
+ *
+ * 卡片段里没有任何 text 内容，若不处理，转换后的 content 就是空数组，
+ * 请求构建阶段会直接抛「OpenAI 请求没有可发送的消息」并被记成 500 错误。
+ * 这里至少产出一个占位文本，让模型知道"用户发来了一张卡片"。
+ */
+function describeCardSegment(seg: any): string {
+  const raw = seg?.data?.data ?? seg?.data?.xml ?? seg?.data?.content ?? ''
+  const text = typeof raw === 'string' ? raw : ''
+  if (!text) return '[卡片消息]'
+
+  if (seg.type === 'json') {
+    try {
+      const parsed = JSON.parse(text)
+      const meta = parsed?.meta || {}
+      const candidates = [
+        parsed?.desc,
+        parsed?.prompt,
+        meta?.detail_1?.title,
+        meta?.detail?.title,
+        meta?.news?.title,
+        meta?.music?.title,
+        meta?.detail_1?.desc,
+        meta?.news?.desc,
+      ]
+      const label = candidates.find((v: any) => typeof v === 'string' && v.trim())
+      return label ? `[卡片消息: ${String(label).trim().slice(0, 80)}]` : '[卡片消息]'
+    } catch {
+      // 非标准 json 卡片，落到下面的 xml 兜底
+    }
+  }
+
+  const m = text.match(/<(?:summary|title|brief)[^>]*>([^<]{1,80})<\//i)
+  return m ? `[卡片消息: ${m[1].trim()}]` : '[卡片消息]'
+}
+
+/**
  * Convert OneBot message to Chaite UserMessage
  */
 export async function oneBotToUserMessage(
@@ -416,6 +453,11 @@ export async function oneBotToUserMessage(
       })
       const previewStr = previewMessages.length > 0 ? ` 摘要: ${previewMessages.slice(0, 3).map((p: any) => `${p.senderName}: ${p.text}`).join('; ')}...` : ''
       rawText += ` [聊天记录:${summary}${previewStr} ref:${ref}] `
+    } else if (seg.type === 'json' || seg.type === 'xml' || seg.type === 'card') {
+      // 小程序/链接/分享卡片：本身没有 text 段，不处理就会得到空消息体
+      rawText += ` ${describeCardSegment(seg)} `
+    } else if (seg.type === 'face' || seg.type === 'mface') {
+      rawText += ' [表情] '
     }
   }
 
