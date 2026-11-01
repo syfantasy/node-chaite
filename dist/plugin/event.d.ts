@@ -115,4 +115,10 @@ export declare class ChaiteEvent {
      * 携带当前群聊上下文向 AI 发问
      */
     askWithContext(prompt: string, options?: QueryAIOptions): Promise<string>;
+    /**
+     * 获取当前群近期清洗后的聊天流水
+     * @param limit 条数，默认 30
+     * @param formatted 是否返回排版后的文本字符串（默认 false 返回结构化对象数组）
+     */
+    getRecentHistory(limit?: number, formatted?: boolean): string | import("../context/groupHistoryBuffer.js").BufferedMessage[];
 }

@@ -90,7 +90,18 @@ router.get('/:id/config', (req: Request<{ id: string }>, res: Response) => {
       rawText = JSON.stringify(config, null, 2)
     }
     const relativePath = path.relative(process.cwd(), filePath)
-    return { filePath: relativePath, rawText, config }
+
+    // 读取工具实例上的 configSchema
+    let schema: any = null
+    try {
+      const instanceName = extractClassName(dto.code || '') || dto.name
+      const tool = instanceName ? await mgr.getInstance(instanceName) : undefined
+      schema = (tool as any)?.configSchema || (dto as any)?.configSchema || null
+    } catch {
+      schema = null
+    }
+
+    return { filePath: relativePath, rawText, config, schema }
   })
 })
 
@@ -121,9 +132,18 @@ router.post('/:id/config', (req: Request<{ id: string }, object, { rawText?: str
     }
     fs.writeFileSync(filePath, textToSave, 'utf-8')
 
-    // 同步更新数据库内 tool.config
+    // 同步更新数据库内 tool.config 以及内存中的 live 实例
     dto.config = parsedConfig
     await mgr.upsertInstanceT(dto)
+    try {
+      const instanceName = extractClassName(dto.code || '') || dto.name
+      const tool = instanceName ? await mgr.getInstance(instanceName) : undefined
+      if (tool) {
+        ;(tool as any).config = parsedConfig
+      }
+    } catch {
+      // ignore
+    }
 
     const relativePath = path.relative(process.cwd(), filePath)
     return { success: true, filePath: relativePath, config: parsedConfig, rawText: textToSave }

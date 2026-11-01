@@ -89,7 +89,17 @@ router.get('/:id/config', (req, res) => {
             rawText = JSON.stringify(config, null, 2);
         }
         const relativePath = path.relative(process.cwd(), filePath);
-        return { filePath: relativePath, rawText, config };
+        // 读取工具实例上的 configSchema
+        let schema = null;
+        try {
+            const instanceName = extractClassName(dto.code || '') || dto.name;
+            const tool = instanceName ? await mgr.getInstance(instanceName) : undefined;
+            schema = tool?.configSchema || dto?.configSchema || null;
+        }
+        catch {
+            schema = null;
+        }
+        return { filePath: relativePath, rawText, config, schema };
     });
 });
 /** POST /api/tools/:id/config — 保存工具独立的配置文件 */
@@ -122,9 +132,20 @@ router.post('/:id/config', (req, res) => {
             parsedConfig = {};
         }
         fs.writeFileSync(filePath, textToSave, 'utf-8');
-        // 同步更新数据库内 tool.config
+        // 同步更新数据库内 tool.config 以及内存中的 live 实例
         dto.config = parsedConfig;
         await mgr.upsertInstanceT(dto);
+        try {
+            const instanceName = extractClassName(dto.code || '') || dto.name;
+            const tool = instanceName ? await mgr.getInstance(instanceName) : undefined;
+            if (tool) {
+                ;
+                tool.config = parsedConfig;
+            }
+        }
+        catch {
+            // ignore
+        }
         const relativePath = path.relative(process.cwd(), filePath);
         return { success: true, filePath: relativePath, config: parsedConfig, rawText: textToSave };
     });

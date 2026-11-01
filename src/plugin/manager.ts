@@ -20,6 +20,7 @@ import {
 import { PluginKVStorage } from './storage.js'
 import { Chaite } from '../core/core/chaite.js'
 import { InMemorySkillImpl } from '../core/agent/skills/SkillRegistry.js'
+import { groupHistoryBuffer } from '../context/groupHistoryBuffer.js'
 
 export class PluginManager {
   private plugins = new Map<string, PluginInstance>()
@@ -583,6 +584,12 @@ export class PluginManager {
         } catch (err: any) {
           console.warn(`[PluginManager] Failed to register dynamic skill "${skillDef.name}":`, err?.message || err)
         }
+      },
+      getGroupHistory: (groupId: string | number, limit: number = 30, formatted: boolean = false) => {
+        if (formatted) {
+          return groupHistoryBuffer.getFormattedHistory(groupId, limit)
+        }
+        return groupHistoryBuffer.getRecentMessages(groupId, limit)
       },
       onDestroy: (cleanupFn) => {
         instance.cleanupFns.push(cleanupFn)

@@ -127,6 +127,14 @@ export declare class GroupHistoryBuffer {
      */
     getBufferCount(groupId: string | number): number;
     /**
+     * 获取指定群近期的结构化聊天流水列表
+     */
+    getRecentMessages(groupId: string | number, limit?: number): BufferedMessage[];
+    /**
+     * 获取指定群近期排版格式化好的聊天流水文本
+     */
+    getFormattedHistory(groupId: string | number, limit?: number): string;
+    /**
      * Clear buffer for a group
      */
     clear(groupId: string | number): void;

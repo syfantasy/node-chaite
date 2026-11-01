@@ -58,6 +58,7 @@ export interface ToolConfigFileResult {
   filePath: string
   rawText: string
   config: any
+  schema?: Record<string, any> | null
 }
 
 export function fetchToolConfigFile(id: string) {

@@ -33,6 +33,7 @@ const loading = ref(false)
 const saving = ref(false)
 const filePath = ref('')
 const viewMode = ref<'form' | 'json'>('form')
+const schemaConfig = ref<Record<string, any>>({})
 
 // 原始 JSON 字符串
 const configText = ref('')
@@ -55,6 +56,9 @@ const isFormSupported = computed(() => {
 
 // 字段友好标签映射
 function getFieldLabel(key: string): string {
+  if (schemaConfig.value[key]?.label) {
+    return schemaConfig.value[key].label
+  }
   const map: Record<string, string> = {
     cookie_str: '网易云 Cookie (cookie_str)',
     cookie: '登录 Cookie',
@@ -68,8 +72,31 @@ function getFieldLabel(key: string): string {
   return map[key] || key
 }
 
+function getFieldDescription(key: string): string {
+  return schemaConfig.value[key]?.description || ''
+}
+
+function normalizeSelectOptions(options?: any[]): Array<{ label: string; value: any }> {
+  if (!Array.isArray(options)) return []
+  return options.map((opt) => {
+    if (typeof opt === 'object' && opt !== null) {
+      return {
+        label: opt.label ?? String(opt.value),
+        value: opt.value ?? opt.label,
+      }
+    }
+    return { label: String(opt), value: opt }
+  })
+}
+
 // 推导字段呈现类型
-function inferFieldType(key: string, val: any): 'boolean' | 'number' | 'textarea' | 'string' | 'complex' {
+function inferFieldType(key: string, val: any): 'boolean' | 'number' | 'textarea' | 'string' | 'select' | 'complex' {
+  const schemaType = schemaConfig.value[key]?.type
+  if (schemaType === 'select') return 'select'
+  if (schemaType === 'switch' || schemaType === 'boolean') return 'boolean'
+  if (schemaType === 'number') return 'number'
+  if (schemaType === 'textarea') return 'textarea'
+
   if (typeof val === 'boolean') return 'boolean'
   if (typeof val === 'number') return 'number'
   if (val !== null && typeof val === 'object') return 'complex'
@@ -101,13 +128,28 @@ async function load() {
   loading.value = true
   filePath.value = ''
   configText.value = '{}'
+  schemaConfig.value = {}
   Object.keys(formData).forEach(k => delete formData[k])
   try {
     const rsp = await fetchToolConfigFile(props.tool.id)
     if (rsp.code === 0 && rsp.data) {
       filePath.value = rsp.data.filePath || ''
       configText.value = rsp.data.rawText || '{}'
+      schemaConfig.value = rsp.data.schema || {}
       syncTextToForm()
+      // 如果 schema 中有默认字段且 formData 中不存在，则填补默认值
+      if (schemaConfig.value && typeof schemaConfig.value === 'object') {
+        let changed = false
+        for (const [k, sDef] of Object.entries(schemaConfig.value)) {
+          if (!(k in formData) && (sDef as any)?.default !== undefined) {
+            formData[k] = (sDef as any).default
+            changed = true
+          }
+        }
+        if (changed) {
+          syncFormToText()
+        }
+      }
       viewMode.value = isFormSupported.value ? 'form' : 'json'
     } else {
       message.error(rsp.message || '读取工具配置文件失败')
@@ -260,11 +302,12 @@ watch(() => props.show, (val) => {
             :key="key"
             style="background: rgba(120, 120, 120, 0.04); border: 1px solid rgba(120, 120, 120, 0.12); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px"
           >
-            <NFlex justify="space-between" align="center" style="margin-bottom: 8px">
+            <NFlex justify="space-between" align="center" style="margin-bottom: 6px">
               <NFlex align="center" size="small">
                 <span style="font-weight: 600; font-size: 14px">{{ getFieldLabel(String(key)) }}</span>
+                <span v-if="schemaConfig[String(key)]?.label" style="font-size: 12px; color: #888">({{ key }})</span>
                 <NTag size="tiny" secondary>
-                  {{ typeof val }}
+                  {{ inferFieldType(String(key), val) }}
                 </NTag>
               </NFlex>
               <NPopconfirm @positive-click="handleRemoveField(String(key))">
@@ -277,8 +320,25 @@ watch(() => props.show, (val) => {
               </NPopconfirm>
             </NFlex>
 
+            <!-- 字段描述说明 -->
+            <div
+              v-if="getFieldDescription(String(key))"
+              style="font-size: 12px; color: #777; margin-bottom: 8px; line-height: 1.4"
+            >
+              {{ getFieldDescription(String(key)) }}
+            </div>
+
+            <!-- 下拉选择器 -->
+            <template v-if="inferFieldType(String(key), val) === 'select'">
+              <NSelect
+                v-model:value="formData[key]"
+                :options="normalizeSelectOptions(schemaConfig[String(key)]?.options)"
+                @update:value="syncFormToText"
+              />
+            </template>
+
             <!-- 布尔开关 -->
-            <template v-if="inferFieldType(String(key), val) === 'boolean'">
+            <template v-else-if="inferFieldType(String(key), val) === 'boolean'">
               <NSwitch v-model:value="formData[key]" @update:value="syncFormToText" />
             </template>
 
@@ -297,7 +357,7 @@ watch(() => props.show, (val) => {
                 v-model:value="formData[key]"
                 type="textarea"
                 :autosize="{ minRows: 3, maxRows: 8 }"
-                placeholder="请输入配置内容..."
+                :placeholder="schemaConfig[String(key)]?.placeholder || '请输入配置内容...'"
                 style="font-family: monospace; font-size: 13px"
                 @update:value="syncFormToText"
               />
@@ -318,7 +378,7 @@ watch(() => props.show, (val) => {
             <template v-else>
               <NInput
                 v-model:value="formData[key]"
-                placeholder="请输入值..."
+                :placeholder="schemaConfig[String(key)]?.placeholder || '请输入值...'"
                 @update:value="syncFormToText"
               />
             </template>

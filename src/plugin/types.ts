@@ -160,6 +160,7 @@ export interface PluginContext {
   render: (options: RenderOptions) => Promise<Buffer | string>
   readonly services: Map<string, any>
   registerSkill: (skill: PluginSkillDefinition) => void
+  getGroupHistory: (groupId: string | number, limit?: number, formatted?: boolean) => any
 }
 
 export interface PluginInstance {

@@ -335,3 +335,122 @@ npm run check
 1. **协议解耦**: 支持扩充适配器（如飞书、企业微信、Telegram、Discord 等）；
 2. **标准 MCP 工具生态**: 打通 Model Context Protocol，无缝对接各类 MCP Server；
 3. **复合技能（Skills）**: 基于 MCP 工具与 Prompt 编排构建高级 Agent 技能。
+
+---
+
+## 九、 工具体系规范与开发指南（Tools System）
+
+Chaite 提供了轻重分明、安全隔离的两套工具开发与加载体系：
+
+### 1. 轻量单文件工具规范（`data/tools/*.js`）
+针对基于 Node.js 原生 API（如原生 `fetch`、`crypto`、`fs`）的工具：
+- **继承与导出规范**：
+  ```javascript
+  import { CustomTool } from 'chaite'
+
+  export class SearchTool extends CustomTool {
+    name = 'geminisearch'
+
+    // 声明式配置项定义（供管理面板自动渲染表单）
+    configSchema = {
+      api_host: {
+        type: 'string',
+        label: 'API 地址',
+        description: 'Gemini 兼容中转或官方 API 基础地址',
+        placeholder: 'https://generativelanguage.googleapis.com'
+      },
+      api_key: {
+        type: 'string',
+        label: 'API 密钥',
+        description: 'Gemini API 凭证 Key (sk-...)',
+        placeholder: 'sk-...'
+      },
+      model: {
+        type: 'select',
+        label: '模型',
+        description: '执行搜索的模型名称',
+        options: [
+          { label: 'gemini-2.5-flash (推荐)', value: 'gemini-2.5-flash' },
+          { label: 'gemini-2.0-flash', value: 'gemini-2.0-flash' },
+          { label: 'gemini-1.5-flash', value: 'gemini-1.5-flash' }
+        ],
+        default: 'gemini-2.5-flash'
+      },
+      extract_original_url: {
+        type: 'boolean',
+        label: '还原重定向链接',
+        description: '自动将搜索重定向链接还原为直链',
+        default: true
+      }
+    }
+
+    function = {
+      name: 'geminisearch',
+      description: '利用搜索引擎获取最新信息',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '搜索关键词' }
+        },
+        required: ['query']
+      }
+    }
+
+    async run(args, context) {
+      // 通过 this.config 动态读取专属参数，代码内零硬编码
+      const apiKey = this.config?.api_key || context?.toolConfig?.api_key
+      // 执行业务逻辑...
+    }
+  }
+
+  export default new SearchTool()
+  ```
+- **配置解耦与安全分享**：
+  - 运行时凭证通过 `this.config` 动态从独立配置文件（`data/<name>/config.json` 或 `data/tools_config/<name>.json`）中读取；
+  - 工具代码内严禁硬编码任何个人 API Key、Cookie 或私人代理接口，确保工具可安全导出、开源与分享至社区。
+- **UI 动态表单视图与类型映射**：
+  - Web 控制台支持读取 `configSchema` 声明并自动渲染：
+    - `boolean` / `switch` $\rightarrow$ Naive UI 开关组件；
+    - `select` $\rightarrow$ 下拉选择组件；
+    - `number` $\rightarrow$ 步进数字输入框；
+    - `textarea` $\rightarrow$ 自适应多行凭证文本框；
+  - 支持表单视图与原生 JSON 源码视图双向无损切换；
+  - 弹窗底部操作条具备吸底常驻与高度自适应，杜绝按钮溢出。
+
+### 2. 重量级与复杂依赖工具（通过插件注册，推荐最佳实践）
+当工具需要引入三方 npm 依赖（如大型 SDK、Canvas、图像处理等）时，**禁止在根环境中使用 npm 安装**，避免依赖版本冲突或污染主进程：
+- **方案**：将复杂工具封装为独立应用插件（`plugins/apps/<plugin-name>/`）；
+- **注册机制**：在插件的 `index.js` 中调用 `ctx.registerTool`：
+  ```javascript
+  import { CustomTool } from 'chaite'
+  import SomeHeavySdk from 'some-heavy-sdk'
+
+  class HeavyTool extends CustomTool {
+    name = 'heavy_tool'
+    // ...
+  }
+
+  export default async function (ctx) {
+    // 动态注册工具给 Agent
+    ctx.registerTool(new HeavyTool())
+  }
+  ```
+- **依赖隔离与生命周期**：
+  - 第三方 npm 依赖完全安装在插件自身的 `node_modules` 目录下；
+  - 插件升级、停用或删除时，相关依赖一并安全回收，杜绝系统碎屑。
+
+### 3. 插件获取群聊流水 API（`getRecentHistory`）
+针对总结助手、舆情分析、智能复读等需要群聊上下文的插件，框架在 `ChaiteEvent` 与 `PluginContext` 均暴露了标准群聊流水读取方法，直接打通底层高性能 `GroupHistoryBuffer`：
+- **当前事件直接读取**：
+  ```javascript
+  // 1. 获取近 30 条清洗格式化后的字符串流水（带 [HH:mm:ss] [头衔] 昵称(QQ): 内容）
+  const textStream = e.getRecentHistory(30, true)
+
+  // 2. 获取结构化对象数组（包含 rawTime, timeStr, userId, nickname, card, role, text, tokens, imageRefs）
+  const rawList = e.getRecentHistory(30, false)
+  ```
+- **跨群查询上下文**：
+  ```javascript
+  const groupHistory = ctx.getGroupHistory(targetGroupId, 50, true)
+  ```
+

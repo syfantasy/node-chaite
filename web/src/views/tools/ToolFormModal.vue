@@ -42,7 +42,6 @@ const toolRules = {
   },
 }
 const lang: LanguageSupport = javascript()
-const configJson = ref('')
 
 // Form data
 const addTool = ref<Partial<Shareable.ToolModel>>({
@@ -81,10 +80,6 @@ const addTool = ref<Partial<Shareable.ToolModel>>({
 watch(() => props.initialData, (newVal) => {
   if (props.editMode && newVal) {
     addTool.value = { ...newVal }
-    const cfg = (newVal as any).config || (newVal as any).extraData?.config
-    configJson.value = cfg && Object.keys(cfg).length > 0 ? JSON.stringify(cfg, null, 2) : ''
-  } else {
-    configJson.value = ''
   }
 }, { immediate: true })
 
@@ -95,20 +90,6 @@ function handleAddChannel() {
       console.error(errors)
       return
     }
-
-    let parsedConfig: Record<string, any> = {}
-    if (configJson.value.trim()) {
-      try {
-        parsedConfig = JSON.parse(configJson.value.trim())
-      } catch (e: any) {
-        alert(`工具专属配置必须为合法的 JSON 格式: ${e.message}`)
-        return
-      }
-    }
-
-    ;(addTool.value as any).config = parsedConfig
-    if (!addTool.value.extraData) addTool.value.extraData = {}
-    ;(addTool.value.extraData as any).config = parsedConfig
 
     emit('submit', addTool.value)
     showModal.value = false
@@ -168,17 +149,6 @@ watch(showModal, (val) => {
         <!-- 工具描述 -->
         <NFormItemGridItem span="24" label="描述" path="description">
           <NInput v-model:value="addTool.description" type="textarea" placeholder="请输入工具描述" />
-        </NFormItemGridItem>
-
-        <!-- 工具专属配置 (JSON) -->
-        <NFormItemGridItem span="24" label="工具专属配置 (JSON，选填)" path="config">
-          <NInput
-            v-model:value="configJson"
-            type="textarea"
-            :autosize="{ minRows: 2, maxRows: 5 }"
-            placeholder='选填，请输入 JSON 配置（如: {"apiKey": "sk-xxx"}），可在工具内通过 this.config 读取'
-            style="font-family: monospace;"
-          />
         </NFormItemGridItem>
 
         <!-- 代码编辑器 -->

@@ -247,4 +247,17 @@ export class ChaiteEvent {
             : prompt;
         return this.queryAI(combinedPrompt, options);
     }
+    /**
+     * 获取当前群近期清洗后的聊天流水
+     * @param limit 条数，默认 30
+     * @param formatted 是否返回排版后的文本字符串（默认 false 返回结构化对象数组）
+     */
+    getRecentHistory(limit = 30, formatted = false) {
+        if (!this.groupId)
+            return formatted ? '' : [];
+        if (formatted) {
+            return groupHistoryBuffer.getFormattedHistory(this.groupId, limit);
+        }
+        return groupHistoryBuffer.getRecentMessages(this.groupId, limit);
+    }
 }

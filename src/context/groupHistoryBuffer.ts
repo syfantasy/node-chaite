@@ -884,6 +884,30 @@ export class GroupHistoryBuffer {
   }
 
   /**
+   * 获取指定群近期的结构化聊天流水列表
+   */
+  getRecentMessages(groupId: string | number, limit: number = 30): BufferedMessage[] {
+    const list = this.buffers.get(String(groupId)) || []
+    return list.slice(-limit)
+  }
+
+  /**
+   * 获取指定群近期排版格式化好的聊天流水文本
+   */
+  getFormattedHistory(groupId: string | number, limit: number = 30): string {
+    const list = this.getRecentMessages(groupId, limit)
+    if (list.length === 0) return ''
+    return list
+      .map((m) => {
+        const name = m.card || m.nickname || String(m.userId)
+        const titlePart = m.title ? `[${m.title}] ` : ''
+        const timePart = m.timeStr ? `[${m.timeStr}] ` : ''
+        return `${timePart}${titlePart}${name}(${m.userId}): ${m.text}`
+      })
+      .join('\n')
+  }
+
+  /**
    * Clear buffer for a group
    */
   clear(groupId: string | number): void {
