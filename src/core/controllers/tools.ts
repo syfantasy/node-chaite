@@ -44,8 +44,7 @@ router.get('/:id/test-schema', (req: Request<{ id: string }>, res: Response) => 
     const mgr = Chaite.getInstance().getToolsManager()
     const dto = await mgr.getInstanceT(req.params.id)
     if (!dto) throw new Error('Tool not found')
-    const instanceName = extractClassName(dto.code || '') || dto.name
-    const tool = instanceName ? await mgr.getInstance(instanceName) : undefined
+    const tool = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''))
     if (!tool) throw new Error(`工具“${dto.name}”尚未被运行时加载，请保存后稍候再试`)
     return { name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters }
   })
@@ -94,8 +93,7 @@ router.get('/:id/config', (req: Request<{ id: string }>, res: Response) => {
     // 读取工具实例上的 configSchema
     let schema: any = null
     try {
-      const instanceName = extractClassName(dto.code || '') || dto.name
-      const tool = instanceName ? await mgr.getInstance(instanceName) : undefined
+      const tool = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''))
       schema = (tool as any)?.configSchema || (dto as any)?.configSchema || null
     } catch {
       schema = null
@@ -136,8 +134,7 @@ router.post('/:id/config', (req: Request<{ id: string }, object, { rawText?: str
     dto.config = parsedConfig
     await mgr.upsertInstanceT(dto)
     try {
-      const instanceName = extractClassName(dto.code || '') || dto.name
-      const tool = instanceName ? await mgr.getInstance(instanceName) : undefined
+      const tool = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''))
       if (tool) {
         ;(tool as any).config = parsedConfig
       }
@@ -157,8 +154,7 @@ router.post('/:id/test', (req: Request<{ id: string }, object, { args?: Record<s
     const mgr = chaite.getToolsManager()
     const dto = await mgr.getInstanceT(req.params.id)
     if (!dto) throw new Error('Tool not found')
-    const instanceName = extractClassName(dto.code || '') || dto.name
-    const tool = instanceName ? await mgr.getInstance(instanceName) : undefined
+    const tool = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''))
     if (!tool) throw new Error(`工具“${dto.name}”尚未被运行时加载`)
     const toolConfig = dto.config || (dto.extraData as any)?.config || {}
     ;(tool as any).config = toolConfig
