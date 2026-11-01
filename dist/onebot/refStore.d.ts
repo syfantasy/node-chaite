@@ -52,8 +52,22 @@ export interface FileRefData extends BaseRefData {
 export type RefData = VoiceRefData | ForwardRefData | ImageRefData | VideoRefData | FileRefData | BaseRefData;
 declare class MediaRefStore {
     private store;
+    private pinnedRefs;
     private maxItems;
     private ttlMs;
+    /**
+     * 锁定特定 ref，阻止因 TTL 或容量清理被淘汰（字在图在，与会话流水生命周期同生共死）
+     */
+    pin(ref: string): void;
+    /**
+     * 解除特定 ref 锁定（当所属消息被群聊滑动窗口淘汰时调用）
+     */
+    unpin(ref: string): void;
+    isPinned(ref: string): boolean;
+    /**
+     * 从消息文本中解析所有 ref 锚点标记
+     */
+    extractRefsFromText(text: string): string[];
     private generateShortId;
     saveVoice(data: Omit<VoiceRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string;
     saveForward(data: Omit<ForwardRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string;

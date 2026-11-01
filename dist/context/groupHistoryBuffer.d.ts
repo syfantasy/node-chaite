@@ -60,6 +60,7 @@ export declare class GroupMessageRefStore {
      * 解析目标消息：支持传入流动序号（如 "#1"、"1" 或 1）或者原始消息 messageId
      */
     resolve(groupId: string | number, target: string | number): EphemeralGroupMessage | undefined;
+    getMessages(groupId: string | number): EphemeralGroupMessage[];
     clear(groupId: string | number): void;
     clearAll(): void;
 }
@@ -85,7 +86,13 @@ export interface BufferedMessage {
     text: string;
     tokens: number;
     imageRefs?: string[];
+    replyMsgId?: string | number;
+    quotedPrefix?: string;
 }
+export declare function parseCqMessageToSegments(content: string): Array<{
+    type: string;
+    data: Record<string, any>;
+}>;
 export declare class GroupHistoryBuffer {
     private buffers;
     private hardCapacity;
@@ -97,12 +104,20 @@ export declare class GroupHistoryBuffer {
         title?: string;
         level?: string | number;
     }>;
+    private pinMessageRefs;
+    private unpinMessageRefs;
+    /**
+     * 解析消息中的引用回复，返回双轨前缀（流水内回复 vs 远古历史引用）及新捕获的多媒体
+     */
+    resolveQuotePrefix(groupId: string | number, replyMsgId: string | number, onebotClient?: any): Promise<{
+        prefix: string;
+        newImageRefs: string[];
+    }>;
     /**
      * Process and append an incoming OneBot group message to the buffer
      */
     recordMessage(event: OneBotMessageEvent, onebotClient?: any): Promise<void>;
     /**
-     * Format message segments into clean text with ref anchors
      */
     private formatSegmentsToText;
     /**

@@ -66,6 +66,13 @@ export class GroupMessageRefStore {
         }
         return undefined;
     }
+    getMessages(groupId) {
+        const gid = String(groupId);
+        const seqMap = this.turnRefs.get(gid);
+        if (!seqMap)
+            return [];
+        return Array.from(seqMap.values());
+    }
     clear(groupId) {
         const gid = String(groupId);
         this.turnRefs.delete(gid);
@@ -77,7 +84,7 @@ export class GroupMessageRefStore {
     }
 }
 export const groupMessageRefStore = GroupMessageRefStore.getInstance();
-function parseCqMessageToSegments(content) {
+export function parseCqMessageToSegments(content) {
     const segments = [];
     const cqRegex = /\[CQ:([a-zA-Z0-9_\-]+)(?:,([^\]]*))?\]/g;
     let lastIndex = 0;
@@ -166,6 +173,119 @@ export class GroupHistoryBuffer {
         catch { }
         return {};
     }
+    pinMessageRefs(msg) {
+        if (msg.imageRefs && msg.imageRefs.length > 0) {
+            for (const ref of msg.imageRefs) {
+                mediaRefStore.pin(ref);
+            }
+        }
+        const textRefs = mediaRefStore.extractRefsFromText(msg.text);
+        for (const ref of textRefs) {
+            mediaRefStore.pin(ref);
+        }
+        if (msg.quotedPrefix) {
+            const qRefs = mediaRefStore.extractRefsFromText(msg.quotedPrefix);
+            for (const ref of qRefs) {
+                mediaRefStore.pin(ref);
+            }
+        }
+    }
+    unpinMessageRefs(msg) {
+        if (msg.imageRefs && msg.imageRefs.length > 0) {
+            for (const ref of msg.imageRefs) {
+                mediaRefStore.unpin(ref);
+            }
+        }
+        const textRefs = mediaRefStore.extractRefsFromText(msg.text);
+        for (const ref of textRefs) {
+            mediaRefStore.unpin(ref);
+        }
+        if (msg.quotedPrefix) {
+            const qRefs = mediaRefStore.extractRefsFromText(msg.quotedPrefix);
+            for (const ref of qRefs) {
+                mediaRefStore.unpin(ref);
+            }
+        }
+    }
+    /**
+     * 解析消息中的引用回复，返回双轨前缀（流水内回复 vs 远古历史引用）及新捕获的多媒体
+     */
+    async resolveQuotePrefix(groupId, replyMsgId, onebotClient) {
+        const gid = String(groupId);
+        const newImageRefs = [];
+        const list = this.buffers.get(gid) || [];
+        // 1. 优先检查是否命中当前流水缓冲池中的消息
+        const inBufferIdx = list.findIndex(m => String(m.messageId) === String(replyMsgId));
+        if (inBufferIdx >= 0) {
+            const target = list[inBufferIdx];
+            const targetAuthor = target.card || target.nickname || `QQ ${target.userId}`;
+            return {
+                prefix: `(回复 @${targetAuthor})`,
+                newImageRefs,
+            };
+        }
+        // 2. 未命中流水，尝试通过协议端拉取远古历史消息
+        if (onebotClient && typeof onebotClient.callAction === 'function') {
+            try {
+                const resp = await onebotClient.callAction('get_msg', { message_id: Number(replyMsgId) });
+                const qData = resp?.data;
+                if (qData) {
+                    const qSender = qData.sender || {};
+                    const qAuthor = qSender.card || qSender.nickname || (qSender.user_id ? `QQ ${qSender.user_id}` : '某人');
+                    let summary = '';
+                    const qSegs = Array.isArray(qData.message)
+                        ? qData.message
+                        : parseCqMessageToSegments(String(qData.raw_message || qData.message || ''));
+                    for (const s of qSegs) {
+                        if (s.type === 'text') {
+                            summary += s.data?.text || '';
+                        }
+                        else if (s.type === 'image') {
+                            const url = s.data?.url || s.data?.file;
+                            const ref = mediaRefStore.saveImage({
+                                url,
+                                file: s.data?.file,
+                                groupId: gid,
+                                senderId: qSender.user_id,
+                                messageId: replyMsgId,
+                            });
+                            newImageRefs.push(ref);
+                            summary += ` [图片 ref:${ref}] `;
+                        }
+                        else if (s.type === 'record') {
+                            const dur = Number(s.data?.duration || 0);
+                            summary += ` [语音${dur > 0 ? ` ${dur}秒` : ''}] `;
+                        }
+                        else if (s.type === 'video') {
+                            const vName = s.data?.name || s.data?.file_name || '视频';
+                            summary += ` [视频: ${vName}] `;
+                        }
+                        else if (s.type === 'file') {
+                            const fName = s.data?.name || s.data?.file_name || '文件';
+                            summary += ` [文件: ${fName}] `;
+                        }
+                        else if (s.type === 'forward') {
+                            summary += ' [合并转发] ';
+                        }
+                    }
+                    summary = summary.replace(/\r\n|\r|\n/g, ' ').trim();
+                    if (summary.length > 70)
+                        summary = summary.slice(0, 70) + '...';
+                    return {
+                        prefix: `(引用历史 @${qAuthor}: ${summary || '[消息]'})`,
+                        newImageRefs,
+                    };
+                }
+            }
+            catch (err) {
+                console.warn(`[GroupHistoryBuffer] Failed to resolve remote quoted message ${replyMsgId}:`, err?.message || err);
+            }
+        }
+        return {
+            prefix: `(引用消息 ${replyMsgId})`,
+            newImageRefs,
+        };
+    }
     /**
      * Process and append an incoming OneBot group message to the buffer
      */
@@ -173,9 +293,19 @@ export class GroupHistoryBuffer {
         if (event.message_type !== 'group' || !event.group_id)
             return;
         const groupId = String(event.group_id);
-        const { text: messageText, imageRefs } = await this.formatSegmentsToText(event, onebotClient);
+        const { text: messageText, imageRefs, replyMsgId } = await this.formatSegmentsToText(event, onebotClient);
         if (!messageText.trim())
             return;
+        let quotedPrefix = undefined;
+        if (replyMsgId) {
+            const qRes = await this.resolveQuotePrefix(groupId, replyMsgId, onebotClient);
+            if (qRes.prefix) {
+                quotedPrefix = qRes.prefix;
+            }
+            if (qRes.newImageRefs && qRes.newImageRefs.length > 0) {
+                imageRefs.push(...qRes.newImageRefs);
+            }
+        }
         const date = new Date((event.time || Math.floor(Date.now() / 1000)) * 1000);
         const timeStr = new Intl.DateTimeFormat('zh-CN', {
             timeZone: 'Asia/Shanghai',
@@ -198,6 +328,8 @@ export class GroupHistoryBuffer {
             text: messageText,
             tokens,
             imageRefs: imageRefs.length > 0 ? imageRefs : undefined,
+            replyMsgId,
+            quotedPrefix,
         };
         const rawMsgId = event.message_id ?? event.real_id;
         buffered.dedupeKey = rawMsgId !== undefined && rawMsgId !== null && String(rawMsgId) !== ''
@@ -213,17 +345,20 @@ export class GroupHistoryBuffer {
             return;
         }
         list.push(buffered);
+        this.pinMessageRefs(buffered);
         // Pre-warm member metadata cache asynchronously
         if (event.user_id && onebotClient) {
             this.fetchMemberMeta(groupId, event.user_id, onebotClient).catch(() => { });
         }
         // Hard ceiling safety
         if (list.length > this.hardCapacity) {
-            list.splice(0, list.length - this.hardCapacity);
+            const removed = list.splice(0, list.length - this.hardCapacity);
+            for (const m of removed) {
+                this.unpinMessageRefs(m);
+            }
         }
     }
     /**
-     * Format message segments into clean text with ref anchors
      */
     async formatSegmentsToText(event, onebotClient) {
         const rawMsg = event.message;
@@ -238,10 +373,15 @@ export class GroupHistoryBuffer {
             segments = parseCqMessageToSegments(event.raw_message);
         }
         else if (typeof rawMsg === 'string') {
-            return { text: rawMsg.replace(/\r\n/g, '\n'), imageRefs: [] };
+            let replyMsgId = undefined;
+            const cqMatch = rawMsg.match(/\[CQ:reply,id=(\d+)\]/);
+            if (cqMatch)
+                replyMsgId = cqMatch[1];
+            return { text: rawMsg.replace(/\r\n/g, '\n'), imageRefs: [], replyMsgId };
         }
         const parts = [];
         const imageRefs = [];
+        let replyMsgId = undefined;
         for (const seg of segments) {
             switch (seg.type) {
                 case 'text': {
@@ -390,7 +530,10 @@ export class GroupHistoryBuffer {
                     break;
                 }
                 case 'reply': {
-                    // Reply segment will be visually clear from conversational context
+                    const rId = seg.data?.id || seg.data?.message_id;
+                    if (rId) {
+                        replyMsgId = String(rId);
+                    }
                     break;
                 }
                 default: {
@@ -403,7 +546,13 @@ export class GroupHistoryBuffer {
         if (!text.trim() && event.raw_message) {
             text = String(event.raw_message).replace(/\r\n/g, '\n');
         }
-        return { text, imageRefs };
+        // Final check for replyId if segments didn't pick it up
+        if (!replyMsgId && event.raw_message) {
+            const cqMatch = String(event.raw_message).match(/\[CQ:reply,id=(\d+)\]/);
+            if (cqMatch)
+                replyMsgId = cqMatch[1];
+        }
+        return { text, imageRefs, replyMsgId };
     }
     /**
      * Build structured group context according to dual-watermark window rules
@@ -625,10 +774,28 @@ export class GroupHistoryBuffer {
                     }
                 }
             }
+            // 检查当前消息是否引用了其他消息
+            let replyPrefixStr = '';
+            if (msg.replyMsgId) {
+                const targetIdx = effectiveSlice.findIndex(m => String(m.messageId) === String(msg.replyMsgId));
+                if (targetIdx >= 0) {
+                    const targetSeq = targetIdx + 1;
+                    const targetMsg = effectiveSlice[targetIdx];
+                    const targetUserMeta = memberMap.get(targetMsg.userId);
+                    const targetName = targetUserMeta ? targetUserMeta.displayName : getSafeSpeakerName(targetMsg.card, targetMsg.nickname, targetMsg.userId);
+                    replyPrefixStr = `(回复 #${targetSeq} @${targetName}) `;
+                }
+                else if (msg.quotedPrefix) {
+                    replyPrefixStr = `${msg.quotedPrefix} `;
+                }
+            }
+            else if (msg.quotedPrefix) {
+                replyPrefixStr = `${msg.quotedPrefix} `;
+            }
             // Keep single line per message, escaping inner linebreaks if necessary
             const inlineText = msg.text.replace(/\r\n|\r|\n/g, ' ');
             const seqPrefix = includeSeqIndex ? `#${seq} ` : '';
-            messageLines.push(`[${seqPrefix}${msg.timeStr}] ${speakerName}${badgeStr}: ${inlineText}`);
+            messageLines.push(`[${seqPrefix}${msg.timeStr}] ${speakerName}${badgeStr}: ${replyPrefixStr}${inlineText}`);
         }
         if (ephemeralList.length > 0) {
             groupMessageRefStore.registerTurn(groupId, ephemeralList);
@@ -750,13 +917,25 @@ export class GroupHistoryBuffer {
      * Clear buffer for a group
      */
     clear(groupId) {
-        this.buffers.delete(String(groupId));
+        const gid = String(groupId);
+        const list = this.buffers.get(gid);
+        if (list) {
+            for (const m of list) {
+                this.unpinMessageRefs(m);
+            }
+        }
+        this.buffers.delete(gid);
         groupMessageRefStore.clear(groupId);
     }
     /**
      * Clear all group message buffers
      */
     clearAll() {
+        for (const list of this.buffers.values()) {
+            for (const m of list) {
+                this.unpinMessageRefs(m);
+            }
+        }
         this.buffers.clear();
         groupMessageRefStore.clearAll();
     }

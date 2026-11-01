@@ -4,7 +4,7 @@ import { initChaiteStorage } from './storage.js';
 import { startWebServer } from './server.js';
 import { checkPermission, getEffectiveMasters, banTarget, unbanTarget, parseDuration } from './guard.js';
 import { oneBotToUserMessage, formatModelResponse } from './onebot/message.js';
-import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer.js';
+import { groupHistoryBuffer, groupMessageRefStore, parseCqMessageToSegments } from './context/groupHistoryBuffer.js';
 import { mediaRefStore } from './onebot/refStore.js';
 import { pluginManager } from './plugin/index.js';
 import { runSystemUpdate, restartProcess } from './systemUpdate.js';
@@ -737,18 +737,36 @@ export async function handleMessage(event, storageCtx) {
                 };
                 // 1. 构建当前会话环境元信息 (时间具体到秒、自身身份、主人列表、提问者、触发方式)
                 const now = new Date();
-                const cstFormatter = new Intl.DateTimeFormat('zh-CN', {
+                const shanghaiParts = new Intl.DateTimeFormat('zh-CN', {
                     timeZone: 'Asia/Shanghai',
                     year: 'numeric',
                     month: '2-digit',
                     day: '2-digit',
+                    weekday: 'long',
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
-                    weekday: 'long',
                     hour12: false,
-                });
-                const cstTimeStr = cstFormatter.format(now).replace(/\//g, '-');
+                }).formatToParts(now);
+                const pMap = {};
+                for (const p of shanghaiParts) {
+                    pMap[p.type] = p.value;
+                }
+                const hourNum = parseInt(pMap.hour || '0', 10);
+                let periodStr = '深夜';
+                if (hourNum >= 5 && hourNum < 8)
+                    periodStr = '清晨';
+                else if (hourNum >= 8 && hourNum < 11)
+                    periodStr = '上午';
+                else if (hourNum >= 11 && hourNum < 13)
+                    periodStr = '中午';
+                else if (hourNum >= 13 && hourNum < 18)
+                    periodStr = '下午';
+                else if (hourNum >= 18 && hourNum < 23)
+                    periodStr = '晚上';
+                else if (hourNum >= 0 && hourNum < 5)
+                    periodStr = '凌晨';
+                const cstTimeStr = `${pMap.year}年${pMap.month}月${pMap.day}日 ${pMap.weekday} ${pMap.hour}:${pMap.minute}:${pMap.second} (${periodStr}) [北京时间 CST/UTC+8]`;
                 // ── 发言者时间戳/身份徽标：完整上下文与精简模式共用 ──────────────────
                 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
                     timeZone: 'Asia/Shanghai',
@@ -830,7 +848,7 @@ export async function handleMessage(event, storageCtx) {
                     '### 当前群聊会话环境与时间：',
                     '<chat_environment>',
                     `- 会话场景: QQ 群聊 (群号: ${event.groupId})`,
-                    `- 当前时间: ${cstTimeStr} (北京时间 CST/UTC+8)`,
+                    `- 当前时间: ${cstTimeStr}`,
                     `- 你的身份: QQ ${botUin || '未知'}`,
                     `- 管理员/主人: QQ ${mastersStr}`,
                     `- 当前发言者: ${senderStr}`,
@@ -917,6 +935,58 @@ export async function handleMessage(event, storageCtx) {
                                 });
                             }
                         }
+                        // 2.5 解析提问者本轮是否带有引用回复（双轨解析：流水内 #N vs 远古历史引用）
+                        let callerQuotePrefix = '';
+                        const callerQuotedImages = [];
+                        let rawReplyId = undefined;
+                        if (rawEvent) {
+                            const rawSegments = Array.isArray(rawEvent.message)
+                                ? rawEvent.message
+                                : (typeof rawEvent.raw_message === 'string' ? parseCqMessageToSegments(rawEvent.raw_message) : []);
+                            const repSeg = rawSegments.find((s) => s.type === 'reply');
+                            if (repSeg) {
+                                rawReplyId = repSeg.data?.id || repSeg.data?.message_id;
+                            }
+                            else if (typeof rawEvent.raw_message === 'string') {
+                                const cqMatch = rawEvent.raw_message.match(/\[CQ:reply,id=(\d+)\]/);
+                                if (cqMatch)
+                                    rawReplyId = cqMatch[1];
+                            }
+                        }
+                        if (rawReplyId) {
+                            const cachedSlice = groupMessageRefStore.getMessages(event.groupId);
+                            const target = cachedSlice.find((m) => String(m.messageId) === String(rawReplyId));
+                            if (target) {
+                                const targetAuthor = target.card || target.nickname || `QQ ${target.userId}`;
+                                callerQuotePrefix = `(回复 #${target.seq} @${targetAuthor}) `;
+                            }
+                            else {
+                                const qRes = await groupHistoryBuffer.resolveQuotePrefix(event.groupId, rawReplyId, onebotAdapter);
+                                if (qRes.prefix)
+                                    callerQuotePrefix = `${qRes.prefix} `;
+                                if (qRes.newImageRefs && qRes.newImageRefs.length > 0) {
+                                    callerQuotedImages.push(...qRes.newImageRefs);
+                                }
+                            }
+                        }
+                        // 若当前模型具备视觉能力，将被引用的远古图片一并注入模型视野
+                        if (isVisual && callerQuotedImages.length > 0) {
+                            for (const ref of callerQuotedImages) {
+                                try {
+                                    const resolved = await mediaRefStore.resolveImage(ref, onebotAdapter);
+                                    if (resolved?.base64) {
+                                        visualAttachments.push({
+                                            seq: visualAttachments.length + 1,
+                                            desc: `提问者回复引用的历史图片 [图片 ref:${ref}]`,
+                                            detail: `对应提问者回复引用的历史图片 [图片 ref:${ref}]`,
+                                            mimeType: resolved.mimeType || 'image/jpeg',
+                                            base64: resolved.base64,
+                                        });
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
                         // 0. 注入静态场景协议说明（作为前缀基石，稳定命中 KV Cache）
                         const protocolLines = [
                             '### 场景协议：',
@@ -929,6 +999,9 @@ export async function handleMessage(event, storageCtx) {
                             protocolLines.push(`${orderIdx++}. <long_term_memory>: 长期事实记忆（本群共享常识与当前发言者的个人偏好/事实）；`);
                         }
                         protocolLines.push(`${orderIdx++}. <chat_environment>: 动态会话环境与当前时间。`);
+                        protocolLines.push('请遵守以下核心理解规范：');
+                        protocolLines.push('- [时空基准准则]：下方 <chat_environment> 中标注的「当前时间」是物理世界的唯一绝对事实基准（Ground Truth），优先级绝对高于任何预训练截断知识。凡涉及“今天/明天/昨天/今年/这周/几点/刚刚/最新”等一切时间推算，必须严格以此时间作为锚点进行相对计算。');
+                        protocolLines.push('- [引用与回复识别规范]：发言行首若带有「(回复 #N @某人)」表示直接回复上方流水中序号为 #N 的发言，请结合该序号语境理解；若带有「(引用历史 @某人: "...")」表示引用了超出近期流水窗口的历史消息，括号内为其文本摘要或多媒体附件（如 [图片 ref:...]、[文件: ...] 等）。');
                         protocolLines.push('请严格保持你预设的角色人设与口吻，结合群聊上下文与环境中的触发方式做出真实群友般的自然回应。');
                         contextParts.push({
                             type: 'text',
@@ -988,7 +1061,7 @@ export async function handleMessage(event, storageCtx) {
                         //   · 伪人模式：[#N HH:mm] ... —— 依赖流水序号做短引用定位，保持不变。
                         const currentSeq = (groupContextResult?.messageCount || 0) + 1;
                         const seqPrefix = isBym ? `#${currentSeq} ` : '';
-                        const speakerHeader = `[${seqPrefix}${currentMsgTime}] ${speakerName}${badgeStr}: `;
+                        const speakerHeader = `[${seqPrefix}${currentMsgTime}] ${speakerName}${badgeStr}: ${callerQuotePrefix}`;
                         // 流水里已经带上本轮消息（缓冲池里没有别的发言）时，末尾不再重复一次带头部的同一句
                         const tailHeader = groupContextResult?.includesCurrentMessage ? '' : speakerHeader;
                         // 注册当前消息至短期虚拟引用池，便于后续多轮对话或工具通过序号精准定位

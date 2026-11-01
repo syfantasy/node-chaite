@@ -5,8 +5,49 @@ import { detectSupportedImageMime, optimizeGifBuffer } from './message.js';
 class MediaRefStore {
     constructor() {
         this.store = new Map();
+        this.pinnedRefs = new Map();
         this.maxItems = 1000;
-        this.ttlMs = 2 * 60 * 60 * 1000; // 2 hours
+        this.ttlMs = 12 * 60 * 60 * 1000; // 12 hours for unpinned fallback
+    }
+    /**
+     * 锁定特定 ref，阻止因 TTL 或容量清理被淘汰（字在图在，与会话流水生命周期同生共死）
+     */
+    pin(ref) {
+        if (!ref)
+            return;
+        const count = this.pinnedRefs.get(ref) || 0;
+        this.pinnedRefs.set(ref, count + 1);
+    }
+    /**
+     * 解除特定 ref 锁定（当所属消息被群聊滑动窗口淘汰时调用）
+     */
+    unpin(ref) {
+        if (!ref)
+            return;
+        const count = this.pinnedRefs.get(ref) || 0;
+        if (count <= 1) {
+            this.pinnedRefs.delete(ref);
+        }
+        else {
+            this.pinnedRefs.set(ref, count - 1);
+        }
+    }
+    isPinned(ref) {
+        return (this.pinnedRefs.get(ref) || 0) > 0;
+    }
+    /**
+     * 从消息文本中解析所有 ref 锚点标记
+     */
+    extractRefsFromText(text) {
+        if (!text)
+            return [];
+        const refs = [];
+        const re = /\bref:([a-zA-Z0-9_]+)/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            refs.push(m[1]);
+        }
+        return refs;
     }
     generateShortId() {
         return crypto.randomBytes(4).toString('hex');
@@ -137,6 +178,10 @@ class MediaRefStore {
         const item = this.store.get(ref);
         if (!item)
             return undefined;
+        // 只要处于群聊上下文锁定期，永不过期，保证字在图在
+        if (this.isPinned(ref)) {
+            return item;
+        }
         if (Date.now() - item.createdAt > this.ttlMs) {
             this.store.delete(ref);
             return undefined;
@@ -247,8 +292,10 @@ class MediaRefStore {
     cleanup() {
         const now = Date.now();
         if (this.store.size > this.maxItems) {
-            // Evict oldest or expired
+            // Evict oldest or expired, but never evict pinned refs
             for (const [key, item] of this.store.entries()) {
+                if (this.isPinned(key))
+                    continue;
                 if (now - item.createdAt > this.ttlMs || this.store.size > this.maxItems * 0.8) {
                     this.store.delete(key);
                 }
