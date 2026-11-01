@@ -204,20 +204,25 @@ function getImageDimensions(buffer) {
  * 请求构建阶段会直接抛「OpenAI 请求没有可发送的消息」并被记成 500 错误。
  * 这里至少产出一个占位文本，让模型知道"用户发来了一张卡片"。
  */
-function describeCardSegment(seg) {
-    const raw = seg?.data?.data ?? seg?.data?.xml ?? seg?.data?.content ?? '';
-    const text = typeof raw === 'string' ? raw : '';
-    if (!text)
-        return '[卡片消息]';
-    if (seg.type === 'json') {
+function describeCardText(text) {
+    const raw = (text || '').trim();
+    if (!raw)
+        return null;
+    if (raw.startsWith('{') || raw.startsWith('[')) {
         try {
-            const parsed = JSON.parse(text);
+            const parsed = JSON.parse(raw);
             const meta = parsed?.meta || {};
+            // 只认真正的卡片报文（带 app/view/meta/prompt），避免用户手打的 JSON 被当成卡片
+            const looksLikeCard = typeof parsed === 'object' && parsed !== null &&
+                ('app' in parsed || 'view' in parsed || 'meta' in parsed || 'prompt' in parsed);
+            if (!looksLikeCard)
+                return null;
             const candidates = [
                 parsed?.desc,
                 parsed?.prompt,
                 meta?.detail_1?.title,
                 meta?.detail?.title,
+                meta?.source?.name,
                 meta?.news?.title,
                 meta?.music?.title,
                 meta?.detail_1?.desc,
@@ -227,11 +232,29 @@ function describeCardSegment(seg) {
             return label ? `[卡片消息: ${String(label).trim().slice(0, 80)}]` : '[卡片消息]';
         }
         catch {
-            // 非标准 json 卡片，落到下面的 xml 兜底
+            // 非标准 json 卡片，仍按卡片占位，不把原始报文丢给模型
+            return '[卡片消息]';
         }
     }
-    const m = text.match(/<(?:summary|title|brief)[^>]*>([^<]{1,80})<\//i);
-    return m ? `[卡片消息: ${m[1].trim()}]` : '[卡片消息]';
+    if (raw.startsWith('<')) {
+        const m = raw.match(/<(?:summary|title|brief)[^>]*>([^<]{1,80})<\//i);
+        return m ? `[卡片消息: ${m[1].trim()}]` : '[卡片消息]';
+    }
+    return null;
+}
+function describeCardSegment(seg) {
+    const data = seg?.data ?? {};
+    // icqq 的 share 段把字段直接摊在段上（type/title/summary/content），没有 data 包装
+    const shareLabel = [seg?.title, seg?.summary, seg?.content, data?.title, data?.summary, data?.content]
+        .find((v) => typeof v === 'string' && v.trim());
+    if (seg?.type === 'share' && shareLabel) {
+        return `[卡片消息: ${String(shareLabel).trim().slice(0, 80)}]`;
+    }
+    const raw = data?.data ?? data?.xml ?? data?.content ?? '';
+    const text = typeof raw === 'string' ? raw : '';
+    if (!text)
+        return '[卡片消息]';
+    return describeCardText(text) ?? '[卡片消息]';
 }
 /**
  * Convert OneBot message to Chaite UserMessage
@@ -439,12 +462,23 @@ export async function oneBotToUserMessage(event, options = {}) {
             const previewStr = previewMessages.length > 0 ? ` 摘要: ${previewMessages.slice(0, 3).map((p) => `${p.senderName}: ${p.text}`).join('; ')}...` : '';
             rawText += ` [聊天记录:${summary}${previewStr} ref:${ref}] `;
         }
-        else if (seg.type === 'json' || seg.type === 'xml' || seg.type === 'card') {
+        else if (seg.type === 'json' || seg.type === 'xml' || seg.type === 'card' || seg.type === 'share') {
             // 小程序/链接/分享卡片：本身没有 text 段，不处理就会得到空消息体
             rawText += ` ${describeCardSegment(seg)} `;
         }
-        else if (seg.type === 'face' || seg.type === 'mface') {
+        else if (seg.type === 'face' || seg.type === 'mface' || seg.type === 'sface') {
             rawText += ' [表情] ';
+        }
+    }
+    // icqq 把 xml/json 卡片当「独立元素」解析：e.message 段数组里根本没有对应段，
+    // 卡片原文只留在 e.msg（Parser 里 content = elem.data）。段数组一个字符都没取到时
+    // 用这份原文兜底，否则整条消息会变成空 content，请求直接 500。
+    if (!rawText.trim() && imageSegments.length === 0) {
+        const fallback = [event.text, event.raw_message, event.raw?.raw_message]
+            .find((v) => typeof v === 'string' && v.trim());
+        if (fallback) {
+            const text = String(fallback).trim();
+            rawText = describeCardText(text) ?? text;
         }
     }
     // 2. Second pass: limit images to recent maxRecentImages
