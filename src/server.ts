@@ -722,5 +722,24 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
     }
   })
 
+  // 自更新重启时，旧进程退出与新进程监听存在时间差，新进程很容易撞上 EADDRINUSE，
+  // 结果就是「更新完面板打不开」。这里在重启窗口内自动重试绑定端口，最多 30 次 / 30 秒。
+  let listenRetries = 0
+  server.on('error', (err: any) => {
+    if (err?.code === 'EADDRINUSE' && listenRetries < 30) {
+      listenRetries += 1
+      console.warn(`[Server] 端口 ${config.web.port} 仍被上一个进程占用，1 秒后重试 (${listenRetries}/30)...`)
+      setTimeout(() => {
+        try {
+          server.listen(config.web.port, config.web.host)
+        } catch {
+          // 下一轮 error 事件继续处理
+        }
+      }, 1000)
+      return
+    }
+    console.error('[Server] Chaite Web 控制台监听失败:', err)
+  })
+
   return { app, server }
 }
