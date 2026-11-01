@@ -230,6 +230,9 @@
       <li class="nav-item"><a href="#storage-advanced" class="nav-link">7. 存储、工具与时限管理</a></li>
       <li class="nav-item"><a href="#memory-tools-config" class="nav-link">8. 认知记忆与工具配置</a></li>
       <li class="nav-item"><a href="#tools-system" class="nav-link">9. 工具体系与群聊流水</a></li>
+      <li class="nav-item"><a href="#prefix-caching-temporal" class="nav-link">10. KV Cache 与时空基准协议</a></li>
+      <li class="nav-item"><a href="#context-pinned-media" class="nav-link">11. 多媒体生命周期与双轨引用</a></li>
+      <li class="nav-item"><a href="#negative-constraints-tools" class="nav-link">12. 拟人工具与素材检索隔离</a></li>
     </ul>
   </aside>
 
@@ -901,6 +904,77 @@ export default async function (ctx) {
   // const stream = ctx.getGroupHistory(targetGroupId, 50, true)
 }</code></pre>
     </div>
+
+    <!-- 10. KV Cache 与时空基准协议 -->
+    <div class="card">
+      <h2 id="prefix-caching-temporal">10. 极致 KV Cache 复用与时空基准协议体系</h2>
+      <p>在长周期、高频次的大模型群聊交互中，Prompt Cache（KV Cache 前缀复用）是降低推理首字延迟（TTFT）与节省 Token 成本的核心支柱。Chaite 建立了严格的<strong>时空双层解耦与不可变前缀协议</strong>：</p>
+
+      <h3>固化年份前缀（Ground Truth 宣言）</h3>
+      <p>若将当前时间直接拼在 Prompt 最顶端，随着每一秒的变化，整个上下文的 KV 缓存将 100% 击穿。Chaite 将<strong>当前真实年份（如 2026 年）作为全局常量</strong>固化焊死在最顶层的静态场景协议中：</p>
+      <ul>
+        <li><strong>全年不可变常驻</strong>：顶层静态协议全年保持 100% 字节级一致，永久命中主流大模型（Gemini、Claude、DeepSeek、GPT-4o）的 Prefix Cache；</li>
+        <li><strong>防训练截断幻觉</strong>：在协议中施加强约束法则，严禁模型在搜索参数或事实推断中沿用过时的预训练截断年份（彻底杜绝大模型频繁检索过往年份）；</li>
+        <li><strong>底部时空基准下沉</strong>：将具体秒级时间下沉至底部 <code>&lt;chat_environment&gt;</code>，并采用人性化全语义格式（如 <code>2026年05月18日 星期日 10:48:15 (上午) [北京时间 CST/UTC+8]</code>），指示为现实世界的唯一绝对真理（Ground Truth）。</li>
+      </ul>
+    </div>
+
+    <!-- 11. 多媒体生命周期与双轨引用 -->
+    <div class="card">
+      <h2 id="context-pinned-media">11. 上下文驱动的多媒体生命周期与双轨引用消解</h2>
+
+      <h3>“字在图在，字走图消”的生命周期绑定 (Window Pinning)</h3>
+      <p>彻底废弃固定 TTL（如 2 小时）定时器机制，将多媒体生命周期与 <code>GroupHistoryBuffer</code> 群聊滑动窗口深度绑定：</p>
+      <ul>
+        <li>只要某条消息或其媒体引用依然存在于群聊滑动窗口内，该图片 Ref 永久锁定（Pinned），严禁任何超时策略清理；</li>
+        <li>只有当群聊新发言逐渐将该消息移出滑动窗口时，锁定才被释放并安全回收。</li>
+      </ul>
+
+      <h3>双轨引用消解机制 (Dual-Track Quoting)</h3>
+      <ul>
+        <li><strong>流水内短引用</strong>：若被引用的消息存在于当前近期滑动窗口中，自动消解为流水序号引用 <code>(回复 #3 @Alice)</code>，避免重复复制文字，极大节省 token 并与流水序号无缝对齐；</li>
+        <li><strong>跨窗口远古历史引用</strong>：若被引用的发言超出近期窗口，通过 OneBot 协议层自动调用 <code>get_msg</code> 回溯该消息，格式化为带语义摘要的引用条目 <code>(引用历史 @Bob: "...")</code>；若原消息包含图片，自动将其解码并注入多模态视觉上下文池。</li>
+      </ul>
+    </div>
+
+    <!-- 12. 拟人工具与素材检索隔离 -->
+    <div class="card">
+      <h2 id="negative-constraints-tools">12. 拟人化辅助工具与素材检索的负向隔离范式</h2>
+      <p>在聊天 Agent 接入丰富的外部工具时，相似模态的工具极易产生意图混淆。Chaite 建立了清晰的<strong>职责边界与强负向禁令（Negative Constraints）</strong>设计规范：</p>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>对比维度</th>
+              <th>素材检索型工具 (<code>web_image_search</code>)</th>
+              <th>拟人反应型工具 (<code>chat_sticker_reaction</code>)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>核心职责</strong></td>
+              <td>互联网公开图库检索，满足找壁纸、找素材需求</td>
+              <td>智能体自身的私有拟人化表达库，日常水群情绪附带</td>
+            </tr>
+            <tr>
+              <td><strong>负向禁令</strong></td>
+              <td>不负责情绪化日常聊天插图</td>
+              <td><strong>严禁</strong>响应搜图/找图/求壁纸等素材指令（转交前者）</td>
+            </tr>
+            <tr>
+              <td><strong>发送频次</strong></td>
+              <td>由模型根据检索结果与需求自主决定 1-5 张</td>
+              <td>日常聊天严格最多 1 张且防刷屏；明确指名时方开放批量</td>
+            </tr>
+            <tr>
+              <td><strong>反馈设计</strong></td>
+              <td>返回图片链接与摘要供大模型展示或引用</td>
+              <td>底层通道静默下发，严禁大模型复述状态或报错</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
   </main>
 
   <script>
