@@ -146,16 +146,6 @@ export class AbstractClient {
             for (const tool of memoryTools)
                 pushUnique(tool);
         }
-        // Plugin registered tools via ctx.registerTool()
-        try {
-            const gPluginMgr = globalThis.chaitePluginManager;
-            if (gPluginMgr && typeof gPluginMgr.getAllTools === 'function') {
-                for (const tool of gPluginMgr.getAllTools()) {
-                    pushUnique(tool);
-                }
-            }
-        }
-        catch { }
         if (groupIds.includes('default_local')) {
             const toolDTOS = await toolManager.listInstances();
             for (const toolDTO of toolDTOS) {
@@ -163,6 +153,16 @@ export class AbstractClient {
                 const toolC = await toolManager.getInstance(toolName);
                 pushUnique(toolC);
             }
+            // 默认系统组挂载全部插件工具
+            try {
+                const gPluginMgr = globalThis.chaitePluginManager;
+                if (gPluginMgr && typeof gPluginMgr.getAllTools === 'function') {
+                    for (const tool of gPluginMgr.getAllTools()) {
+                        pushUnique(tool);
+                    }
+                }
+            }
+            catch { }
         }
         for (const toolGroupId of groupIds.filter(id => id !== 'default_local')) {
             const toolGroup = await toolsGroupManager.getInstance(toolGroupId);
@@ -172,6 +172,22 @@ export class AbstractClient {
             }
             const toolIds = toolGroup.toolIds || [];
             for (const toolId of toolIds) {
+                // 支持在自定义工具组中选取或禁用插件工具
+                if (toolId.startsWith('plugin:')) {
+                    const parts = toolId.split(':');
+                    const pluginId = parts[1];
+                    const toolName = parts[2];
+                    try {
+                        const gPluginMgr = globalThis.chaitePluginManager;
+                        const loaded = gPluginMgr?.plugins?.get(pluginId);
+                        const toolC = loaded?.tools?.find((t) => t.name === toolName);
+                        if (toolC) {
+                            pushUnique(toolC);
+                        }
+                    }
+                    catch { }
+                    continue;
+                }
                 const tool = await toolManager.getInstanceT(toolId);
                 if (!tool) {
                     this.logger.warn(`tool ${toolId} not found`);

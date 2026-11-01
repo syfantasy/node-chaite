@@ -29,9 +29,8 @@ const formData = ref({} as Shareable.ToolsGroupModel)
 
 // Transfer options
 const transferOptions = computed(() => {
-  return props.availableTools.map(tool => ({
-    // tool = tool as Shareable.ToolModel,
-    label: tool.name,
+  return props.availableTools.map((tool: any) => ({
+    label: tool.isPluginTool ? `${tool.name} [插件: ${tool.pluginName || 'Plugin'}]` : tool.name,
     value: tool.id,
     disabled: false,
     description: tool.description,

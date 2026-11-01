@@ -5,6 +5,28 @@ import { Chaite, ChaiteContext, ChaiteResponse } from '../index.js';
 import { asyncLocalStorage, extractClassName } from '../utils/index.js';
 const router = express.Router();
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+function findPluginTool(id) {
+    if (!id || !id.startsWith('plugin:'))
+        return null;
+    const parts = id.split(':');
+    const pluginId = parts[1];
+    const toolName = parts[2];
+    try {
+        const gPluginMgr = globalThis.chaitePluginManager;
+        if (!gPluginMgr)
+            return null;
+        const plugin = gPluginMgr.plugins?.get(pluginId);
+        if (!plugin)
+            return null;
+        const tool = (plugin.tools || []).find((t) => t.name === toolName);
+        if (!tool)
+            return null;
+        return { plugin, tool };
+    }
+    catch {
+        return null;
+    }
+}
 function paginate(items, req) {
     const page = Math.max(1, parseInt(req.query['page']) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(req.query['pageSize']) || 20));
@@ -28,15 +50,57 @@ async function wrap(res, fn) {
 router.get('/list', (req, res) => {
     wrap(res, async () => {
         let items = await Chaite.getInstance().getToolsManager().listInstances();
+        // 聚合插件注册的工具
+        try {
+            const gPluginMgr = globalThis.chaitePluginManager;
+            if (gPluginMgr && typeof gPluginMgr.getPlugins === 'function') {
+                const plugins = gPluginMgr.getPlugins();
+                for (const p of plugins) {
+                    const loaded = gPluginMgr.plugins?.get(p.id);
+                    if (loaded && Array.isArray(loaded.tools)) {
+                        for (const t of loaded.tools) {
+                            items.push({
+                                id: `plugin:${p.id}:${t.name}`,
+                                name: t.name,
+                                description: t.function?.description || '',
+                                code: '// 插件注册工具，代码位于插件目录内部',
+                                config: t.config || loaded.config || {},
+                                pluginId: p.id,
+                                pluginName: p.name || p.id,
+                                isPluginTool: true,
+                                status: 'enabled',
+                                createdAt: p.createdAt || 0,
+                                updatedAt: p.updatedAt || 0,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
         const name = req.query['name'];
-        if (name)
-            items = items.filter(t => t.name.includes(name));
+        if (name) {
+            const kw = name.toLowerCase();
+            items = items.filter(t => t.name.toLowerCase().includes(kw) || t.pluginName?.toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw));
+        }
+        const toolType = req.query['toolType'];
+        if (toolType === 'local') {
+            items = items.filter(t => !t.isPluginTool);
+        }
+        else if (toolType === 'plugin') {
+            items = items.filter(t => Boolean(t.isPluginTool));
+        }
         return paginate(items, req);
     });
 });
 /** GET /api/tools/:id/test-schema — schema from the actually loaded tool instance. */
 router.get('/:id/test-schema', (req, res) => {
     wrap(res, async () => {
+        const pluginTarget = findPluginTool(req.params.id);
+        if (pluginTarget) {
+            const tool = pluginTarget.tool;
+            return { name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters };
+        }
         const mgr = Chaite.getInstance().getToolsManager();
         const dto = await mgr.getInstanceT(req.params.id);
         if (!dto)
@@ -67,6 +131,18 @@ function resolveToolConfigPath(toolName) {
 /** GET /api/tools/:id/config — 获取工具独立的配置文件 */
 router.get('/:id/config', (req, res) => {
     wrap(res, async () => {
+        const pluginTarget = findPluginTool(req.params.id);
+        if (pluginTarget) {
+            const { plugin, tool } = pluginTarget;
+            const pName = plugin.meta?.name || plugin.id;
+            return {
+                filePath: `plugins/apps/${plugin.id}/config.json`,
+                rawText: JSON.stringify(plugin.config || tool.config || {}, null, 2),
+                config: plugin.config || tool.config || {},
+                schema: tool?.configSchema || null,
+                managedByPlugin: pName,
+            };
+        }
         const mgr = Chaite.getInstance().getToolsManager();
         const dto = await mgr.getInstanceT(req.params.id);
         if (!dto)
@@ -184,15 +260,26 @@ router.post('/:id/config', (req, res) => {
 router.post('/:id/test', (req, res) => {
     wrap(res, async () => {
         const chaite = Chaite.getInstance();
-        const mgr = chaite.getToolsManager();
-        const dto = await mgr.getInstanceT(req.params.id);
-        if (!dto)
-            throw new Error('Tool not found');
-        const tool = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''));
-        if (!tool)
-            throw new Error(`工具“${dto.name}”尚未被运行时加载`);
-        const toolConfig = dto.config || dto.extraData?.config || {};
-        tool.config = toolConfig;
+        const pluginTarget = findPluginTool(req.params.id);
+        let tool = null;
+        let toolConfig = {};
+        if (pluginTarget) {
+            tool = pluginTarget.tool;
+            toolConfig = pluginTarget.plugin.config || tool.config || {};
+            tool.config = toolConfig;
+        }
+        else {
+            const mgr = chaite.getToolsManager();
+            const dto = await mgr.getInstanceT(req.params.id);
+            if (!dto)
+                throw new Error('Tool not found');
+            const toolInstance = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''));
+            if (!toolInstance)
+                throw new Error(`工具“${dto.name}”尚未被运行时加载`);
+            toolConfig = dto.config || dto.extraData?.config || {};
+            toolInstance.config = toolConfig;
+            tool = toolInstance;
+        }
         const context = new ChaiteContext(chaite.getLogger());
         context.setChaite(chaite);
         context.toolConfig = toolConfig;
@@ -244,6 +331,22 @@ router.put('/:id', async (req, res) => {
 /** GET /api/tools/:id */
 router.get('/:id', (req, res) => {
     wrap(res, async () => {
+        const pluginTarget = findPluginTool(req.params.id);
+        if (pluginTarget) {
+            const { plugin, tool } = pluginTarget;
+            return {
+                id: req.params.id,
+                name: tool.name,
+                description: tool.function?.description || '',
+                code: '// 插件注册工具，代码位于插件目录内部',
+                config: tool.config || plugin.config || {},
+                pluginId: plugin.id,
+                pluginName: plugin.meta?.name || plugin.id,
+                isPluginTool: true,
+                createdAt: 0,
+                updatedAt: 0,
+            };
+        }
         const tool = await Chaite.getInstance().getToolsManager().getInstanceT(req.params.id);
         if (!tool) {
             res.status(404).json(ChaiteResponse.fail(null, 'Tool not found'));

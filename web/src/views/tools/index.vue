@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { DataTableColumns } from 'naive-ui'
 const router = useRouter()
-import { NButton, NFlex, NGrid, NPopover, NSpace, NTag, useMessage } from 'naive-ui'
+import { NButton, NFlex, NGrid, NPopover, NSelect, NSpace, NTag, useMessage } from 'naive-ui'
 import { h, onMounted, reactive, ref } from 'vue'
 import type { ListToolModels } from '@/service/api/tools'
 import { createTool, deleteTool, fetchAllToolList, fetchToolList, updateTool, uploadToolToCloud } from '@/service/api/tools'
@@ -41,9 +41,27 @@ function createColumns({
       title: '名称',
       key: 'name',
       render(row: Shareable.ToolModel) {
-        const children = [row.name] as any[]
+        const isPlugin = Boolean((row as any).isPluginTool)
+        const children = [
+          h('span', { style: { fontWeight: '600' } }, row.name),
+        ] as any[]
+        if (isPlugin) {
+          children.push(
+            h(
+              NTag,
+              { size: 'small', type: 'info', bordered: false, style: { marginLeft: '6px' } },
+              { default: () => `插件: ${(row as any).pluginName || '插件'}` },
+            ),
+          )
+        }
         if (row.uploader) {
-          children.push(h(NPopover, { trigger: 'hover' }, { trigger: () => h(IconLinkCloudSuccess, { style: { color: 'green' } }), default: () => '云端工具' }))
+          children.push(
+            h(
+              NPopover,
+              { trigger: 'hover' },
+              { trigger: () => h(IconLinkCloudSuccess, { style: { color: 'green', marginLeft: '6px' } }), default: () => '云端工具' },
+            ),
+          )
         }
         return h(NFlex, { align: 'center' }, { default: () => children })
       },
@@ -53,6 +71,9 @@ function createColumns({
       title: '状态',
       key: 'status',
       render(row: Shareable.ToolModel) {
+        if ((row as any).isPluginTool) {
+          return h(NTag, { type: 'info', bordered: false }, { default: () => '插件托管' })
+        }
         return row.status === 'disabled'
           ? h(NPopover, { trigger: 'hover' }, { trigger: h(NTag, { type: 'error' }, { default: () => '禁用' }), default: () => '已禁用，不会被任何工具组使用' })
           : h(NTag, { type: 'success' }, { default: () => '正常' })
@@ -71,7 +92,33 @@ function createColumns({
     {
       title: '操作',
       key: 'actions',
-      render(row) {
+      render(row: any) {
+        if (row.isPluginTool) {
+          return [
+            h(
+              NButton,
+              {
+                type: 'warning',
+                strong: true,
+                tertiary: true,
+                size: 'small',
+                onClick: () => config(row),
+              },
+              { default: () => '配置' },
+            ),
+            h(
+              NButton,
+              {
+                type: 'success',
+                strong: true,
+                tertiary: true,
+                size: 'small',
+                onClick: () => test(row),
+              },
+              { default: () => '测试' },
+            ),
+          ]
+        }
         return [
           h(
             NButton,
@@ -454,10 +501,12 @@ onMounted(() => {
 // 搜索相关
 const searchModel = reactive({
   name: undefined,
-} as ListToolModels)
+  toolType: '',
+} as ListToolModels & { toolType?: string })
 
 function handleResetSearch() {
   searchModel.name = undefined
+  searchModel.toolType = ''
   toolPage.value = 1
   fetchTools(searchModel)
 }
@@ -488,6 +537,19 @@ function handleToolPageSizeChange(pageSize: number) {
         <NGrid cols="1 s:2 m:3 l:6" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
           <NFormItemGridItem span="1" label="名称" path="name">
             <n-input v-model:value="searchModel.name" placeholder="请输入要搜索的名称关键词" />
+          </NFormItemGridItem>
+          <NFormItemGridItem span="1" label="工具类型" path="toolType">
+            <n-select
+              v-model:value="searchModel.toolType"
+              clearable
+              placeholder="全部类型"
+              :options="[
+                { label: '全部工具', value: '' },
+                { label: '本地独立工具', value: 'local' },
+                { label: '插件托管工具', value: 'plugin' },
+              ]"
+              @update:value="handleToolSearch"
+            />
           </NFormItemGridItem>
           <NGridItem span="1">
             <NFlex class="ml-auto">
