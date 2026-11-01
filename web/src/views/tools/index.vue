@@ -1,18 +1,55 @@
 <script lang="ts" setup>
 import type { DataTableColumns } from 'naive-ui'
-const router = useRouter()
-import { NButton, NFlex, NGrid, NPopover, NSelect, NSpace, NTag, useMessage } from 'naive-ui'
-import { h, onMounted, reactive, ref } from 'vue'
+import {
+  NAlert,
+  NButton,
+  NCard,
+  NDataTable,
+  NEmpty,
+  NFlex,
+  NForm,
+  NFormItemGridItem,
+  NGrid,
+  NGridItem,
+  NInput,
+  NModal,
+  NPagination,
+  NPopover,
+  NSelect,
+  NSpace,
+  NTabPane,
+  NTabs,
+  NTag,
+  useMessage,
+} from 'naive-ui'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { ListToolModels } from '@/service/api/tools'
-import { createTool, deleteTool, fetchAllToolList, fetchToolList, updateTool, uploadToolToCloud } from '@/service/api/tools'
+import {
+  createTool,
+  deleteTool,
+  fetchAllToolList,
+  fetchToolList,
+  updateTool,
+  uploadToolToCloud,
+} from '@/service/api/tools'
 import ToolFormModal from './ToolFormModal.vue'
 import ToolTestModal from './ToolTestModal.vue'
 import ToolConfigModal from './ToolConfigModal.vue'
-import { createToolGroup, deleteToolGroup, fetchAllToolGroupList, updateToolGroup } from '@/service/api/toolGroup'
+import {
+  createToolGroup,
+  deleteToolGroup,
+  fetchAllToolGroupList,
+  updateToolGroup,
+} from '@/service/api/toolGroup'
 import ToolGroupFormModal from '@/views/tools/ToolGroupFormModal.vue'
 import IconLinkCloudSuccess from '~icons/icon-park-outline/cloudy'
 import type { Shareable } from '@/typings/entities/shareable'
 
+const router = useRouter()
+const message = useMessage()
+
+// 本地工具列定义
 function createColumns({
   upload,
   edit,
@@ -30,30 +67,16 @@ function createColumns({
     {
       title: 'ID',
       key: 'id',
-      resizable: true,
-    },
-    {
-      title: '云端ID',
-      key: 'cloudId',
-      resizable: true,
+      width: 140,
+      ellipsis: { tooltip: true },
     },
     {
       title: '名称',
       key: 'name',
       render(row: Shareable.ToolModel) {
-        const isPlugin = Boolean((row as any).isPluginTool)
         const children = [
           h('span', { style: { fontWeight: '600' } }, row.name),
         ] as any[]
-        if (isPlugin) {
-          children.push(
-            h(
-              NTag,
-              { size: 'small', type: 'info', bordered: false, style: { marginLeft: '6px' } },
-              { default: () => `插件: ${(row as any).pluginName || '插件'}` },
-            ),
-          )
-        }
         if (row.uploader) {
           children.push(
             h(
@@ -65,15 +88,12 @@ function createColumns({
         }
         return h(NFlex, { align: 'center' }, { default: () => children })
       },
-      resizable: true,
     },
     {
       title: '状态',
       key: 'status',
+      width: 90,
       render(row: Shareable.ToolModel) {
-        if ((row as any).isPluginTool) {
-          return h(NTag, { type: 'info', bordered: false }, { default: () => '插件托管' })
-        }
         return row.status === 'disabled'
           ? h(NPopover, { trigger: 'hover' }, { trigger: h(NTag, { type: 'error' }, { default: () => '禁用' }), default: () => '已禁用，不会被任何工具组使用' })
           : h(NTag, { type: 'success' }, { default: () => '正常' })
@@ -82,43 +102,18 @@ function createColumns({
     {
       title: '描述',
       key: 'description',
-      width: 500,
+      ellipsis: { tooltip: true },
     },
     {
       title: '创建日期',
       key: 'createdAt',
-      resizable: true,
+      width: 170,
     },
     {
       title: '操作',
       key: 'actions',
+      width: 250,
       render(row: any) {
-        if (row.isPluginTool) {
-          return [
-            h(
-              NButton,
-              {
-                type: 'warning',
-                strong: true,
-                tertiary: true,
-                size: 'small',
-                onClick: () => config(row),
-              },
-              { default: () => '配置' },
-            ),
-            h(
-              NButton,
-              {
-                type: 'success',
-                strong: true,
-                tertiary: true,
-                size: 'small',
-                onClick: () => test(row),
-              },
-              { default: () => '测试' },
-            ),
-          ]
-        }
         return [
           h(
             NButton,
@@ -172,6 +167,91 @@ function createColumns({
   ]
 }
 
+// 插件工具列定义
+function createPluginToolColumns({
+  inspect,
+  config,
+  test,
+}: {
+  inspect: (row: any) => void
+  config: (row: any) => void
+  test: (row: any) => void
+}): DataTableColumns<any> {
+  return [
+    {
+      title: '工具标识 (Name)',
+      key: 'name',
+      width: 190,
+      render(row: any) {
+        return h('code', { style: { fontWeight: '600', color: '#18a058' } }, row.name)
+      },
+    },
+    {
+      title: '传递给大模型的描述 (Description)',
+      key: 'description',
+      ellipsis: { tooltip: true },
+    },
+    {
+      title: '所属插件',
+      key: 'pluginName',
+      width: 200,
+      render(row: any) {
+        return h(NTag, { type: 'info', size: 'small', secondary: true }, { default: () => `${row.pluginName || row.pluginId}` })
+      },
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render() {
+        return h(NTag, { type: 'success', bordered: false }, { default: () => '插件已注册' })
+      },
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 230,
+      render(row: any) {
+        return [
+          h(
+            NButton,
+            {
+              type: 'primary',
+              strong: true,
+              tertiary: true,
+              size: 'small',
+              onClick: () => inspect(row),
+            },
+            { default: () => '📋 模型声明' },
+          ),
+          h(
+            NButton,
+            {
+              type: 'warning',
+              strong: true,
+              tertiary: true,
+              size: 'small',
+              onClick: () => config(row),
+            },
+            { default: () => '⚙️ 配置' },
+          ),
+          h(
+            NButton,
+            {
+              type: 'success',
+              strong: true,
+              tertiary: true,
+              size: 'small',
+              onClick: () => test(row),
+            },
+            { default: () => '🧪 测试' },
+          ),
+        ]
+      },
+    },
+  ]
+}
+
 // 工具组列定义
 function createGroupColumns({
   upload,
@@ -218,17 +298,6 @@ function createGroupColumns({
       key: 'actions',
       render(row) {
         return [
-          // h(
-          //   NButton,
-          //   {
-          //     type: 'primary',
-          //     strong: true,
-          //     tertiary: true,
-          //     size: 'small',
-          //     onClick: () => view(row),
-          //   },
-          //   { default: () => '查看' },
-          // ),
           h(
             NButton,
             {
@@ -259,7 +328,6 @@ function createGroupColumns({
   ]
 }
 
-const message = useMessage()
 const data = reactive({ value: [] as Shareable.ToolModel[] })
 const availableTools = ref([] as Shareable.ToolModel[])
 const showModal = ref(false)
@@ -278,6 +346,11 @@ const showConfigModal = ref(false)
 const testingTool = ref<Shareable.ToolModel>()
 const configuringTool = ref<Shareable.ToolModel>()
 
+// 插件工具查看声明
+const inspectingTool = ref<any>(null)
+const showInspectModal = ref(false)
+const selectedPluginId = ref<string>('')
+
 // 工具组相关状态
 const groupData = reactive({ value: [] as Shareable.ToolsGroupModel[] })
 const showGroupModal = ref(false)
@@ -294,7 +367,7 @@ const groupLoading = ref(false)
 const toolPage = ref(1)
 const toolPageSize = ref(20)
 const toolTotal = ref(0)
-const activeTab = ref('tools') // 默认显示工具管理标签
+const activeTab = ref('tools')
 
 interface BuiltinToolRow {
   name: string
@@ -304,26 +377,17 @@ interface BuiltinToolRow {
 }
 
 const builtinTools: BuiltinToolRow[] = [
-  // 长期记忆工具（随预设开启自动挂载）
   { name: 'remember', description: '记录或更新长期事实记忆（支持百分制重要度与优先置换淘汰，后台静默执行）。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
   { name: 'update_memory_importance', description: '微调已有记忆的重要度（1~100），动态影响淘汰优先级。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
   { name: 'get_memories', description: '主动检索当前群或用户已保存的长期事实清单。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
   { name: 'forget_memory', description: '主动遗忘或删除已失效的特定事实记忆。', visibility: '开启记忆的预设对话', source: '内置长期记忆' },
-
-  // MCP 能力检索与动态激活
   { name: 'search_mcp_tools', description: '搜索已配置 MCP Server 中的可用工具，不预先加载全量 schema。', visibility: '所有启用 MCP 的对话', source: 'MCP 运行时' },
   { name: 'activate_mcp_tools', description: '按需激活指定的少量 MCP 工具，下一轮模型直接可用。', visibility: '所有启用 MCP 的对话', source: 'MCP 运行时' },
-
-  // MCP 配置管理（主人权限）
   { name: 'list_mcp_servers', description: '查看配置的 MCP Server 及已缓存工具数，不泄露凭据。', visibility: '仅机器人主人', source: 'MCP 管理' },
   { name: 'draft_mcp_server', description: '生成 MCP 配置草案，主人确认后写入。', visibility: '仅机器人主人', source: 'MCP 管理' },
-
-  // Skill 管理（主人权限）
   { name: 'list_skills', description: '列出已加载的 Skill 列表及元数据。', visibility: '仅机器人主人', source: 'Skill 管理' },
   { name: 'create_skill / update_skill / delete_skill', description: '动态创建、修改或删除 Skill 文件。', visibility: '仅机器人主人', source: 'Skill 管理' },
   { name: 'create_workflow / run_skill', description: '编排复杂工作流或按需直接执行 Skill。', visibility: '仅机器人主人', source: 'Skill 管理' },
-
-  // 调度与异步任务
   { name: 'schedule_task / cancel_scheduled_task / list_scheduled_tasks', description: '创建与维护基于自然语言的定时调度任务。', visibility: '主人与受信任对话', source: '系统调度' },
   { name: 'spawn_background_task / check_job_status', description: '派发耗时异步后台任务并追踪进度。', visibility: '主人与受信任对话', source: '任务与执行' },
 ]
@@ -335,10 +399,44 @@ const builtinColumns: DataTableColumns<BuiltinToolRow> = [
   { title: '来源', key: 'source', width: 150 },
 ]
 
+// 所有插件注册的工具
+const allPluginTools = computed(() => {
+  return availableTools.value.filter((t: any) => Boolean(t.isPluginTool))
+})
+
+// 注册了工具的插件下拉选项
+const pluginOptions = computed(() => {
+  const map = new Map<string, string>()
+  for (const t of allPluginTools.value) {
+    const pid = (t as any).pluginId || 'unknown'
+    const pname = (t as any).pluginName || pid
+    if (!map.has(pid)) {
+      map.set(pid, pname)
+    }
+  }
+  return Array.from(map.entries()).map(([pid, pname]) => ({
+    label: `${pname} (${pid})`,
+    value: pid,
+  }))
+})
+
+// 当前选中的插件注册的所有工具
+const currentPluginTools = computed(() => {
+  if (!selectedPluginId.value) return allPluginTools.value
+  return allPluginTools.value.filter((t: any) => (t as any).pluginId === selectedPluginId.value)
+})
+
+watch(pluginOptions, (opts) => {
+  if (opts.length > 0 && (!selectedPluginId.value || !opts.some(o => o.value === selectedPluginId.value))) {
+    selectedPluginId.value = opts[0].value
+  }
+}, { immediate: true })
+
 function fetchTools(filter?: any) {
   loading.value = true
   fetchToolList({
     ...filter,
+    toolType: 'local', // 本地工具 Tab 只加载本地独立工具
     page: toolPage.value,
     pageSize: toolPageSize.value,
   }).then((res) => {
@@ -393,7 +491,6 @@ function handleSubmitTool(toolData: Shareable.ToolModel) {
 
 const columns = createColumns({
   upload(row) {
-    // message.warning(`暂未实现`)
     uploadToolToCloud(row as { id: string }).then((res) => {
       if (res.code === 0) {
         message.success('上传成功')
@@ -416,16 +513,29 @@ const columns = createColumns({
   remove: handleRemoveTool,
 })
 
+const pluginColumns = createPluginToolColumns({
+  inspect(row) {
+    inspectingTool.value = row
+    showInspectModal.value = true
+  },
+  config(row) {
+    configuringTool.value = row
+    showConfigModal.value = true
+  },
+  test(row) {
+    testingTool.value = row
+    showTestModal.value = true
+  },
+})
+
 function handleAddTool() {
   editMode.value = false
   currentTool.value = JSON.parse(JSON.stringify(defaultTool)) as Shareable.ToolModel
   showModal.value = true
 }
 
-// 工具组相关函数
 function fetchToolGroups(filter?: any) {
   groupLoading.value = true
-  // 这里替换为实际的API调用
   fetchAllToolGroupList(filter).then((items) => {
     groupData.value = items
     groupLoading.value = false
@@ -498,15 +608,13 @@ onMounted(() => {
   fetchToolGroups()
 })
 
-// 搜索相关
+// 搜索本地工具
 const searchModel = reactive({
   name: undefined,
-  toolType: '',
-} as ListToolModels & { toolType?: string })
+} as ListToolModels)
 
 function handleResetSearch() {
   searchModel.name = undefined
-  searchModel.toolType = ''
   toolPage.value = 1
   fetchTools(searchModel)
 }
@@ -530,120 +638,209 @@ function handleToolPageSizeChange(pageSize: number) {
 
 <template>
   <div class="chaite-page">
-    <header class="chaite-page-header" data-tour="tools"><div><h1>工具与分组</h1><p>维护模型可调用的能力，并通过工具组快速关联到预设。</p></div><NSpace><NButton secondary @click="router.push('/agent?tab=mcp')"><template #icon><icon-park-outline-connection /></template>MCP 服务器</NButton><NButton type="primary" @click="handleAddTool"><template #icon><icon-park-outline-add-one /></template>创建工具</NButton></NSpace></header>
-  <NSpace vertical size="large">
-    <n-card class="chaite-panel" :bordered="false">
-      <n-form :model="searchModel" label-placement="left" inline :show-feedback="false">
-        <NGrid cols="1 s:2 m:3 l:6" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
-          <NFormItemGridItem span="1" label="名称" path="name">
-            <n-input v-model:value="searchModel.name" placeholder="请输入要搜索的名称关键词" />
-          </NFormItemGridItem>
-          <NFormItemGridItem span="1" label="工具类型" path="toolType">
-            <n-select
-              v-model:value="searchModel.toolType"
-              clearable
-              placeholder="全部类型"
-              :options="[
-                { label: '全部工具', value: '' },
-                { label: '本地独立工具', value: 'local' },
-                { label: '插件托管工具', value: 'plugin' },
-              ]"
-              @update:value="handleToolSearch"
-            />
-          </NFormItemGridItem>
-          <NGridItem span="1">
-            <NFlex class="ml-auto">
-              <NButton type="primary" @click="handleToolSearch">
-                <template #icon>
-                  <icon-park-outline-search />
-                </template>
-                搜索
-              </NButton>
-              <NButton strong secondary @click="handleResetSearch">
-                <template #icon>
-                  <icon-park-outline-redo />
-                </template>
-                重置
-              </NButton>
-            </NFlex>
-          </NGridItem>
-        </NGrid>
-      </n-form>
-    </n-card>
-    <n-card class="chaite-panel" :bordered="false">
-      <n-tabs v-model:value="activeTab" type="line" animated>
-        <n-tab-pane name="tools" tab="工具管理">
-          <NSpace vertical size="large">
-            <!-- 工具与模型调用规范声明 -->
-            <n-alert type="info" :bordered="false" title="📌 工具与模型调用规范声明" style="border-radius: 8px;">
-              <div style="font-size: 13px; line-height: 1.6;">
-                • <strong>工具分类机制</strong>：Chaite 支持<strong>本地独立代码工具</strong>（独立存储于 <code>data/tools/</code>）与<strong>插件注册托管工具</strong>（由 <code>plugins/apps/</code> 插件统一管理并注册到运行时）。<br>
-                • <strong>模型自主决策</strong>：大模型在会话中具备自主参数推断能力（例如搜图张数 1-5 张由模型按需动态指定、以图搜图自动匹配最优引擎），支持多步推理与分批连续调用。<br>
-                • <strong>网络安全与多协议</strong>：联网搜索与图片抓取均由安全无头代理通道支撑；原生适配 OneBot 与 ICQQ 协议，按客户端能力自适应下发大图或合并转发。
+    <header class="chaite-page-header" data-tour="tools">
+      <div>
+        <h1>工具与分组</h1>
+        <p>维护模型可调用的能力，并通过工具组快速关联到预设。</p>
+      </div>
+      <NSpace>
+        <NButton secondary @click="router.push('/agent?tab=mcp')">
+          <template #icon><icon-park-outline-connection /></template>
+          MCP 服务器
+        </NButton>
+        <NButton type="primary" @click="handleAddTool">
+          <template #icon><icon-park-outline-add-one /></template>
+          创建工具
+        </NButton>
+      </NSpace>
+    </header>
+
+    <NSpace vertical size="large">
+      <NCard class="chaite-panel" :bordered="false">
+        <NTabs v-model:value="activeTab" type="line" animated>
+          <!-- 1. 本地独立工具管理 -->
+          <NTabPane name="tools" tab="本地工具管理">
+            <NSpace vertical size="large">
+              <NForm :model="searchModel" label-placement="left" inline :show-feedback="false">
+                <NGrid cols="1 s:2 m:3 l:6" :x-gap="12" :y-gap="16" responsive="screen" item-responsive>
+                  <NFormItemGridItem span="2" label="名称" path="name">
+                    <NInput v-model:value="searchModel.name" placeholder="请输入要搜索的本地工具名称关键词" />
+                  </NFormItemGridItem>
+                  <NGridItem span="1">
+                    <NFlex class="ml-auto">
+                      <NButton type="primary" @click="handleToolSearch">
+                        <template #icon><icon-park-outline-search /></template>
+                        搜索
+                      </NButton>
+                      <NButton strong secondary @click="handleResetSearch">
+                        <template #icon><icon-park-outline-redo /></template>
+                        重置
+                      </NButton>
+                    </NFlex>
+                  </NGridItem>
+                </NGrid>
+              </NForm>
+
+              <div class="flex gap-4">
+                <NButton type="primary" @click="handleAddTool">
+                  <template #icon><icon-park-outline-add-one /></template>
+                  新建工具
+                </NButton>
               </div>
-            </n-alert>
 
-            <div class="flex gap-4">
-              <NButton type="primary" @click="handleAddTool">
-                <template #icon>
-                  <icon-park-outline-add-one />
-                </template>
-                新建工具
-              </NButton>
+              <NDataTable :columns="columns" :data="data.value" :loading="loading" />
+
+              <NPagination
+                :page="toolPage"
+                :page-size="toolPageSize"
+                :item-count="toolTotal"
+                show-size-picker
+                :page-sizes="[10, 20, 50, 100]"
+                @update:page="handleToolPageChange"
+                @update:page-size="handleToolPageSizeChange"
+              />
+            </NSpace>
+          </NTabPane>
+
+          <!-- 2. 插件注册托管工具 -->
+          <NTabPane name="plugin_tools" tab="插件注册工具">
+            <NSpace vertical size="large">
+              <NFlex justify="space-between" align="center" style="background: rgba(120, 120, 120, 0.04); padding: 12px 16px; border-radius: 8px;">
+                <NFlex align="center" size="medium">
+                  <span style="font-weight: 600; font-size: 14px;">选择已注册工具的插件：</span>
+                  <NSelect
+                    v-model:value="selectedPluginId"
+                    :options="pluginOptions"
+                    placeholder="请选择插件..."
+                    style="width: 320px;"
+                  />
+                  <NTag type="info" secondary>
+                    共 {{ currentPluginTools.length }} 个工具
+                  </NTag>
+                </NFlex>
+
+                <NButton
+                  secondary
+                  type="warning"
+                  @click="router.push('/plugin-manager')"
+                >
+                  前往【插件管理】修改配置
+                </NButton>
+              </NFlex>
+
+              <div v-if="pluginOptions.length === 0" style="padding: 40px 0; text-align: center;">
+                <NEmpty description="当前暂无注册了工具的插件" />
+              </div>
+
+              <NDataTable
+                v-else
+                :columns="pluginColumns"
+                :data="currentPluginTools"
+              />
+            </NSpace>
+          </NTabPane>
+
+          <!-- 3. 工具组管理 -->
+          <NTabPane name="groups" tab="工具组管理">
+            <NSpace vertical size="large">
+              <div class="flex gap-4">
+                <NButton type="primary" @click="handleAddToolGroup">
+                  <template #icon><icon-park-outline-add-one /></template>
+                  新建工具组
+                </NButton>
+              </div>
+              <NDataTable :columns="groupColumns" :data="groupData.value" :loading="groupLoading" />
+            </NSpace>
+          </NTabPane>
+
+          <!-- 4. 内置工具 -->
+          <NTabPane name="builtins" tab="内置工具">
+            <NSpace vertical size="large">
+              <NAlert type="info" :show-icon="false">
+                内置工具由 Chaite 在运行时按权限注入，不会写入本地工具数据库，也无需加入工具组。MCP 的真实工具只有在对应 Skill 被激活后才会临时出现。
+              </NAlert>
+              <NDataTable :columns="builtinColumns" :data="builtinTools" />
+            </NSpace>
+          </NTabPane>
+        </NTabs>
+      </NCard>
+
+      <!-- 本地工具表单弹窗 -->
+      <ToolFormModal
+        v-model:show="showModal"
+        :edit-mode="editMode"
+        :initial-data="currentTool"
+        @submit="handleSubmitTool"
+      />
+
+      <!-- 工具测试弹窗 -->
+      <ToolTestModal v-model:show="showTestModal" :tool="testingTool" />
+
+      <!-- 工具配置弹窗 -->
+      <ToolConfigModal v-model:show="showConfigModal" :tool="configuringTool" />
+
+      <!-- 工具组编辑弹窗 -->
+      <ToolGroupFormModal
+        v-model:show="showGroupModal"
+        :edit-mode="editGroupMode"
+        :initial-data="currentGroup"
+        :available-tools="availableTools"
+        @submit="handleSubmitToolGroup"
+      />
+
+      <!-- 插件工具模型调用声明查看弹窗 -->
+      <NModal
+        v-model:show="showInspectModal"
+        preset="card"
+        :title="`工具模型调用声明 · ${inspectingTool?.name || ''}`"
+        style="width: 720px; max-width: 95vw;"
+      >
+        <div v-if="inspectingTool">
+          <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: 600; font-size: 15px;">{{ inspectingTool.name }}</span>
+            <NTag type="info" size="small" secondary>
+              所属插件: {{ inspectingTool.pluginName || inspectingTool.pluginId }}
+            </NTag>
+          </div>
+
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 4px;">
+              传递给大模型的工具描述 (Description)：
             </div>
-            <n-data-table :columns="columns" :data="data.value" :loading="loading" />
-            <n-pagination
-              :page="toolPage"
-              :page-size="toolPageSize"
-              :item-count="toolTotal"
-              show-size-picker
-              :page-sizes="[10, 20, 50, 100]"
-              @update:page="handleToolPageChange"
-              @update:page-size="handleToolPageSizeChange"
+            <div style="background: rgba(120, 120, 120, 0.06); padding: 10px 14px; border-radius: 6px; font-size: 13px; line-height: 1.5; color: #333;">
+              {{ inspectingTool.description || '暂无描述' }}
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 4px;">
+              传递给大模型的参数规范 (JSON Schema Parameters)：
+            </div>
+            <NInput
+              :value="JSON.stringify(inspectingTool.parameters || { type: 'object', properties: {} }, null, 2)"
+              type="textarea"
+              :autosize="{ minRows: 6, maxRows: 16 }"
+              readonly
+              style="font-family: monospace; font-size: 12px;"
             />
-          </NSpace>
-        </n-tab-pane>
+          </div>
+        </div>
 
-        <n-tab-pane name="groups" tab="工具组管理">
-          <NSpace vertical size="large">
-            <div class="flex gap-4">
-              <NButton type="primary" @click="handleAddToolGroup">
-                <template #icon>
-                  <icon-park-outline-add-one />
-                </template>
-                新建工具组
-              </NButton>
-            </div>
-            <n-data-table :columns="groupColumns" :data="groupData.value" :loading="groupLoading" />
-          </NSpace>
-        </n-tab-pane>
-        <n-tab-pane name="builtins" tab="内置工具">
-          <NSpace vertical size="large">
-            <n-alert type="info" :show-icon="false">
-              内置工具由 Chaite 在运行时按权限注入，不会写入本地工具数据库，也无需加入工具组。MCP 的真实工具只有在对应 Skill 被激活后才会临时出现。
-            </n-alert>
-            <n-data-table :columns="builtinColumns" :data="builtinTools" />
-          </NSpace>
-        </n-tab-pane>
-      </n-tabs>
-    </n-card>
-
-    <ToolFormModal
-      v-model:show="showModal"
-      :edit-mode="editMode"
-      :initial-data="currentTool"
-      @submit="handleSubmitTool"
-    />
-    <ToolTestModal v-model:show="showTestModal" :tool="testingTool" />
-    <ToolConfigModal v-model:show="showConfigModal" :tool="configuringTool" />
-
-    <ToolGroupFormModal
-      v-model:show="showGroupModal"
-      :edit-mode="editGroupMode"
-      :initial-data="currentGroup"
-      :available-tools="availableTools"
-      @submit="handleSubmitToolGroup"
-    />
-  </NSpace>
+        <template #action>
+          <NFlex justify="space-between" align="center" style="width: 100%;">
+            <NButton
+              secondary
+              type="warning"
+              @click="showInspectModal = false; router.push('/plugin-manager')"
+            >
+              前往【插件管理】修改配置
+            </NButton>
+            <NButton @click="showInspectModal = false">
+              关闭
+            </NButton>
+          </NFlex>
+        </template>
+      </NModal>
+    </NSpace>
   </div>
 </template>

@@ -258,62 +258,6 @@ function getCommonFields(plugin: PluginMeta | null) {
   return plugin.configSchema.filter((f: any) => f.group === 'common')
 }
 
-const GROUP_TITLE_MAP: Record<string, string> = {
-  basic: '🚀 基础服务',
-  search: '🔍 搜图识图',
-  forward: '📨 进度转发',
-  tools: '🛠️ 工具设置',
-  advanced: '⚡ 高级设置',
-  common: '⚙️ 通用配置',
-}
-
-const pluginConfigGroups = computed(() => {
-  if (!configPlugin.value || !configPlugin.value.configSchema) return []
-  const schema = configPlugin.value.configSchema
-  const groups: Array<{ key: string; title: string; fields: any[] }> = []
-
-  const nonCommon = schema.filter((f: any) => f.group !== 'common')
-  const groupKeys = Array.from(new Set(nonCommon.map((f: any) => f.group || 'plugin')))
-
-  if (groupKeys.length > 1) {
-    for (const gKey of groupKeys) {
-      const fields = nonCommon.filter((f: any) => (f.group || 'plugin') === gKey)
-      groups.push({
-        key: gKey,
-        title: GROUP_TITLE_MAP[gKey] || (gKey === 'plugin' ? '🔌 专有配置' : `📁 ${gKey}`),
-        fields,
-      })
-    }
-  } else {
-    groups.push({
-      key: 'plugin',
-      title: '🔌 插件配置',
-      fields: nonCommon,
-    })
-  }
-
-  const commonFields = schema.filter((f: any) => f.group === 'common')
-  if (commonFields.length > 0) {
-    groups.push({
-      key: 'common',
-      title: '⚙️ 通用配置',
-      fields: commonFields,
-    })
-  }
-
-  return groups
-})
-
-const isMagicSearchPlugin = computed(() => {
-  if (!configPlugin.value) return false
-  return (
-    configPlugin.value.id === 'magic-search' ||
-    configPlugin.value.name?.includes('magic') ||
-    configPlugin.value.name?.includes('联网') ||
-    Boolean((configPlugin.value as any)?.tools?.length)
-  )
-})
-
 function openConfigModal(plugin: PluginMeta) {
   configPlugin.value = plugin
   let currentCfg = plugin.config || {}
@@ -660,11 +604,15 @@ onMounted(() => {
     <NModal
       v-model:show="configModalVisible"
       preset="card"
-      :title="`插件配置: ${configPlugin?.name || ''}`"
-      style="width: 780px; max-width: 95vw;"
-      :content-style="{ maxHeight: '76vh', overflowY: 'auto', paddingRight: '8px' }"
+      title="插件配置"
+      style="width: 680px; max-width: 95vw;"
+      :content-style="{ maxHeight: '76vh', overflowY: 'auto' }"
     >
       <div v-if="configPlugin">
+        <div style="margin-bottom: 12px; display: flex; align-items: baseline; gap: 8px;">
+          <span style="font-size: 16px; font-weight: 600;">{{ configPlugin.name }}</span>
+          <span style="font-size: 12px; color: #888;">({{ configPlugin.id }})</span>
+        </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <span style="font-size: 13px; color: #888;">
             配置文件：<code>{{ configPlugin.type === 'directory' ? 'apps' : 'scripts' }}/{{ configPlugin.id }}/config.json</code>
@@ -697,140 +645,86 @@ onMounted(() => {
         <!-- 视图 1: Schema 可视化表单 -->
         <div v-else-if="configMode === 'form'">
           <NTabs type="segment" size="small" style="margin-bottom: 16px;">
-            <!-- 动态分组 Tab 渲染 -->
-            <NTabPane
-              v-for="group in pluginConfigGroups"
-              :key="group.key"
-              :name="group.key"
-              :tab="group.title"
-            >
-              <div v-if="group.fields.length === 0" style="text-align: center; padding: 24px 16px; color: #888;">
-                暂无配置项
+            <NTabPane name="plugin" tab="🔌 插件配置">
+              <div v-if="getPluginFields(configPlugin).length === 0" style="text-align: center; padding: 24px 16px; color: #888;">
+                本插件无独立专有配置项（遵循默认规则运行）
               </div>
-              <div v-else>
-                <div
-                  v-for="field in group.fields"
+              <NForm v-else label-placement="left" label-width="140">
+                <NFormItem
+                  v-for="field in getPluginFields(configPlugin)"
                   :key="field.key"
-                  style="background: rgba(120, 120, 120, 0.04); border: 1px solid rgba(120, 120, 120, 0.12); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;"
+                  :label="field.label"
+                  :feedback="field.description"
                 >
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                      <span style="font-weight: 600; font-size: 14px;">{{ field.label || field.key }}</span>
-                      <span style="font-size: 12px; color: #888;">({{ field.key }})</span>
-                    </div>
-                    <NTag size="tiny" secondary>
-                      {{ field.type }}
-                    </NTag>
-                  </div>
-
-                  <div v-if="field.description" style="font-size: 12px; color: #777; margin-bottom: 8px; line-height: 1.45;">
-                    {{ field.description }}
-                  </div>
-
-                  <div>
-                    <template v-if="field.type === 'boolean'">
-                      <NSwitch v-model:value="configFormData[field.key]" />
-                    </template>
-                    <template v-else-if="field.type === 'button'">
-                      <NButton
-                        :type="field.buttonType || 'primary'"
-                        :loading="actionLoading[field.action || field.key]"
-                        @click="handleTriggerAction(field.action || field.key, field)"
-                      >
-                        {{ field.buttonText || field.label }}
-                      </NButton>
-                    </template>
-                    <template v-else-if="field.type === 'number'">
-                      <NInputNumber v-model:value="configFormData[field.key]" style="width: 100%;" />
-                    </template>
-                    <template v-else-if="field.type === 'select'">
-                      <NSelect
-                        v-model:value="configFormData[field.key]"
-                        :options="field.options || []"
-                      />
-                    </template>
-                    <template v-else-if="field.type === 'textarea'">
-                      <NInput
-                        v-model:value="configFormData[field.key]"
-                        type="textarea"
-                        :autosize="{ minRows: 2, maxRows: 6 }"
-                      />
-                    </template>
-                    <template v-else>
-                      <NInput v-model:value="configFormData[field.key]" />
-                    </template>
-                  </div>
-                </div>
-              </div>
+                  <template v-if="field.type === 'boolean'">
+                    <NSwitch v-model:value="configFormData[field.key]" />
+                  </template>
+                  <template v-else-if="field.type === 'button'">
+                    <NButton
+                      :type="field.buttonType || 'primary'"
+                      :loading="actionLoading[field.action || field.key]"
+                      @click="handleTriggerAction(field.action || field.key, field)"
+                    >
+                      {{ field.buttonText || field.label }}
+                    </NButton>
+                  </template>
+                  <template v-else-if="field.type === 'number'">
+                    <NInputNumber v-model:value="configFormData[field.key]" style="width: 100%;" />
+                  </template>
+                  <template v-else-if="field.type === 'select'">
+                    <NSelect
+                      v-model:value="configFormData[field.key]"
+                      :options="field.options || []"
+                    />
+                  </template>
+                  <template v-else-if="field.type === 'textarea'">
+                    <NInput
+                      v-model:value="configFormData[field.key]"
+                      type="textarea"
+                      :autosize="{ minRows: 2, maxRows: 6 }"
+                    />
+                  </template>
+                  <template v-else>
+                    <NInput v-model:value="configFormData[field.key]" />
+                  </template>
+                </NFormItem>
+              </NForm>
             </NTabPane>
-
-            <!-- 针对工具插件的专属工具清单与声明 Tab -->
-            <NTabPane v-if="isMagicSearchPlugin" name="tools_statement" tab="📋 工具与调用声明">
-              <NSpace vertical :size="12">
-                <NAlert type="info" title="📌 AI 动态调度机制说明" :bordered="false">
-                  <div style="font-size: 13px; line-height: 1.6;">
-                    • <strong>搜图张数自主决策</strong>：搜图配置中的默认张数仅为缺省保底值。在实际交互中，<strong>大模型会根据用户提问自主决定发送 1-5 张图片</strong>。若用户需要更多图片，模型亦可多次调用工具。<br>
-                    • <strong>识图引擎自适应</strong>：以图搜图支持 <strong>百度识图 (通用中文 · 免Key)</strong>、<strong>Google Lens</strong> 及 <strong>SauceNAO (动漫图源 · 需Key)</strong>，未传参时自动沿用配置首选引擎。<br>
-                    • <strong>反爬与网络合规</strong>：所有联网搜索、正文提取和截图渲染均经由后端 API 安全反爬通道完成，保障网络请求合规可靠。
-                  </div>
-                </NAlert>
-
-                <div style="font-weight: 600; font-size: 14px; margin-top: 4px;">
-                  🛠️ 本插件托管并向大模型注册的工具清单：
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr; gap: 8px;">
-                  <div style="border: 1px solid rgba(120, 120, 120, 0.15); border-radius: 8px; padding: 10px 12px; background: rgba(120, 120, 120, 0.03);">
-                    <div style="font-weight: 600; color: #18a058; display: flex; align-items: center; gap: 6px;">
-                      <code>web_search</code>
-                      <NTag size="tiny" type="success">高级网页搜索</NTag>
-                    </div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                      实时检索互联网最新资讯，支持 Bing/Google/百度等多搜索引擎，自动提取高质量网页正文与摘要。
-                    </div>
-                  </div>
-
-                  <div style="border: 1px solid rgba(120, 120, 120, 0.15); border-radius: 8px; padding: 10px 12px; background: rgba(120, 120, 120, 0.03);">
-                    <div style="font-weight: 600; color: #2080f0; display: flex; align-items: center; gap: 6px;">
-                      <code>web_extract</code>
-                      <NTag size="tiny" type="info">网页正文提取</NTag>
-                    </div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                      深入抓取指定 URL 网页正文，自动剔除广告、侧边栏和无关脚本，输出格式规整的纯净 Markdown 内容。
-                    </div>
-                  </div>
-
-                  <div style="border: 1px solid rgba(120, 120, 120, 0.15); border-radius: 8px; padding: 10px 12px; background: rgba(120, 120, 120, 0.03);">
-                    <div style="font-weight: 600; color: #f0a020; display: flex; align-items: center; gap: 6px;">
-                      <code>web_screenshot</code>
-                      <NTag size="tiny" type="warning">网页完整截图</NTag>
-                    </div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                      对指定网页发起无头浏览器渲染与快照截图，直接将截图作为图片消息发送至 QQ 群聊或私聊中。
-                    </div>
-                  </div>
-
-                  <div style="border: 1px solid rgba(120, 120, 120, 0.15); border-radius: 8px; padding: 10px 12px; background: rgba(120, 120, 120, 0.03);">
-                    <div style="font-weight: 600; color: #18a058; display: flex; align-items: center; gap: 6px;">
-                      <code>web_image_search</code>
-                      <NTag size="tiny" type="success">网页图片搜索</NTag>
-                    </div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                      根据关键词全网检索图片，AI 自主决定并下发 1-5 张大图给用户，同时为大模型附带图片来源链接。
-                    </div>
-                  </div>
-
-                  <div style="border: 1px solid rgba(120, 120, 120, 0.15); border-radius: 8px; padding: 10px 12px; background: rgba(120, 120, 120, 0.03);">
-                    <div style="font-weight: 600; color: #8a2be2; display: flex; align-items: center; gap: 6px;">
-                      <code>reverse_image_search</code>
-                      <NTag size="tiny" type="default">以图搜图/识图</NTag>
-                    </div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                      对用户提供的图片进行图像识别与反向检索，支持百度识图、Google Lens 与 SauceNAO（动漫角色/图源反查）。
-                    </div>
-                  </div>
-                </div>
-              </NSpace>
+            <NTabPane name="common" tab="⚙️ 通用配置">
+              <div v-if="getCommonFields(configPlugin).length === 0" style="text-align: center; padding: 24px 16px; color: #888;">
+                暂无通用配置项
+              </div>
+              <NForm v-else label-placement="left" label-width="140">
+                <NFormItem
+                  v-for="field in getCommonFields(configPlugin)"
+                  :key="field.key"
+                  :label="field.label"
+                  :feedback="field.description"
+                >
+                  <template v-if="field.type === 'boolean'">
+                    <NSwitch v-model:value="configFormData[field.key]" />
+                  </template>
+                  <template v-else-if="field.type === 'number'">
+                    <NInputNumber v-model:value="configFormData[field.key]" style="width: 100%;" />
+                  </template>
+                  <template v-else-if="field.type === 'select'">
+                    <NSelect
+                      v-model:value="configFormData[field.key]"
+                      :options="field.options || []"
+                    />
+                  </template>
+                  <template v-else-if="field.type === 'textarea'">
+                    <NInput
+                      v-model:value="configFormData[field.key]"
+                      type="textarea"
+                      :autosize="{ minRows: 2, maxRows: 6 }"
+                    />
+                  </template>
+                  <template v-else>
+                    <NInput v-model:value="configFormData[field.key]" />
+                  </template>
+                </NFormItem>
+              </NForm>
             </NTabPane>
           </NTabs>
         </div>

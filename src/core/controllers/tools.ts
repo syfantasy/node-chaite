@@ -63,7 +63,8 @@ router.get('/list', (req: Request, res: Response) => {
               items.push({
                 id: `plugin:${p.id}:${t.name}`,
                 name: t.name,
-                description: t.function?.description || '',
+                description: t.description || t.function?.description || '',
+                parameters: t.parameters || t.function?.parameters || null,
                 code: '// 插件注册工具，代码位于插件目录内部',
                 config: t.config || loaded.config || {},
                 pluginId: p.id,
@@ -347,7 +348,8 @@ router.get('/:id', (req: Request<{ id: string }>, res: Response) => {
       return {
         id: req.params.id,
         name: tool.name,
-        description: tool.function?.description || '',
+        description: tool.description || tool.function?.description || '',
+        parameters: tool.parameters || tool.function?.parameters || null,
         code: '// 插件注册工具，代码位于插件目录内部',
         config: tool.config || plugin.config || {},
         pluginId: plugin.id,
