@@ -135,12 +135,30 @@ router.get('/:id/config', (req, res) => {
         if (pluginTarget) {
             const { plugin, tool } = pluginTarget;
             const pName = plugin.meta?.name || plugin.id;
+            // 将 schema 数组转换为映射对象供前端快速检索
+            let schemaObj = {};
+            if (Array.isArray(plugin.meta?.configSchema)) {
+                for (const item of plugin.meta.configSchema) {
+                    if (item?.key) {
+                        schemaObj[item.key] = item;
+                    }
+                }
+            }
+            else if (plugin.meta?.configSchema && typeof plugin.meta.configSchema === 'object') {
+                schemaObj = plugin.meta.configSchema;
+            }
             return {
                 filePath: `plugins/apps/${plugin.id}/config.json`,
                 rawText: JSON.stringify(plugin.config || tool.config || {}, null, 2),
                 config: plugin.config || tool.config || {},
-                schema: tool?.configSchema || null,
+                schema: tool?.configSchema || schemaObj,
                 managedByPlugin: pName,
+                pluginId: plugin.id,
+                toolMeta: {
+                    name: tool.name,
+                    description: tool.description || tool.function?.description || '',
+                    parameters: tool.parameters || tool.function?.parameters || null,
+                },
             };
         }
         const mgr = Chaite.getInstance().getToolsManager();

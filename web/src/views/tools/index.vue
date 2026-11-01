@@ -574,6 +574,15 @@ function handleToolPageSizeChange(pageSize: number) {
       <n-tabs v-model:value="activeTab" type="line" animated>
         <n-tab-pane name="tools" tab="工具管理">
           <NSpace vertical size="large">
+            <!-- 工具与模型调用规范声明 -->
+            <n-alert type="info" :bordered="false" title="📌 工具与模型调用规范声明" style="border-radius: 8px;">
+              <div style="font-size: 13px; line-height: 1.6;">
+                • <strong>工具分类机制</strong>：Chaite 支持<strong>本地独立代码工具</strong>（独立存储于 <code>data/tools/</code>）与<strong>插件注册托管工具</strong>（由 <code>plugins/apps/</code> 插件统一管理并注册到运行时）。<br>
+                • <strong>模型自主决策</strong>：大模型在会话中具备自主参数推断能力（例如搜图张数 1-5 张由模型按需动态指定、以图搜图自动匹配最优引擎），支持多步推理与分批连续调用。<br>
+                • <strong>网络安全与多协议</strong>：联网搜索与图片抓取均由安全无头代理通道支撑；原生适配 OneBot 与 ICQQ 协议，按客户端能力自适应下发大图或合并转发。
+              </div>
+            </n-alert>
+
             <div class="flex gap-4">
               <NButton type="primary" @click="handleAddTool">
                 <template #icon>
