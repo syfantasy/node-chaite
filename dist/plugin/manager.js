@@ -620,6 +620,15 @@ export class PluginManager {
             await setupFn(ctx);
         }
     }
+    getAllTools() {
+        const list = [];
+        for (const plugin of this.plugins.values()) {
+            if (plugin.meta?.enabled && Array.isArray(plugin.tools)) {
+                list.push(...plugin.tools);
+            }
+        }
+        return list;
+    }
     getPlugins() {
         return Array.from(this.plugins.values()).map((p) => {
             const existingSchema = (Array.isArray(p.meta.configSchema) ? p.meta.configSchema : []).map((f) => ({

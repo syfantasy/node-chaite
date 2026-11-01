@@ -633,6 +633,16 @@ export class PluginManager {
     }
   }
 
+  getAllTools(): any[] {
+    const list: any[] = []
+    for (const plugin of this.plugins.values()) {
+      if (plugin.meta?.enabled && Array.isArray(plugin.tools)) {
+        list.push(...plugin.tools)
+      }
+    }
+    return list
+  }
+
   getPlugins(): PluginMeta[] {
     return Array.from(this.plugins.values()).map((p) => {
       const existingSchema = (Array.isArray(p.meta.configSchema) ? p.meta.configSchema : []).map((f) => ({

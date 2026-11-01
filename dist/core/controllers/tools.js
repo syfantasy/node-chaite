@@ -90,6 +90,7 @@ router.get('/:id/config', (req, res) => {
         const relativePath = path.relative(process.cwd(), filePath);
         // 读取工具实例上的 configSchema
         let schema = null;
+        let managedByPlugin = null;
         try {
             const tool = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''));
             schema = tool?.configSchema || dto?.configSchema || null;
@@ -97,7 +98,22 @@ router.get('/:id/config', (req, res) => {
         catch {
             schema = null;
         }
-        return { filePath: relativePath, rawText, config, schema };
+        // 探测是否由插件统一托管
+        try {
+            const gPluginMgr = globalThis.chaitePluginManager;
+            if (gPluginMgr && typeof gPluginMgr.getAllTools === 'function') {
+                const plugins = gPluginMgr.getPlugins ? gPluginMgr.getPlugins() : [];
+                for (const p of plugins) {
+                    const loaded = gPluginMgr.plugins?.get(p.id);
+                    if (loaded && Array.isArray(loaded.tools) && loaded.tools.some((t) => t?.name === dto.name)) {
+                        managedByPlugin = p.name || p.id;
+                        break;
+                    }
+                }
+            }
+        }
+        catch { }
+        return { filePath: relativePath, rawText, config, schema, managedByPlugin };
     });
 });
 /** POST /api/tools/:id/config — 保存工具独立的配置文件 */
@@ -107,6 +123,23 @@ router.post('/:id/config', (req, res) => {
         const dto = await mgr.getInstanceT(req.params.id);
         if (!dto)
             throw new Error('Tool not found');
+        // 插件托管拦截
+        try {
+            const gPluginMgr = globalThis.chaitePluginManager;
+            if (gPluginMgr && typeof gPluginMgr.getAllTools === 'function') {
+                const plugins = gPluginMgr.getPlugins ? gPluginMgr.getPlugins() : [];
+                for (const p of plugins) {
+                    const loaded = gPluginMgr.plugins?.get(p.id);
+                    if (loaded && Array.isArray(loaded.tools) && loaded.tools.some((t) => t?.name === dto.name)) {
+                        throw new Error(`该工具由插件【${p.name || p.id}】统一托管，请前往【插件管理】修改配置`);
+                    }
+                }
+            }
+        }
+        catch (e) {
+            if (e.message?.includes('统一托管'))
+                throw e;
+        }
         const { dir, filePath } = resolveToolConfigPath(dto.name);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });

@@ -23,6 +23,7 @@ async function bootstrapOnce() {
   const storageCtx = await initChaiteStorage()
   ;(globalThis as any).chaiteStorageCtx = storageCtx
   pluginManager.setDriver(storageCtx.mainDriver)
+  ;(globalThis as any).chaitePluginManager = pluginManager
   ;(globalThis as any).mediaRefStore = mediaRefStore
 
   // 1.1 Register Core Message Pipeline (AI conversation & system commands)

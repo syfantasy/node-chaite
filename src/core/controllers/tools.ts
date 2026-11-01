@@ -92,6 +92,7 @@ router.get('/:id/config', (req: Request<{ id: string }>, res: Response) => {
 
     // 读取工具实例上的 configSchema
     let schema: any = null
+    let managedByPlugin: string | null = null
     try {
       const tool = (await mgr.getInstance(dto.name)) || (await mgr.getInstance(extractClassName(dto.code || '') || ''))
       schema = (tool as any)?.configSchema || (dto as any)?.configSchema || null
@@ -99,7 +100,22 @@ router.get('/:id/config', (req: Request<{ id: string }>, res: Response) => {
       schema = null
     }
 
-    return { filePath: relativePath, rawText, config, schema }
+    // 探测是否由插件统一托管
+    try {
+      const gPluginMgr = (globalThis as any).chaitePluginManager
+      if (gPluginMgr && typeof gPluginMgr.getAllTools === 'function') {
+        const plugins = gPluginMgr.getPlugins ? gPluginMgr.getPlugins() : []
+        for (const p of plugins) {
+          const loaded = (gPluginMgr as any).plugins?.get(p.id)
+          if (loaded && Array.isArray(loaded.tools) && loaded.tools.some((t: any) => t?.name === dto.name)) {
+            managedByPlugin = p.name || p.id
+            break
+          }
+        }
+      }
+    } catch {}
+
+    return { filePath: relativePath, rawText, config, schema, managedByPlugin }
   })
 })
 
@@ -109,6 +125,23 @@ router.post('/:id/config', (req: Request<{ id: string }, object, { rawText?: str
     const mgr = Chaite.getInstance().getToolsManager()
     const dto = await mgr.getInstanceT(req.params.id)
     if (!dto) throw new Error('Tool not found')
+
+    // 插件托管拦截
+    try {
+      const gPluginMgr = (globalThis as any).chaitePluginManager
+      if (gPluginMgr && typeof gPluginMgr.getAllTools === 'function') {
+        const plugins = gPluginMgr.getPlugins ? gPluginMgr.getPlugins() : []
+        for (const p of plugins) {
+          const loaded = (gPluginMgr as any).plugins?.get(p.id)
+          if (loaded && Array.isArray(loaded.tools) && loaded.tools.some((t: any) => t?.name === dto.name)) {
+            throw new Error(`该工具由插件【${p.name || p.id}】统一托管，请前往【插件管理】修改配置`)
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e.message?.includes('统一托管')) throw e
+    }
+
     const { dir, filePath } = resolveToolConfigPath(dto.name)
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true })

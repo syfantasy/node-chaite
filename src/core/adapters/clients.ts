@@ -171,6 +171,15 @@ export class AbstractClient implements IClient {
       const memoryTools = this.context.chaite.getMemoryManager()!.getActiveProvider().getTools()
       for (const tool of memoryTools) pushUnique(tool)
     }
+    // Plugin registered tools via ctx.registerTool()
+    try {
+      const gPluginMgr = (globalThis as any).chaitePluginManager
+      if (gPluginMgr && typeof gPluginMgr.getAllTools === 'function') {
+        for (const tool of gPluginMgr.getAllTools()) {
+          pushUnique(tool)
+        }
+      }
+    } catch {}
     if (groupIds.includes('default_local')) {
       const toolDTOS = await toolManager.listInstances()
       for (const toolDTO of toolDTOS) {

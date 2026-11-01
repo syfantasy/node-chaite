@@ -34,6 +34,7 @@ const saving = ref(false)
 const filePath = ref('')
 const viewMode = ref<'form' | 'json'>('form')
 const schemaConfig = ref<Record<string, any>>({})
+const managedByPlugin = ref<string | null>(null)
 
 // 原始 JSON 字符串
 const configText = ref('')
@@ -129,6 +130,7 @@ async function load() {
   filePath.value = ''
   configText.value = '{}'
   schemaConfig.value = {}
+  managedByPlugin.value = null
   Object.keys(formData).forEach(k => delete formData[k])
   try {
     const rsp = await fetchToolConfigFile(props.tool.id)
@@ -136,6 +138,7 @@ async function load() {
       filePath.value = rsp.data.filePath || ''
       configText.value = rsp.data.rawText || '{}'
       schemaConfig.value = rsp.data.schema || {}
+      managedByPlugin.value = rsp.data.managedByPlugin || null
       syncTextToForm()
       // 如果 schema 中有默认字段且 formData 中不存在，则填补默认值
       if (schemaConfig.value && typeof schemaConfig.value === 'object') {
@@ -269,6 +272,16 @@ watch(() => props.show, (val) => {
     @update:show="emit('update:show', $event)"
   >
     <NSpin :show="loading">
+      <!-- 插件托管提示 -->
+      <NAlert
+        v-if="managedByPlugin"
+        type="warning"
+        style="margin-bottom: 14px"
+        :bordered="false"
+      >
+        💡 该工具由插件 <strong>【{{ managedByPlugin }}】</strong> 统一注册并托管配置，当前为<strong>只读展示</strong>状态。如需修改参数，请前往<strong>【插件管理】</strong>页面。
+      </NAlert>
+
       <!-- 头部控制栏：路径与视图切换 -->
       <NFlex justify="space-between" align="center" style="margin-bottom: 16px">
         <NAlert type="info" :show-icon="false" style="padding: 6px 12px">
@@ -310,7 +323,7 @@ watch(() => props.show, (val) => {
                   {{ inferFieldType(String(key), val) }}
                 </NTag>
               </NFlex>
-              <NPopconfirm @positive-click="handleRemoveField(String(key))">
+              <NPopconfirm v-if="!managedByPlugin" @positive-click="handleRemoveField(String(key))">
                 <template #trigger>
                   <NButton size="tiny" tertiary type="error">
                     删除
@@ -333,13 +346,18 @@ watch(() => props.show, (val) => {
               <NSelect
                 v-model:value="formData[key]"
                 :options="normalizeSelectOptions(schemaConfig[String(key)]?.options)"
+                :disabled="Boolean(managedByPlugin)"
                 @update:value="syncFormToText"
               />
             </template>
 
             <!-- 布尔开关 -->
             <template v-else-if="inferFieldType(String(key), val) === 'boolean'">
-              <NSwitch v-model:value="formData[key]" @update:value="syncFormToText" />
+              <NSwitch
+                v-model:value="formData[key]"
+                :disabled="Boolean(managedByPlugin)"
+                @update:value="syncFormToText"
+              />
             </template>
 
             <!-- 数字输入 -->
@@ -347,6 +365,7 @@ watch(() => props.show, (val) => {
               <NInputNumber
                 v-model:value="formData[key]"
                 style="width: 100%"
+                :disabled="Boolean(managedByPlugin)"
                 @update:value="syncFormToText"
               />
             </template>
@@ -358,6 +377,7 @@ watch(() => props.show, (val) => {
                 type="textarea"
                 :autosize="{ minRows: 3, maxRows: 8 }"
                 :placeholder="schemaConfig[String(key)]?.placeholder || '请输入配置内容...'"
+                :disabled="Boolean(managedByPlugin)"
                 style="font-family: monospace; font-size: 13px"
                 @update:value="syncFormToText"
               />
@@ -369,6 +389,7 @@ watch(() => props.show, (val) => {
                 :value="JSON.stringify(formData[key], null, 2)"
                 type="textarea"
                 :autosize="{ minRows: 2, maxRows: 6 }"
+                :disabled="Boolean(managedByPlugin)"
                 style="font-family: monospace; font-size: 12px"
                 @update:value="(text: string) => { try { formData[key] = JSON.parse(text); syncFormToText(); } catch {} }"
               />
@@ -379,48 +400,51 @@ watch(() => props.show, (val) => {
               <NInput
                 v-model:value="formData[key]"
                 :placeholder="schemaConfig[String(key)]?.placeholder || '请输入值...'"
+                :disabled="Boolean(managedByPlugin)"
                 @update:value="syncFormToText"
               />
             </template>
           </div>
 
           <!-- 添加新项抽屉/表单 -->
-          <div v-if="showAddField" style="border: 1px dashed rgba(24, 160, 88, 0.6); background: rgba(24, 160, 88, 0.04); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px">
-            <div style="font-weight: 600; margin-bottom: 8px; font-size: 13px">
-              新增配置项
+          <template v-if="!managedByPlugin">
+            <div v-if="showAddField" style="border: 1px dashed rgba(24, 160, 88, 0.6); background: rgba(24, 160, 88, 0.04); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px">
+              <div style="font-weight: 600; margin-bottom: 8px; font-size: 13px">
+                新增配置项
+              </div>
+              <NFlex align="center" style="margin-bottom: 8px">
+                <NInput v-model:value="newFieldKey" placeholder="配置项键名 (Key)，例如 secret_key" style="flex: 2" />
+                <NSelect
+                  v-model:value="newFieldType"
+                  style="flex: 1"
+                  :options="[
+                    { label: '单行文本 (string)', value: 'string' },
+                    { label: '多行文本 (textarea)', value: 'textarea' },
+                    { label: '数字 (number)', value: 'number' },
+                    { label: '布尔开关 (boolean)', value: 'boolean' },
+                  ]"
+                />
+              </NFlex>
+              <NFlex justify="end" size="small">
+                <NButton size="small" @click="showAddField = false">
+                  取消
+                </NButton>
+                <NButton size="small" type="primary" @click="handleAddNewField">
+                  确定添加
+                </NButton>
+              </NFlex>
             </div>
-            <NFlex align="center" style="margin-bottom: 8px">
-              <NInput v-model:value="newFieldKey" placeholder="配置项键名 (Key)，例如 secret_key" style="flex: 2" />
-              <NSelect
-                v-model:value="newFieldType"
-                style="flex: 1"
-                :options="[
-                  { label: '单行文本 (string)', value: 'string' },
-                  { label: '多行文本 (textarea)', value: 'textarea' },
-                  { label: '数字 (number)', value: 'number' },
-                  { label: '布尔开关 (boolean)', value: 'boolean' },
-                ]"
-              />
-            </NFlex>
-            <NFlex justify="end" size="small">
-              <NButton size="small" @click="showAddField = false">
-                取消
-              </NButton>
-              <NButton size="small" type="primary" @click="handleAddNewField">
-                确定添加
-              </NButton>
-            </NFlex>
-          </div>
 
-          <NButton
-            v-else
-            dashed
-            block
-            style="margin-top: 8px"
-            @click="showAddField = true"
-          >
-            ➕ 添加配置项
-          </NButton>
+            <NButton
+              v-else
+              dashed
+              block
+              style="margin-top: 8px"
+              @click="showAddField = true"
+            >
+              + 添加配置项
+            </NButton>
+          </template>
         </NForm>
       </div>
 
@@ -430,6 +454,7 @@ watch(() => props.show, (val) => {
           v-model:value="configText"
           type="textarea"
           :autosize="{ minRows: 12, maxRows: 24 }"
+          :disabled="Boolean(managedByPlugin)"
           placeholder="请输入 JSON 格式的配置内容..."
           style="font-family: monospace; font-size: 13px"
         />
@@ -451,10 +476,22 @@ watch(() => props.show, (val) => {
         </div>
         <NFlex align="center">
           <NButton @click="emit('update:show', false)">
-            取消
+            {{ managedByPlugin ? '关闭' : '取消' }}
           </NButton>
-          <NButton type="primary" :loading="saving" @click="handleSave">
+          <NButton
+            v-if="!managedByPlugin"
+            type="primary"
+            :loading="saving"
+            @click="handleSave"
+          >
             保存配置
+          </NButton>
+          <NButton
+            v-else
+            disabled
+            secondary
+          >
+            插件统一托管（只读）
           </NButton>
         </NFlex>
       </NFlex>

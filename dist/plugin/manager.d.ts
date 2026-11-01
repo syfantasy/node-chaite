@@ -32,6 +32,7 @@ export declare class PluginManager {
     private ensureRuntimePathShim;
     private prepareDirectoryRuntime;
     private initPluginModule;
+    getAllTools(): any[];
     getPlugins(): PluginMeta[];
     togglePlugin(id: string, enabled: boolean): Promise<boolean>;
     updatePluginConfig(id: string, newConfig: Record<string, any>): Promise<boolean>;
