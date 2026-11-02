@@ -685,6 +685,81 @@ export default async function (ctx) {
 }</code></pre>
     </div>
 
+    <div class="card">
+      <h3>④ 实战范例：让 Bot 具备自主定时提醒能力（Function Calling 动态任务）</h3>
+      <p>
+        <strong>业务痛点：</strong> 群友常对 Bot 说“明天下午 3 点提醒我开会”或“10 分钟后叫我去拿外卖”。大模型本身不具备时间驱动能力，必须通过 Tool 赋予其动态创建定时器并将消息回调推送的能力。
+      </p>
+
+      <pre><code class="language-javascript">import { CustomTool } from 'chaite'
+
+export class ReminderTool extends CustomTool {
+  name = 'set_reminder'
+
+  function = {
+    name: 'set_reminder',
+    description: '为当前用户或群聊设置一个未来的定时提醒任务。当用户提出类似“N分钟后叫我”、“明天上午9点提醒我...”时必须调用本工具。',
+    parameters: {
+      type: 'object',
+      properties: {
+        delay_seconds: {
+          type: 'number',
+          description: '从现在开始算起的延迟秒数（如 10 分钟后则传 600）'
+        },
+        reminder_content: {
+          type: 'string',
+          description: '到期提醒的具体内容事项'
+        }
+      },
+      required: ['delay_seconds', 'reminder_content']
+    }
+  }
+
+  async run(args, context) {
+    const { delay_seconds, reminder_content } = args
+    const event = context?.event // 获取当轮触发事件（含群号/用户ID）
+    const targetGroup = event?.groupId
+    const targetUser = event?.userId
+
+    if (!delay_seconds || delay_seconds <= 0) {
+      return { success: false, message: '延迟时间必须大于 0 秒' }
+    }
+
+    // 计算到期时间并设置定时器
+    setTimeout(async () => {
+      const client = globalThis.onebotClient
+      if (!client) return
+
+      const tipText = `⏰【定时提醒时间到啦！】\n事项：${reminder_content}`
+
+      if (targetGroup) {
+        // 群聊场景下带 @ 提问者
+        await client.callAction('send_group_msg', {
+          group_id: targetGroup,
+          message: [
+            { type: 'at', data: { qq: String(targetUser) } },
+            { type: 'text', data: { text: `\n${tipText}` } }
+          ]
+        })
+      } else if (targetUser) {
+        // 私聊场景直接下发
+        await client.callAction('send_private_msg', {
+          user_id: targetUser,
+          message: tipText
+        })
+      }
+    }, delay_seconds * 1000)
+
+    return {
+      success: true,
+      message: `已成功设定 ${delay_seconds} 秒后的提醒。请用亲切自然的口吻告知用户已为你记下。`
+    }
+  }
+}
+
+export default new ReminderTool()</code></pre>
+    </div>
+
     <!-- 7. 中间件与处理器 (Processors) 开发规范 -->
     <h2 id="processors-system">7. 中间件与处理器 (Processors) 开发规范</h2>
     <p>
@@ -837,6 +912,31 @@ ctx.registerService('translator', {
 const translator = ctx.getService('translator')
 if (translator) {
   const result = await translator.translate('你好世界')
+}</code></pre>
+    </div>
+
+    <div class="card">
+      <h3>插件生命周期定时任务 (`ctx.cron`)</h3>
+      <p>
+        Chaite 插件内置标准 Cron 定时任务调度器。与 Node.js 常见的全局定时器不同，<code>ctx.cron</code> 深度绑定当前插件的生命周期：当插件被<strong>热重载、更新或卸载</strong>时，系统会自动安全销毁已注册的任务，杜绝内存泄漏与重复执行。
+      </p>
+      <pre><code class="language-javascript">export default function setup(ctx) {
+  // 1. 注册标准 Cron 任务（如每天上午 8:00 执行广播）
+  const cancelJob = ctx.cron('0 8 * * *', async () => {
+    ctx.logger.info('早晨 8:00 定时播报触发！')
+
+    // 通过在线协议客户端向指定群聊发送早报
+    const client = ctx.client || globalThis.onebotClient
+    if (client) {
+      await client.callAction('send_group_msg', {
+        group_id: 123456789,
+        message: '☀️ 各位群友早上好！今天也是充满活力的一天。'
+      })
+    }
+  })
+
+  // 2. 具备需要时随时可手动注销
+  // cancelJob()
 }</code></pre>
     </div>
 
