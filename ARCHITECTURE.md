@@ -551,4 +551,32 @@ Chaite 提供了轻重分明、安全隔离的两套工具开发与加载体系�
   - **明确指名调用**：仅当用户明确指示“用表情包工具/发你的表情包”且要求发几张时，才开放 `count` 参数支持批量发送；
 - **静默下发与防复述设计**：底层工具下发媒体后，向模型返回指令级结果提示，严禁模型在回复群友时复述技术状态或报错信息，确保群友体验始终保持自然流畅的人设交流。
 
+---
+
+## 第 13 章：中间件与处理器体系（Processors Pipeline）
+
+Chaite 提供了覆盖大模型调用全生命周期的中间件处理器机制：
+
+### 1. 前处理器 (`PreProcessor`)
+- **执行时序**：位于消息组装完成之后、发送给模型之前。
+- **签名接口**：`process(message: UserMessage): Promise<UserMessage>`
+- **典型应用**：
+  - 输入安全审查与 Prompt 越狱拦截；
+  - 动态注入上下文附加规则与前缀安全约束；
+  - 手机号、身份证、用户敏感信息实时脱敏。
+
+### 2. 后处理器 (`PostProcessor`)
+- **执行时序**：位于模型输出生成完成、返回上层协议/用户之前。
+- **签名接口**：`process(message: AssistantMessage): Promise<AssistantMessage>`
+- **典型应用**：
+  - 非结构化思维链 `<think>...</think>` 标签过滤清洗；
+  - Markdown 换行规范与代码块排版纠正；
+  - 敏感词合规清洗与免责水印自动附加。
+
+### 3. 持久化与运行时调试
+- 处理器单文件自动落盘于 `data/processors/<name>.js`，由 `ProcessorsManager` 统一管理；
+- 提供 `POST /api/processors/:id/test` 实时运行沙箱调试接口，直观比对输入输出及耗时；
+- 支持在预设与渠道维度按需挂载处理器 ID 列表（`preProcessorIds` / `postProcessorIds`）。
+
+
 
