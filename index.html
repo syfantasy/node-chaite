@@ -568,11 +568,29 @@ export default function setup(ctx) {
 
     <div class="card">
       <h3>① 轻量单文件工具规范 (`data/tools/*.js`) 与凭证解耦</h3>
-      <p>单文件工具仅依赖 Node.js 原生能力（如原生 <code>fetch</code>、<code>crypto</code>），即写即生效：</p>
+      <p>单文件工具适合独立的 API 调用或功能扩展。代码仅需存放在 <code>data/tools/*.js</code> 即可被框架自动热加载：</p>
+
+      <h4>1. 运行时上下文对象 (<code>context</code>) 解密</h4>
+      <p>工具的 <code>run(args, context)</code> 方法第二个参数传入当轮调用的完整上下文：</p>
       <ul>
-        <li><strong>零凭证泄露原则</strong>：代码中严禁硬编码个人 API Key、Cookie、私人反代地址。所有动态凭据通过 <code>this.config</code> 或 <code>context.toolConfig</code> 读取独立的配置文件（<code>data/&lt;name&gt;/config.json</code>）；</li>
-        <li><strong>声明式配置架构 (<code>configSchema</code>)</strong>：在工具类中声明 <code>configSchema</code>，Web 管理控制台会自动将其渲染为<strong>开关 (Switch)</strong>、<strong>下拉单选 (Select)</strong>、<strong>数字步进器 (Number)</strong>、<strong>长文本凭证框 (Textarea)</strong> 等可视化控件；</li>
-        <li><strong>双向无损编辑</strong>：控制台支持在动态表单视图与原生 JSON 源码视图之间自由切换，底部操作条吸底对齐。</li>
+        <li><code>context.event</code>：当轮触发消息事件（包含 <code>groupId</code>、<code>userId</code>、<code>isGroup</code>、<code>messageId</code> 及原始 <code>raw</code>）；</li>
+        <li><code>context.channelId</code> / <code>context.presetId</code>：当前调用的渠道与预设 ID；</li>
+        <li><code>context.toolConfig</code>：当前工具加载的配置快照。</li>
+      </ul>
+
+      <h4>2. 独立配置落盘与 Web 控制台双向互通</h4>
+      <p>
+        Chaite 统一将工具独立配置持久化存储在 <code>data/&lt;toolName&gt;/config.json</code> 中。
+        在工具类中声明 <code>configSchema</code> 后，Web 控制台会自动将其渲染为<strong>开关、下拉、输入框、多行文本</strong>等可视化表单。开发者或 AI 工具也可以直接通过标准 <code>fs.writeFile</code> 动态读写该配置文件，实现配置自闭环持久化。
+      </p>
+
+      <h4>3. 异步/定时回调后台主动推送通道</h4>
+      <p>
+        当工具在后台任务或定时器中执行完毕需要主动下发消息时，可直接使用全局 OneBot 客户端实例 <code>globalThis.onebotClient</code>（或 <code>ctx.client</code>）：
+      </p>
+      <ul>
+        <li><code>await globalThis.onebotClient.callAction('send_group_msg', { group_id, message })</code></li>
+        <li><code>await globalThis.onebotClient.callAction('send_private_msg', { user_id, message })</code></li>
       </ul>
 
       <pre><code class="language-javascript">import { CustomTool } from 'chaite'
@@ -580,7 +598,7 @@ export default function setup(ctx) {
 export class SearchTool extends CustomTool {
   name = 'geminisearch'
 
-  // 声明式配置项定义（供管理面板自动渲染表单）
+  // 声明式配置项定义（供管理面板自动渲染表单，配置文件保存在 data/geminisearch/config.json）
   configSchema = {
     api_host: {
       type: 'string',
@@ -628,6 +646,7 @@ export class SearchTool extends CustomTool {
   async run(args, context) {
     // 动态读取专属配置，零代码硬编码
     const apiKey = this.config?.api_key || context?.toolConfig?.api_key
+    const event = context?.event // 获取当轮事件（含群号/用户ID等）
     const apiHost = this.config?.api_host || 'https://generativelanguage.googleapis.com'
     // 执行具体搜索与结果提取...
     return { results: `搜索结果: ${args.query}` }
@@ -686,78 +705,122 @@ export default async function (ctx) {
     </div>
 
     <div class="card">
-      <h3>④ 实战范例：让 Bot 具备自主定时提醒能力（Function Calling 动态任务）</h3>
+      <h3>④ 实战范例：AI 自主写入工具配置并持久化调度（以定时任务为例）</h3>
       <p>
-        <strong>业务痛点：</strong> 群友常对 Bot 说“明天下午 3 点提醒我开会”或“10 分钟后叫我去拿外卖”。大模型本身不具备时间驱动能力，必须通过 Tool 赋予其动态创建定时器并将消息回调推送的能力。
+        <strong>业务需求：</strong> 群友常对 Bot 说“每天早上 8 点提醒大家打卡”或“帮我记下每天下午 3 点去开会”。如果仅保存在内存中，一旦重启进程任务就会丢失。
+        通过让工具将任务列表<strong>动态写入自身的独立配置文件 (<code>data/&lt;toolName&gt;/config.json</code>)</strong>，并在类初始化时自动恢复，既实现了重启不丢任务，又能在 Web 控制台直接可视化查看与编辑。
       </p>
 
-      <pre><code class="language-javascript">import { CustomTool } from 'chaite'
+      <pre><code class="language-javascript">import fs from 'node:fs/promises'
+import path from 'node:path'
+import schedule from '@karinjs/node-schedule'
+import { CustomTool } from 'chaite'
 
-export class ReminderTool extends CustomTool {
-  name = 'set_reminder'
+export class CronManagerTool extends CustomTool {
+  name = 'cron_manager'
+  configPath = path.resolve(process.cwd(), 'data/cron_manager/config.json')
+  activeJobs = new Map()
+
+  constructor() {
+    super()
+    // 进程启动时自动从 config.json 恢复历史所有任务
+    this.restoreJobs()
+  }
+
+  // 声明配置项，让 Web 控制台可视化展示已登记的任务列表
+  configSchema = {
+    tasks: {
+      type: 'textarea',
+      label: '任务列表 (JSON)',
+      description: 'AI 写入及系统持久化的定时任务清单',
+      default: '[]'
+    }
+  }
 
   function = {
-    name: 'set_reminder',
-    description: '为当前用户或群聊设置一个未来的定时提醒任务。当用户提出类似“N分钟后叫我”、“明天上午9点提醒我...”时必须调用本工具。',
+    name: 'cron_manager',
+    description: '设置或查看周期性定时任务（如每天几点提醒、工作日提醒等）。',
     parameters: {
       type: 'object',
       properties: {
-        delay_seconds: {
-          type: 'number',
-          description: '从现在开始算起的延迟秒数（如 10 分钟后则传 600）'
-        },
-        reminder_content: {
-          type: 'string',
-          description: '到期提醒的具体内容事项'
-        }
+        action: { type: 'string', enum: ['add', 'list'], description: '操作类型' },
+        cron: { type: 'string', description: '标准 5 位 Cron 表达式（如每天 8 点为 "0 8 * * *"）' },
+        content: { type: 'string', description: '到期提醒的具体内容事项' }
       },
-      required: ['delay_seconds', 'reminder_content']
+      required: ['action']
     }
   }
 
   async run(args, context) {
-    const { delay_seconds, reminder_content } = args
-    const event = context?.event // 获取当轮触发事件（含群号/用户ID）
-    const targetGroup = event?.groupId
-    const targetUser = event?.userId
+    const { action, cron, content } = args
+    const event = context?.event // 从 context 中获取当轮群号与提问者
+    const currentTasks = await this.readTasks()
 
-    if (!delay_seconds || delay_seconds <= 0) {
-      return { success: false, message: '延迟时间必须大于 0 秒' }
+    if (action === 'add') {
+      const newTask = {
+        id: 'task_' + Date.now().toString(36),
+        cron,
+        content,
+        groupId: event?.groupId || null,
+        userId: event?.userId || null,
+        createdAt: new Date().toLocaleString()
+      }
+
+      // 1. 动态落盘写入自身独立配置文件，与 Web 控制台互通
+      currentTasks.push(newTask)
+      await this.saveTasks(currentTasks)
+
+      // 2. 立即启动当前调度
+      this.scheduleTask(newTask)
+
+      return { success: true, message: `任务已创建并写入配置，ID: ${newTask.id}` }
     }
 
-    // 计算到期时间并设置定时器
-    setTimeout(async () => {
+    if (action === 'list') {
+      const groupTasks = currentTasks.filter(t => t.groupId === event?.groupId)
+      return { tasks: groupTasks }
+    }
+  }
+
+  scheduleTask(task) {
+    const job = schedule.scheduleJob(task.cron, async () => {
       const client = globalThis.onebotClient
       if (!client) return
 
-      const tipText = `⏰【定时提醒时间到啦！】\n事项：${reminder_content}`
-
-      if (targetGroup) {
-        // 群聊场景下带 @ 提问者
+      if (task.groupId) {
+        // 使用底层的 OneBot 客户端主动推送到当前群
         await client.callAction('send_group_msg', {
-          group_id: targetGroup,
-          message: [
-            { type: 'at', data: { qq: String(targetUser) } },
-            { type: 'text', data: { text: `\n${tipText}` } }
-          ]
-        })
-      } else if (targetUser) {
-        // 私聊场景直接下发
-        await client.callAction('send_private_msg', {
-          user_id: targetUser,
-          message: tipText
+          group_id: task.groupId,
+          message: `⏰【定时提醒】\n${task.content}`
         })
       }
-    }, delay_seconds * 1000)
+    })
+    if (job) this.activeJobs.set(task.id, job)
+  }
 
-    return {
-      success: true,
-      message: `已成功设定 ${delay_seconds} 秒后的提醒。请用亲切自然的口吻告知用户已为你记下。`
+  async readTasks() {
+    try {
+      const raw = await fs.readFile(this.configPath, 'utf-8')
+      const json = JSON.parse(raw)
+      return Array.isArray(json.tasks) ? json.tasks : []
+    } catch {
+      return []
     }
+  }
+
+  async saveTasks(tasks) {
+    await fs.mkdir(path.dirname(this.configPath), { recursive: true })
+    await fs.writeFile(this.configPath, JSON.stringify({ tasks }, null, 2))
+    this.config = { tasks } // 刷新当前实例内存配置
+  }
+
+  async restoreJobs() {
+    const tasks = await this.readTasks()
+    for (const t of tasks) this.scheduleTask(t)
   }
 }
 
-export default new ReminderTool()</code></pre>
+export default new CronManagerTool()</code></pre>
     </div>
 
     <!-- 7. 中间件与处理器 (Processors) 开发规范 -->
