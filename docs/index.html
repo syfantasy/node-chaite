@@ -685,43 +685,6 @@ export default async function (ctx) {
 }</code></pre>
     </div>
 
-    <div class="card">
-      <h3>④ 工具设计规范与强负向禁令（Negative Constraints 范式）</h3>
-      <p>在 Agent 挂载多个功能相近的工具时（如“互联网素材搜图”与“聊天拟人表情包”），大模型极易产生意图混淆。开发者必须在 Tool Schema Description 中施加双向刚性约束：</p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>对比维度</th>
-            <th>素材检索型工具 (<code>web_image_search</code>)</th>
-            <th>拟人反应型工具 (<code>chat_sticker_reaction</code>)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>定位职责</strong></td>
-            <td>互联网公网检索，满足找壁纸、找素材、搜表情需求</td>
-            <td>智能体私有拟人表情库，日常水群情绪附带</td>
-          </tr>
-          <tr>
-            <td><strong>负向禁令</strong></td>
-            <td>不可用于日常聊天情绪表达</td>
-            <td><strong>严禁</strong>响应搜图/找图/求壁纸等素材指令（必须引导转交前者）</td>
-          </tr>
-          <tr>
-            <td><strong>频次控制</strong></td>
-            <td>由模型根据检索结果自主决定 1-5 张</td>
-            <td>日常聊天严格最多 1 张且防刷屏；明确指名时方开放批量</td>
-          </tr>
-          <tr>
-            <td><strong>反馈设计</strong></td>
-            <td>返回图片直链与摘要供大模型展示或引用</td>
-            <td>底层静默发送，严禁大模型在文本中复述技术状态或报错</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
     <!-- 7. 中间件与处理器 (Processors) 开发规范 -->
     <h2 id="processors-system">7. 中间件与处理器 (Processors) 开发规范</h2>
     <p>
