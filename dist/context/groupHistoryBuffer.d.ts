@@ -93,6 +93,17 @@ export declare function parseCqMessageToSegments(content: string): Array<{
     type: string;
     data: Record<string, any>;
 }>;
+/**
+ * 解析合并转发消息中的单条消息节点，将文本及多媒体（图片、视频、文件、语音）提取并生成对应 ref
+ */
+export declare function parseForwardNodeToText(node: any, meta?: {
+    groupId?: number | string;
+    messageId?: number | string;
+}): {
+    senderName: string;
+    text: string;
+    imageRefs: string[];
+};
 export declare class GroupHistoryBuffer {
     private buffers;
     private hardCapacity;

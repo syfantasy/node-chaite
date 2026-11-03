@@ -2,7 +2,7 @@ import { loadConfig, getConfig, saveConfig } from './config.js';
 import { matchChaiteCommand, buildHelpText } from './commands.js';
 import { initChaiteStorage } from './storage.js';
 import { startWebServer } from './server.js';
-import { checkPermission, getEffectiveMasters, banTarget, unbanTarget, parseDuration } from './guard.js';
+import { checkPermission, getEffectiveMasters, banTarget, unbanTarget, parseDuration, isTargetBanned } from './guard.js';
 import { oneBotToUserMessage, formatModelResponse } from './onebot/message.js';
 import { groupHistoryBuffer, groupMessageRefStore, parseCqMessageToSegments } from './context/groupHistoryBuffer.js';
 import { mediaRefStore } from './onebot/refStore.js';
@@ -196,16 +196,25 @@ export async function handleMessage(event, storageCtx) {
     // raw.masters（如 Yunzai 的 other.yaml masterQQ）；两者皆无则维持「全员主人」语义。
     // 用于指令权限判定与群聊环境元信息展示。
     const effectiveMasters = getEffectiveMasters(rawEvent, config).map(String);
+    // Record group message into rolling buffer so future turns have full context
+    // 注意：群聊流水应客观记录群内所有发言（包括被用户黑名单拦截的机器人发言），
+    // 避免上下文断层或后续群友引用时丢失上下文；
+    // 但若群本身已被黑名单封禁或不在群白名单内，则不维护该群的流水。
+    if (rawEvent.message_type === 'group' && rawEvent.group_id) {
+        const gid = Number(rawEvent.group_id);
+        const isGroupAllowed = !isTargetBanned(gid, 'group', config) &&
+            (config.management.whiteGroups.length === 0 || config.management.whiteGroups.includes(gid));
+        if (isGroupAllowed) {
+            await groupHistoryBuffer.recordMessage(rawEvent, onebotAdapter);
+        }
+    }
     // 1. Check permissions (Enforce dynamic black/white lists via config)
+    // 判定当前消息是否允许触发 Bot（若发送者在黑名单中，阻断其触发 Bot 响应与命令，但上方已确保流水被记录）
     if (rawEvent.post_type === 'message') {
         const perm = checkPermission(rawEvent, config);
         if (!perm.allow) {
             return;
         }
-    }
-    // Record group message into rolling buffer so future turns have full context
-    if (rawEvent.message_type === 'group' && rawEvent.group_id) {
-        await groupHistoryBuffer.recordMessage(rawEvent, onebotAdapter);
     }
     // 2. Convert message to Chaite format
     // 自身 QQ 优先级：宿主注入的 event.selfId > 适配器 getSelfId() > 面板配置

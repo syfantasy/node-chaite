@@ -208,6 +208,143 @@ export function parseCqMessageToSegments(content: string): Array<{ type: string;
 }
 
 /**
+ * 解析合并转发消息中的单条消息节点，将文本及多媒体（图片、视频、文件、语音）提取并生成对应 ref
+ */
+export function parseForwardNodeToText(
+  node: any,
+  meta?: { groupId?: number | string; messageId?: number | string }
+): { senderName: string; text: string; imageRefs: string[] } {
+  const uid = node.sender?.user_id || node.user_id || node.sender?.uin || node.uin
+  const rawName = (node.sender?.card || node.sender?.nickname || node.nickname || '').replace(/[\s\u3000]+/g, ' ').trim()
+  let senderName = rawName
+  if (!senderName) {
+    senderName = uid ? `QQ ${uid}` : '群友'
+  }
+
+  const rawMsg = node.message ?? node.content ?? node.raw_message ?? ''
+  let segments: Array<{ type: string; data?: Record<string, any> }> = []
+  if (Array.isArray(rawMsg)) {
+    segments = rawMsg
+  } else if (typeof rawMsg === 'string' && rawMsg.includes('[CQ:')) {
+    segments = parseCqMessageToSegments(rawMsg)
+  } else if (typeof rawMsg === 'string') {
+    segments = [{ type: 'text', data: { text: rawMsg } }]
+  }
+
+  const parts: string[] = []
+  const imageRefs: string[] = []
+
+  for (const seg of segments) {
+    switch (seg.type) {
+      case 'text': {
+        const txt = seg.data?.text || ''
+        if (txt) parts.push(txt)
+        break
+      }
+      case 'at': {
+        const qq = String(seg.data?.qq || '')
+        parts.push(`@${qq}`)
+        break
+      }
+      case 'image': {
+        const url = seg.data?.url || seg.data?.file
+        const file = seg.data?.file
+        const ref = mediaRefStore.saveImage({
+          url: typeof url === 'string' && url.startsWith('http') ? url : undefined,
+          file: typeof file === 'string' ? file : undefined,
+          groupId: meta?.groupId,
+          senderId: uid,
+          messageId: meta?.messageId,
+        })
+        imageRefs.push(ref)
+        parts.push(`[图片 ref:${ref}]`)
+        break
+      }
+      case 'video': {
+        const file = seg.data?.file || seg.data?.url || ''
+        const url = seg.data?.url
+        let name = seg.data?.name || seg.data?.file_name || ''
+        if (!name && typeof file === 'string') {
+          const rawName = file.split('/').pop()?.split('?')[0] || ''
+          if (rawName && rawName.includes('.')) name = rawName
+        }
+        const extMatch = name ? name.match(/\.([a-zA-Z0-9]+)$/) : (typeof file === 'string' ? file.match(/\.([a-zA-Z0-9]+)$/) : null)
+        const ext = (extMatch ? extMatch[1] : seg.data?.ext || 'mp4').toLowerCase()
+        const displayLabel = name || `视频.${ext}`
+
+        const ref = mediaRefStore.saveVideo({
+          file: typeof file === 'string' ? file : undefined,
+          url: typeof url === 'string' && url.startsWith('http') ? url : undefined,
+          name: displayLabel,
+          ext,
+          fileSize: Number(seg.data?.file_size || seg.data?.size || 0) || undefined,
+          groupId: meta?.groupId,
+          senderId: uid,
+          messageId: meta?.messageId,
+        })
+        parts.push(`[视频:${displayLabel} ref:${ref}]`)
+        break
+      }
+      case 'file': {
+        const name = seg.data?.name || seg.data?.file_name || ''
+        const file = seg.data?.file || ''
+        const fileId = seg.data?.file_id || seg.data?.id || ''
+        const url = seg.data?.url
+        const size = Number(seg.data?.file_size || seg.data?.size || 0) || undefined
+        const extMatch = name ? name.match(/\.([a-zA-Z0-9]+)$/) : (typeof file === 'string' ? file.match(/\.([a-zA-Z0-9]+)$/) : null)
+        const ext = (extMatch ? extMatch[1] : 'file').toLowerCase()
+        const displayLabel = name || (typeof file === 'string' ? file.split('/').pop()?.split('?')[0] : '') || `文件.${ext}`
+        const sizeStr = size ? ` (${(size / 1024 / 1024).toFixed(1)}MB)` : ''
+
+        const ref = mediaRefStore.saveFile({
+          file: typeof file === 'string' ? file : undefined,
+          fileId: typeof fileId === 'string' ? fileId : undefined,
+          url: typeof url === 'string' && url.startsWith('http') ? url : undefined,
+          name: displayLabel,
+          ext,
+          fileSize: size,
+          groupId: meta?.groupId,
+          senderId: uid,
+          messageId: meta?.messageId,
+        })
+        parts.push(`[文件:${displayLabel}${sizeStr} ref:${ref}]`)
+        break
+      }
+      case 'record': {
+        const duration = Number(seg.data?.duration || seg.data?.seconds || 0)
+        const file = seg.data?.file || seg.data?.url
+        const ref = mediaRefStore.saveVoice({
+          file: typeof file === 'string' ? file : undefined,
+          url: typeof seg.data?.url === 'string' && seg.data.url.startsWith('http') ? seg.data.url : undefined,
+          duration: duration || undefined,
+          groupId: meta?.groupId,
+          senderId: uid,
+          messageId: meta?.messageId,
+        })
+        const durStr = duration > 0 ? ` ${duration}秒` : ''
+        parts.push(`[语音${durStr} ref:${ref}]`)
+        break
+      }
+      case 'face':
+      case 'mface':
+      case 'sface': {
+        parts.push('[表情]')
+        break
+      }
+      default: {
+        break
+      }
+    }
+  }
+
+  let text = parts.join('').replace(/\r\n/g, '\n').trim()
+  if (!text && typeof rawMsg === 'string') {
+    text = rawMsg.trim()
+  }
+  return { senderName, text: text || '[空消息]', imageRefs }
+}
+
+/**
  * Format string with double quotes and clean newlines
  */
 function quoteStr(val?: string | number): string {
@@ -364,7 +501,23 @@ export class GroupHistoryBuffer {
               const fName = s.data?.name || s.data?.file_name || '文件'
               summary += ` [文件: ${fName}] `
             } else if (s.type === 'forward') {
-              summary += ' [合并转发] '
+              const fwdId = s.data?.id
+              let fwdSummary = '合并转发'
+              if (fwdId && typeof onebotClient?.callAction === 'function') {
+                try {
+                  const fResp = await onebotClient.callAction('get_forward_msg', { id: fwdId })
+                  const fData = fResp?.data?.messages || fResp?.data
+                  if (Array.isArray(fData)) {
+                    const samples = fData.slice(0, 3).map((node: any) => {
+                      const p = parseForwardNodeToText(node, { groupId: gid, messageId: replyMsgId })
+                      if (p.imageRefs.length > 0) newImageRefs.push(...p.imageRefs)
+                      return `${p.senderName}: ${p.text.slice(0, 30)}`
+                    })
+                    fwdSummary = `合并转发(${fData.length}条: ${samples.join('; ')})`
+                  }
+                } catch {}
+              }
+              summary += ` [${fwdSummary}] `
             }
           }
 
@@ -596,6 +749,7 @@ export class GroupHistoryBuffer {
           const forwardId = (seg as any).data?.id
           let preview = ''
           let msgCount = 0
+          const previewMessages: Array<{ senderName: string; text: string }> = []
 
           if (forwardId && onebotClient && typeof onebotClient.callAction === 'function') {
             try {
@@ -603,22 +757,24 @@ export class GroupHistoryBuffer {
               const fwdData = resp?.data?.messages || resp?.data
               if (Array.isArray(fwdData)) {
                 msgCount = fwdData.length
-                const sampleMsgs = fwdData.slice(0, 3).map((m: any, i: number) => {
-                  const uid = m.sender?.user_id || m.user_id || m.sender?.uin || m.uin
-                  const rawName = (m.sender?.card || m.sender?.nickname || m.nickname || '').replace(/[\s\u3000]+/g, ' ').trim()
-                  let sName = rawName
-                  if (!sName) {
-                    sName = uid ? `QQ ${uid}` : `用户${i + 1}`
+                const sampleNodes = fwdData.slice(0, 10)
+                const sampleStrs: string[] = []
+                for (const node of sampleNodes) {
+                  const parsed = parseForwardNodeToText(node, {
+                    groupId: event.group_id,
+                    messageId: event.message_id,
+                  })
+                  if (parsed.imageRefs.length > 0) {
+                    imageRefs.push(...parsed.imageRefs)
                   }
-                  let sText = ''
-                  if (typeof m.message === 'string') sText = m.message
-                  else if (Array.isArray(m.message)) {
-                    sText = m.message.map((s: any) => s.data?.text || (s.type === 'image' ? '[图片]' : '')).join('')
-                  }
-                  sText = (sText || '').replace(/\r\n|\r|\n/g, ' ').trim()
-                  return `${sName}: ${sText.slice(0, 40)}`
-                })
-                preview = sampleMsgs.join('; ')
+                  previewMessages.push({
+                    senderName: parsed.senderName,
+                    text: parsed.text,
+                  })
+                  const shortText = parsed.text.length > 50 ? parsed.text.slice(0, 50) + '...' : parsed.text
+                  sampleStrs.push(`${parsed.senderName}: ${shortText}`)
+                }
+                preview = sampleStrs.slice(0, 3).join('; ')
               }
             } catch {
               // Ignore failure to fetch forward details
@@ -629,6 +785,7 @@ export class GroupHistoryBuffer {
             forwardId: String(forwardId),
             messagesCount: msgCount,
             summary: preview,
+            previewMessages,
             groupId: event.group_id,
             senderId: event.user_id,
             messageId: event.message_id,

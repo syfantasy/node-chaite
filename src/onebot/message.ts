@@ -16,6 +16,7 @@ import {
   OneBotSegmentImage,
 } from './types.js'
 import { mediaRefStore } from './refStore.js'
+import { parseForwardNodeToText } from '../context/groupHistoryBuffer.js'
 
 export interface ConvertOptions {
   botUin?: number
@@ -346,11 +347,25 @@ export async function oneBotToUserMessage(
               quotedText += ` [语音${durStr} ref:${ref}] `
             } else if (qSeg.type === 'forward') {
               const forwardId = (qSeg as any).data?.id || ''
+              let fwdSummary = '合并转发聊天记录'
+              if (forwardId && options.onebot) {
+                try {
+                  const fwdRes = await options.onebot.callAction('get_forward_msg', { id: forwardId })
+                  const list = fwdRes?.data?.messages || fwdRes?.data || []
+                  if (Array.isArray(list)) {
+                    const samples = list.slice(0, 3).map((m: any) => {
+                      const p = parseForwardNodeToText(m, { groupId: event.group_id, messageId: quotedMsgId })
+                      return `${p.senderName}: ${p.text.slice(0, 30)}`
+                    })
+                    fwdSummary = `聊天记录(${list.length}条: ${samples.join('; ')})`
+                  }
+                } catch {}
+              }
               const ref = mediaRefStore.saveForward({
                 forwardId,
-                summary: '合并转发聊天记录',
+                summary: fwdSummary,
               })
-              quotedText += ` [聊天记录 ref:${ref}] `
+              quotedText += ` [${fwdSummary} ref:${ref}] `
             } else if (qSeg.type === 'file') {
               const name = (qSeg as any).data?.name || (qSeg as any).data?.file_name || ''
               const file = (qSeg as any).data?.file || ''
@@ -460,12 +475,20 @@ export async function oneBotToUserMessage(
       if (forwardId && options.onebot) {
         try {
           const fwdRes = await options.onebot.callAction('get_forward_msg', { id: forwardId })
-          const list = fwdRes?.data?.messages || []
-          previewMessages = list.slice(0, 10).map((m: any) => ({
-            senderName: m.sender?.nickname || m.sender?.name || '用户',
-            text: Array.isArray(m.message) ? m.message.map((s: any) => s.data?.text || '').join('') : (typeof m.message === 'string' ? m.message : ''),
-          }))
-          summary = `共 ${list.length} 条记录`
+          const list = fwdRes?.data?.messages || fwdRes?.data || []
+          if (Array.isArray(list)) {
+            summary = `共 ${list.length} 条记录`
+            previewMessages = list.slice(0, 15).map((m: any) => {
+              const parsed = parseForwardNodeToText(m, {
+                groupId: event.group_id,
+                messageId: event.message_id,
+              })
+              return {
+                senderName: parsed.senderName,
+                text: parsed.text,
+              }
+            })
+          }
         } catch {}
       }
       const ref = mediaRefStore.saveForward({
@@ -476,7 +499,7 @@ export async function oneBotToUserMessage(
         senderId: event.user_id,
         messageId: event.message_id,
       })
-      const previewStr = previewMessages.length > 0 ? ` 摘要: ${previewMessages.slice(0, 3).map((p: any) => `${p.senderName}: ${p.text}`).join('; ')}...` : ''
+      const previewStr = previewMessages.length > 0 ? ` 摘要: ${previewMessages.slice(0, 5).map((p: any) => `${p.senderName}: ${p.text}`).join('; ')}...` : ''
       rawText += ` [聊天记录:${summary}${previewStr} ref:${ref}] `
     } else if (seg.type === 'json' || seg.type === 'xml' || seg.type === 'card' || seg.type === 'share') {
       // 小程序/链接/分享卡片：本身没有 text 段，不处理就会得到空消息体
