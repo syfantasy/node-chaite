@@ -121,6 +121,12 @@ const DEFAULT_CONFIG = {
     vision: {
         maxRecentImages: 3,
         enableGroupContextImages: true,
+        compression: {
+            enabled: true,
+            maxDimension: 1280,
+            quality: 80,
+            thresholdBytes: 153600,
+        },
     },
     maintenance: {
         historyRetentionDays: 30,
@@ -165,7 +171,14 @@ export function loadConfig() {
                 llm: { ...DEFAULT_CONFIG.llm, ...parsed.llm },
                 groupContext: { ...DEFAULT_CONFIG.groupContext, ...parsed.groupContext },
                 logging: { ...DEFAULT_CONFIG.logging, ...parsed.logging },
-                vision: { ...DEFAULT_CONFIG.vision, ...parsed.vision },
+                vision: {
+                    ...DEFAULT_CONFIG.vision,
+                    ...parsed.vision,
+                    compression: {
+                        ...DEFAULT_CONFIG.vision.compression,
+                        ...(parsed.vision?.compression || {}),
+                    },
+                },
                 maintenance: { ...DEFAULT_CONFIG.maintenance, ...parsed.maintenance },
                 ...(parsed.onebot ? { onebot: parsed.onebot } : {}),
                 ...(parsed.bym ? { bym: parsed.bym } : {}),

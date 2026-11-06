@@ -17,6 +17,8 @@ import {
 } from './types.js'
 import { mediaRefStore } from './refStore.js'
 import { parseForwardNodeToText } from '../context/groupHistoryBuffer.js'
+import { getConfig } from '../config.js'
+import { compressImageBuffer } from '../core/utils/imageCompressor.js'
 
 export interface ConvertOptions {
   botUin?: number
@@ -557,6 +559,14 @@ export async function oneBotToUserMessage(
           }
         }
 
+        let finalMime = mimeType
+        try {
+          const cfg = getConfig()
+          const compResult = await compressImageBuffer(buf, mimeType, cfg?.vision?.compression)
+          buf = compResult.buffer
+          finalMime = compResult.mimeType
+        } catch {}
+
         if (buf.length > 2.5 * 1024 * 1024) {
           console.warn(`[Message] Skipping oversized image (${(buf.length / 1024 / 1024).toFixed(2)}MB > 2.5MB) to avoid payload rejection`)
           rawText += ` [图片过大已略过: ${refId}] `
@@ -567,7 +577,7 @@ export async function oneBotToUserMessage(
         contents.push({
           type: 'image',
           image: base64,
-          mimeType,
+          mimeType: finalMime,
         })
       } catch (err: any) {
         console.warn(`[Message] Failed to download image ${url}:`, err.message)

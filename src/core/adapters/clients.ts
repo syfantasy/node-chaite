@@ -719,6 +719,10 @@ export class AbstractClient implements IClient {
         options.toolChoice = {
           type: 'auto',
         }
+        // 工具调用递归时，清空 prependContext，避免递归轮次重复向首条消息注入上下文或图片
+        if (options.prependContext) {
+          delete (options as any).prependContext
+        }
         // 工具调用递归时，必须允许读取存储的本轮工具结果历史，
         // 否则单轮/伪人模式(disableHistoryRead)下会因 histories 为空导致模型请求无消息而报错
         options.disableHistoryRead = false

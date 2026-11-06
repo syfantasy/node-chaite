@@ -40,7 +40,13 @@
   },
   "vision": {
     "maxRecentImages": 3,
-    "enableGroupContextImages": true
+    "enableGroupContextImages": true,
+    "compression": {
+      "enabled": true,
+      "maxDimension": 1280,
+      "quality": 80,
+      "thresholdBytes": 153600
+    }
   },
   "maintenance": {
     "historyRetentionDays": 30,

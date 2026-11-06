@@ -161,7 +161,14 @@ export function startWebServer(config) {
             cur.logging = { ...cur.logging, ...newCfg.logging };
         }
         if (newCfg.vision) {
-            cur.vision = { ...cur.vision, ...newCfg.vision };
+            cur.vision = {
+                ...cur.vision,
+                ...newCfg.vision,
+                compression: {
+                    ...(cur.vision?.compression || {}),
+                    ...(newCfg.vision?.compression || {}),
+                },
+            };
         }
         if (newCfg.maintenance) {
             cur.maintenance = {

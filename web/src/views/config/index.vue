@@ -6,6 +6,7 @@ import {
   NAlert,
   NButton,
   NCard,
+  NDivider,
   NDynamicTags,
   NForm,
   NFormItemGridItem,
@@ -205,6 +206,12 @@ const config = reactive({
     maxRecentImages: 3,
     maxImageDimension: 4096,
     enableGroupContextImages: true,
+    compression: {
+      enabled: true,
+      maxDimension: 1280,
+      quality: 80,
+      thresholdBytes: 153600,
+    },
   },
   logging: {
     enabled: true,
@@ -460,6 +467,10 @@ async function getConfig(): Promise<CustomConfig> {
     vision: {
       ...config.vision,
       ...(data.data?.vision || {}),
+      compression: {
+        ...config.vision.compression,
+        ...(data.data?.vision?.compression || {}),
+      },
     },
     maintenance: {
       ...config.maintenance,
@@ -1026,6 +1037,82 @@ onMounted(async () => {
                             </NIcon>
                           </template>
                           <span>开启后群聊历史记录中的图片会进入多模态主干对话上下文。</span>
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24">
+                      <NDivider style="margin: 12px 0 6px 0;">多模态图片智能压缩（防卡顿/防请求超时）</NDivider>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:12 m:12" label="启用图片压缩">
+                      <div style="display: flex; align-items: center; height: 34px;">
+                        <NSwitch v-model:value="config.vision.compression.enabled" />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>对送入大模型的图片自动进行长边等比缩放与画质优化，显著降低上行带宽消耗与大模型切片 Token，消除请求卡顿。</span>
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:12 m:12" label="长边最大分辨率 (px)">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NInputNumber
+                          v-model:value="config.vision.compression.maxDimension"
+                          :min="320"
+                          :max="3840"
+                          :step="128"
+                          :disabled="!config.vision.compression.enabled"
+                          style="flex: 1;"
+                        />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>超出此尺寸的高清图片将等比缩小（推荐 1024 或 1280），既能保留清晰细节，又能避免模型因超大图产生过多 Tiles 导致处理极慢。</span>
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:12 m:12" label="压缩画质 (1-100)">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NInputNumber
+                          v-model:value="config.vision.compression.quality"
+                          :min="20"
+                          :max="100"
+                          :step="5"
+                          :disabled="!config.vision.compression.enabled"
+                          style="flex: 1;"
+                        />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>编码质量，默认 80。在视觉模型理解能力不受影响的前提下，文件体积可缩减 70%~90%。</span>
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:12 m:12" label="压缩触发阈值 (字节)">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NInputNumber
+                          v-model:value="config.vision.compression.thresholdBytes"
+                          :min="10240"
+                          :max="5242880"
+                          :step="10240"
+                          :disabled="!config.vision.compression.enabled"
+                          style="flex: 1;"
+                        />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>小于此体积的图片且分辨率未超标时直接保留原图（如小表情包），默认 153600 (约 150KB)。</span>
                         </NTooltip>
                       </div>
                     </NFormItemGridItem>

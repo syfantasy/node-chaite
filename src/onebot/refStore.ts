@@ -2,6 +2,8 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import axios from 'axios'
 import { detectSupportedImageMime, optimizeGifBuffer } from './message.js'
+import { getConfig } from '../config.js'
+import { compressImageBuffer } from '../core/utils/imageCompressor.js'
 
 export type RefType = 'voice' | 'forward' | 'image' | 'video' | 'file'
 
@@ -340,7 +342,22 @@ class MediaRefStore {
           `[RefStore] Extracted first frame for large GIF (${ref}): ${(rawBuffer.length / 1024 / 1024).toFixed(2)}MB -> ${(opt.buffer.length / 1024).toFixed(1)}KB (first-frame fallback)`
         )
         rawBuffer = opt.buffer
+        detectedMime = 'image/jpeg'
       }
+    }
+
+    // 4. Vision image compression (resize max dimension & compress quality)
+    try {
+      const cfg = getConfig()
+      const compResult = await compressImageBuffer(
+        rawBuffer,
+        detectedMime || 'image/jpeg',
+        cfg?.vision?.compression
+      )
+      rawBuffer = compResult.buffer
+      detectedMime = compResult.mimeType
+    } catch (compErr: any) {
+      console.warn(`[RefStore] Image compression failed for ${ref}, keeping original:`, compErr?.message || compErr)
     }
 
     // Safety guard: reject single images that still exceed 2.5MB to prevent upstream HTTP 413

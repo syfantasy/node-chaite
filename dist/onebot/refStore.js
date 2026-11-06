@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import axios from 'axios';
 import { detectSupportedImageMime, optimizeGifBuffer } from './message.js';
+import { getConfig } from '../config.js';
+import { compressImageBuffer } from '../core/utils/imageCompressor.js';
 class MediaRefStore {
     constructor() {
         this.store = new Map();
@@ -275,7 +277,18 @@ class MediaRefStore {
             else if (opt.method === 'first_frame') {
                 console.log(`[RefStore] Extracted first frame for large GIF (${ref}): ${(rawBuffer.length / 1024 / 1024).toFixed(2)}MB -> ${(opt.buffer.length / 1024).toFixed(1)}KB (first-frame fallback)`);
                 rawBuffer = opt.buffer;
+                detectedMime = 'image/jpeg';
             }
+        }
+        // 4. Vision image compression (resize max dimension & compress quality)
+        try {
+            const cfg = getConfig();
+            const compResult = await compressImageBuffer(rawBuffer, detectedMime || 'image/jpeg', cfg?.vision?.compression);
+            rawBuffer = compResult.buffer;
+            detectedMime = compResult.mimeType;
+        }
+        catch (compErr) {
+            console.warn(`[RefStore] Image compression failed for ${ref}, keeping original:`, compErr?.message || compErr);
         }
         // Safety guard: reject single images that still exceed 2.5MB to prevent upstream HTTP 413
         if (rawBuffer.length > 2.5 * 1024 * 1024) {

@@ -86,6 +86,13 @@ function resolveConfigPath(): string {
   return dataConfig
 }
 
+export interface VisionCompressionConfig {
+  enabled: boolean
+  maxDimension: number
+  quality: number
+  thresholdBytes: number
+}
+
 export interface AppConfig {
   onebot?: {
     url?: string
@@ -156,6 +163,8 @@ export interface AppConfig {
   vision: {
     maxRecentImages: number
     enableGroupContextImages: boolean
+    compression?: VisionCompressionConfig
+    [key: string]: any
   }
   maintenance?: {
     historyRetentionDays: number
@@ -208,6 +217,12 @@ const DEFAULT_CONFIG: AppConfig = {
   vision: {
     maxRecentImages: 3,
     enableGroupContextImages: true,
+    compression: {
+      enabled: true,
+      maxDimension: 1280,
+      quality: 80,
+      thresholdBytes: 153600,
+    },
   },
   maintenance: {
     historyRetentionDays: 30,
@@ -254,7 +269,14 @@ export function loadConfig(): AppConfig {
         llm: { ...DEFAULT_CONFIG.llm, ...parsed.llm },
         groupContext: { ...DEFAULT_CONFIG.groupContext, ...parsed.groupContext },
         logging: { ...DEFAULT_CONFIG.logging, ...parsed.logging },
-        vision: { ...DEFAULT_CONFIG.vision, ...parsed.vision },
+        vision: {
+          ...DEFAULT_CONFIG.vision,
+          ...parsed.vision,
+          compression: {
+            ...DEFAULT_CONFIG.vision.compression,
+            ...(parsed.vision?.compression || {}),
+          },
+        },
         maintenance: { ...DEFAULT_CONFIG.maintenance, ...parsed.maintenance },
         ...(parsed.onebot ? { onebot: parsed.onebot } : {}),
         ...(parsed.bym ? { bym: parsed.bym } : {}),

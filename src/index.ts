@@ -766,7 +766,10 @@ export async function handleMessage(
           hasInjectedContext = true
           const injectedCount = parts.length
           let ctxAttachedToCurrent = false
+          let hasInjected = false
           sendOptions.prependContext = (histories: any[], current?: any) => {
+            if (hasInjected) return
+            hasInjected = true
             ctxAttachedToCurrent = false
             logPrependedParts = []
             if (!Array.isArray(histories) || histories.length === 0) return
@@ -1338,6 +1341,43 @@ export async function handleMessage(
             ? `${shortUser} -> [Error] ${errorCaught.message || "Execution failed"}`
             : `${shortUser} -> ${shortResp || "OK"}`
 
+          // 日志落库脱敏：剥离多模态 Base64 大图数据，避免单条 payload 膨胀为几 MB 拖垮数据库与内存
+          const sanitizeForLog = (data: any, depth = 0): any => {
+            if (depth > 6 || data == null) return data
+            if (typeof data === 'string') {
+              if (data.length > 500 && /^[A-Za-z0-9+/=\r\n\s]+$/.test(data.slice(0, 100))) {
+                return `[base64 data (${data.length} chars)]`
+              }
+              return data
+            }
+            if (Array.isArray(data)) {
+              return data.map(item => sanitizeForLog(item, depth + 1))
+            }
+            if (typeof data === 'object') {
+              if (data.type === 'image' && typeof data.image === 'string' && data.image.length > 200) {
+                return {
+                  ...data,
+                  image: `[base64 image (${data.mimeType || 'unknown'}): ${data.image.length} chars]`,
+                }
+              }
+              if (data.inlineData && typeof data.inlineData.data === 'string' && data.inlineData.data.length > 200) {
+                return {
+                  ...data,
+                  inlineData: {
+                    ...data.inlineData,
+                    data: `[base64 inlineData (${data.inlineData.mimeType || 'unknown'}): ${data.inlineData.data.length} chars]`,
+                  },
+                }
+              }
+              const result: Record<string, any> = {}
+              for (const [k, v] of Object.entries(data)) {
+                result[k] = sanitizeForLog(v, depth + 1)
+              }
+              return result
+            }
+            return data
+          }
+
           // 清理记录到日志的 Options，剔除下划线私有内部状态与重复项（如嵌套的 chatPreset）
           const cleanOptionsForLog = (opts: any) => {
             if (!opts || typeof opts !== "object") return {}
@@ -1415,9 +1455,9 @@ export async function handleMessage(
               triggerType: isBym ? "bym_mode" : (preset?.prefix ? `preset_prefix (${preset.prefix})` : "direct_chat"),
               isBymMode: isBym,
               status: errorCaught ? 500 : 200,
-              rawRequest: (response as any)?.rawRequest,
-              rawResponse: (response as any)?.rawResponse,
-              requestPayload: {
+              rawRequest: sanitizeForLog((response as any)?.rawRequest),
+              rawResponse: sanitizeForLog((response as any)?.rawResponse),
+              requestPayload: sanitizeForLog({
                 // 日志新展示区块：把本轮实际送出的对话（历史 + 本轮发言）渲染成一问一答的
                 // <chat_history>；群聊流水/花名册/环境属于注入块，不在这块里（完整报文见原始请求）
                 chatHistoryText,
@@ -1430,15 +1470,15 @@ export async function handleMessage(
                   }
                   : userMessage,
                 sendOptions: cleanOptionsForLog(sendOptions),
-              },
-              responsePayload: errorCaught ? null : {
+              }),
+              responsePayload: errorCaught ? null : sanitizeForLog({
                 contents: response?.contents,
                 usage: response?.usage,
                 model: response?.model,
                 toolCalls: response?.toolCalls,
                 finishReason: (response as any)?.finishReason,
                 params: respParams,
-              },
+              }),
               error: errorCaught ? {
                 message: errorCaught.message,
                 stack: errorCaught.stack,

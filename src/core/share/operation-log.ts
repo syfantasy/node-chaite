@@ -77,6 +77,10 @@ export class OperationLogManager {
   }
 
   async list(filter: ListLogsFilter = {}): Promise<LogsPage> {
+    if (this.storage && typeof (this.storage as any).listPaged === 'function') {
+      return (this.storage as any).listPaged(filter)
+    }
+
     const {
       page = 1,
       pageSize = 50,
@@ -145,6 +149,10 @@ export class OperationLogManager {
   }
 
   async getStats(): Promise<LogsStats> {
+    if (this.storage && typeof (this.storage as any).getStats === 'function') {
+      return (this.storage as any).getStats()
+    }
+
     let items: OperationLog[]
     if (this.storage) {
       items = await this.storage.listItems()

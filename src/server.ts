@@ -171,7 +171,14 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
       cur.logging = { ...cur.logging, ...newCfg.logging }
     }
     if (newCfg.vision) {
-      cur.vision = { ...cur.vision, ...newCfg.vision }
+      cur.vision = {
+        ...cur.vision,
+        ...newCfg.vision,
+        compression: {
+          ...(cur.vision?.compression || {}),
+          ...(newCfg.vision?.compression || {}),
+        },
+      }
     }
     if (newCfg.maintenance) {
       cur.maintenance = {

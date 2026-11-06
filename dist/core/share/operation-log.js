@@ -55,6 +55,9 @@ export class OperationLogManager {
         return this.memBuf.find(l => l.id === id) || null;
     }
     async list(filter = {}) {
+        if (this.storage && typeof this.storage.listPaged === 'function') {
+            return this.storage.listPaged(filter);
+        }
         const { page = 1, pageSize = 50, type, level, userId, groupId, channelId, model, presetId, toolName, processorName, triggerName, from, to, keyword, } = filter;
         let items;
         if (this.storage) {
@@ -111,6 +114,9 @@ export class OperationLogManager {
         };
     }
     async getStats() {
+        if (this.storage && typeof this.storage.getStats === 'function') {
+            return this.storage.getStats();
+        }
         let items;
         if (this.storage) {
             items = await this.storage.listItems();

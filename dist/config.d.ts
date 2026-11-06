@@ -9,6 +9,12 @@
  * 3. 全新安装 → 落在宿主 cwd 的 data/chaite。
  */
 export declare function resolveRootDataDir(): string;
+export interface VisionCompressionConfig {
+    enabled: boolean;
+    maxDimension: number;
+    quality: number;
+    thresholdBytes: number;
+}
 export interface AppConfig {
     onebot?: {
         url?: string;
@@ -79,6 +85,8 @@ export interface AppConfig {
     vision: {
         maxRecentImages: number;
         enableGroupContextImages: boolean;
+        compression?: VisionCompressionConfig;
+        [key: string]: any;
     };
     maintenance?: {
         historyRetentionDays: number;

@@ -351,6 +351,42 @@ describe('SqlOperationLogStorage', () => {
     expect((await storage.listItemsByEqFilter({ userId: 'u1' })).map(l => l.id)).toEqual(['a'])
     await driver.close()
   })
+
+  test('listPaged and getStats push down to SQL correctly', async () => {
+    const driver = await makeDriver()
+    const storage = new SqlOperationLogStorage(driver, 100)
+    await storage.initialize()
+
+    for (let i = 1; i <= 25; i++) {
+      await storage.setItem(`l-${i}`, {
+        ...log(`l-${i}`, i * 1000),
+        type: i % 2 === 0 ? 'llm.call' : 'tool.call',
+        level: i === 25 ? 'error' : 'info',
+        userId: `user-${i % 3}`,
+        model: 'gpt-4o',
+        durationMs: 100,
+        inputTokens: 50,
+        outputTokens: 50,
+      })
+    }
+
+    const paged = await storage.listPaged({ page: 2, pageSize: 10 })
+    expect(paged.total).toBe(25)
+    expect(paged.page).toBe(2)
+    expect(paged.pageSize).toBe(10)
+    expect(paged.items).toHaveLength(10)
+    // 降序排，第 2 页第一条应是时间第 15 大的 (l-15)
+    expect(paged.items[0].id).toBe('l-15')
+
+    const stats = await storage.getStats()
+    expect(stats.total).toBe(25)
+    expect(stats.byLevel.error).toBe(1)
+    expect(stats.byLevel.info).toBe(24)
+    expect(stats.byModel['gpt-4o']).toBe(25)
+    expect(stats.totalTokens).toBeGreaterThan(0)
+
+    await driver.close()
+  })
 })
 
 describe('SqlHistoryManager', () => {
