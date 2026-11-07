@@ -138,4 +138,22 @@ export interface PluginInstance {
     services: Map<string, any>;
     rawModule?: any;
 }
+export interface ReplyMessageInfo {
+    messageId: number | string;
+    userId?: number | string;
+    sender?: {
+        userId: number | string;
+        nickname: string;
+        card?: string;
+    };
+    text: string;
+    rawText: string;
+    images: Array<{
+        ref?: string;
+        url?: string;
+        mimeType?: string;
+        base64?: string;
+    }>;
+    raw?: any;
+}
 export { ChaiteEvent };

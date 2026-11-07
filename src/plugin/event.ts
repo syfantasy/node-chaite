@@ -1,6 +1,7 @@
 import { Chaite, createClient, ChaiteContext } from '../core/index.js'
 import { groupHistoryBuffer } from '../context/groupHistoryBuffer.js'
 import { OneBotMessageEvent } from '../onebot/types.js'
+import { ReplyMessageInfo } from './types.js'
 
 export interface SenderInfo {
   userId: number | string
@@ -61,9 +62,12 @@ export class ChaiteEvent {
   readonly subType?: string
   readonly flag?: string
   readonly comment?: string
+  readonly replyId?: number | string | null
   command?: string
   args: string
 
+  private _replyInfo?: ReplyMessageInfo | null = undefined
+  private _replyLoaded: boolean = false
   private replyHandler: (content: ReplyContent) => Promise<any>
 
   constructor(params: {
@@ -84,6 +88,7 @@ export class ChaiteEvent {
     subType?: string
     flag?: string
     comment?: string
+    replyId?: number | string | null
     command?: string
     args?: string
     replyHandler: (content: ReplyContent) => Promise<any>
@@ -105,6 +110,21 @@ export class ChaiteEvent {
     this.subType = params.subType
     this.flag = params.flag
     this.comment = params.comment
+    this.replyId = params.replyId !== undefined ? params.replyId : (() => {
+      if (Array.isArray(params.raw?.message)) {
+        const seg = params.raw.message.find((s: any) => s.type === 'reply')
+        if (seg?.data?.id) return seg.data.id
+      }
+      if (typeof params.raw?.raw_message === 'string') {
+        const m = params.raw.raw_message.match(/\[CQ:reply,id=(-?\d+)\]/)
+        if (m) return m[1]
+      }
+      if (typeof params.rawText === 'string') {
+        const m = params.rawText.match(/\[CQ:reply,id=(-?\d+)\]/)
+        if (m) return m[1]
+      }
+      return null
+    })()
     this.command = params.command
     this.args = params.args || ''
     this.replyHandler = params.replyHandler
@@ -130,6 +150,136 @@ export class ChaiteEvent {
       return globalClient.callAction(action, params)
     }
     throw new Error('当前环境无可用协议客户端 (Client 未就绪)')
+  }
+
+  /**
+   * 跨协议统一获取被引用/被回复的消息对象（按需懒加载并缓存）
+   * 自动抹平 icqq (e.source) 与 OneBot (get_msg) 的协议差异
+   */
+  async getReply(): Promise<ReplyMessageInfo | null> {
+    if (this._replyLoaded) {
+      return this._replyInfo || null
+    }
+    this._replyLoaded = true
+
+    // 1. 若原始事件中已包含被回复消息对象（icqq 的 e.source 或扩展协议字段）
+    const rawReply = this.raw?.reply || this.raw?.source
+    if (rawReply && typeof rawReply === 'object') {
+      const replyImgs: ImageAttachment[] = []
+      let replyTxt = ''
+
+      if (Array.isArray(rawReply.message)) {
+        for (const s of rawReply.message) {
+          if (s.type === 'text') {
+            replyTxt += s.data?.text || s.text || ''
+          } else if (s.type === 'image') {
+            replyImgs.push({
+              url: s.data?.url || s.url || s.data?.file || '',
+              mimeType: s.data?.mimeType,
+            })
+          }
+        }
+      } else if (typeof rawReply.raw_message === 'string') {
+        replyTxt = rawReply.raw_message
+      } else if (typeof rawReply.message === 'string') {
+        replyTxt = rawReply.message
+      }
+
+      this._replyInfo = {
+        messageId: rawReply.message_id || rawReply.id || this.replyId || 0,
+        userId: rawReply.user_id || rawReply.sender?.user_id,
+        sender: {
+          userId: rawReply.sender?.user_id || rawReply.user_id || 0,
+          nickname: rawReply.sender?.nickname || '',
+          card: rawReply.sender?.card || '',
+        },
+        text: replyTxt.trim(),
+        rawText: rawReply.raw_message || replyTxt,
+        images: replyImgs,
+        raw: rawReply,
+      }
+      return this._replyInfo
+    }
+
+    // 2. 若存在 replyId，通过协议端 callAction('get_msg') 拉取原消息
+    if (!this.replyId) {
+      return null
+    }
+
+    try {
+      const res = await this.callAction('get_msg', { message_id: Number(this.replyId) })
+      const msgData = res?.data || res
+      if (!msgData) return null
+
+      let replyTxt = ''
+      const replyImgs: ImageAttachment[] = []
+
+      if (Array.isArray(msgData.message)) {
+        for (const s of msgData.message) {
+          if (s.type === 'text') {
+            replyTxt += s.data?.text || ''
+          } else if (s.type === 'image') {
+            replyImgs.push({
+              url: s.data?.url || s.data?.file || '',
+            })
+          }
+        }
+      } else if (typeof msgData.raw_message === 'string') {
+        const cqMatches = [...msgData.raw_message.matchAll(/\[CQ:image,([^\]]+)\]/g)]
+        for (const m of cqMatches) {
+          const mUrl = m[1].match(/url=([^,\]]+)/)?.[1]
+          const mFile = m[1].match(/file=([^,\]]+)/)?.[1]
+          replyImgs.push({ url: mUrl || mFile || '' })
+        }
+        replyTxt = msgData.raw_message.replace(/\[CQ:[^\]]+\]/g, '').trim()
+      }
+
+      const senderData = msgData.sender || {}
+      this._replyInfo = {
+        messageId: msgData.message_id || this.replyId,
+        userId: senderData.user_id || msgData.user_id,
+        sender: {
+          userId: senderData.user_id || msgData.user_id || 0,
+          nickname: senderData.nickname || '',
+          card: senderData.card || '',
+        },
+        text: replyTxt.trim(),
+        rawText: msgData.raw_message || replyTxt,
+        images: replyImgs,
+        raw: msgData,
+      }
+      return this._replyInfo
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 快捷获取被引用消息中的图片列表
+   */
+  async getReplyImages(): Promise<ImageAttachment[]> {
+    const rep = await this.getReply()
+    return rep?.images || []
+  }
+
+  /**
+   * 快捷获取本轮相关图片（优先当前消息携带的图片，无图且 includeReply 为 true 时回退被引用的图片）
+   */
+  async getAllImages(includeReply: boolean = true): Promise<ImageAttachment[]> {
+    if (Array.isArray(this.images) && this.images.length > 0) {
+      return this.images
+    }
+    if (includeReply) {
+      return this.getReplyImages()
+    }
+    return []
+  }
+
+  /**
+   * 兼容 icqq / Yunzai 插件生态习惯的 e.source 访问器 (返回 Promise<ReplyMessageInfo | null>)
+   */
+  get source(): Promise<ReplyMessageInfo | null> {
+    return this.getReply()
   }
 
   /**

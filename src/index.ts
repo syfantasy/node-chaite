@@ -208,6 +208,120 @@ export async function handleMessage(
     if ((event as any).selfId === undefined && rawEvent.self_id !== undefined && rawEvent.self_id !== 0) {
       ;(event as any).selfId = String(rawEvent.self_id)
     }
+
+    // replyId 与 getReply/getReplyImages 跨协议引用统一补齐：
+    if ((event as any).replyId === undefined) {
+      let rId = null
+      if (Array.isArray(rawEvent.message)) {
+        const seg = rawEvent.message.find((s: any) => s.type === 'reply')
+        if (seg?.data?.id) rId = seg.data.id
+      }
+      if (!rId && typeof rawEvent.raw_message === 'string') {
+        const m = rawEvent.raw_message.match(/\[CQ:reply,id=(-?\d+)\]/)
+        if (m) rId = m[1]
+      }
+      if (!rId && typeof event.rawText === 'string') {
+        const m = event.rawText.match(/\[CQ:reply,id=(-?\d+)\]/)
+        if (m) rId = m[1]
+      }
+      ;(event as any).replyId = rId
+    }
+
+    if (typeof (event as any).getReply !== 'function') {
+      let cachedRep: any = null
+      let repLoaded = false
+      ;(event as any).getReply = async () => {
+        if (repLoaded) return cachedRep
+        repLoaded = true
+        const rawReply = rawEvent.reply || rawEvent.source
+        if (rawReply && typeof rawReply === 'object') {
+          const replyImgs: any[] = []
+          let replyTxt = ''
+          if (Array.isArray(rawReply.message)) {
+            for (const s of rawReply.message) {
+              if (s.type === 'text') replyTxt += s.data?.text || s.text || ''
+              else if (s.type === 'image') replyImgs.push({ url: s.data?.url || s.url || s.data?.file || '' })
+            }
+          } else if (typeof rawReply.raw_message === 'string') {
+            replyTxt = rawReply.raw_message
+          }
+          cachedRep = {
+            messageId: rawReply.message_id || rawReply.id || (event as any).replyId || 0,
+            userId: rawReply.user_id || rawReply.sender?.user_id,
+            sender: {
+              userId: rawReply.sender?.user_id || rawReply.user_id || 0,
+              nickname: rawReply.sender?.nickname || '',
+              card: rawReply.sender?.card || '',
+            },
+            text: replyTxt.trim(),
+            rawText: rawReply.raw_message || replyTxt,
+            images: replyImgs,
+            raw: rawReply,
+          }
+          return cachedRep
+        }
+        const rId = (event as any).replyId
+        if (!rId) return null
+        const caller = onebotAdapter?.callAction ? onebotAdapter.callAction.bind(onebotAdapter) : null
+        if (caller) {
+          try {
+            const res = await caller('get_msg', { message_id: Number(rId) })
+            const msgData = res?.data || res
+            if (!msgData) return null
+            let replyTxt = ''
+            const replyImgs: any[] = []
+            if (Array.isArray(msgData.message)) {
+              for (const s of msgData.message) {
+                if (s.type === 'text') replyTxt += s.data?.text || ''
+                else if (s.type === 'image') replyImgs.push({ url: s.data?.url || s.data?.file || '' })
+              }
+            } else if (typeof msgData.raw_message === 'string') {
+              const cqMatches = [...msgData.raw_message.matchAll(/\[CQ:image,([^\]]+)\]/g)]
+              for (const m of cqMatches) {
+                const mUrl = m[1].match(/url=([^,\]]+)/)?.[1]
+                const mFile = m[1].match(/file=([^,\]]+)/)?.[1]
+                replyImgs.push({ url: mUrl || mFile || '' })
+              }
+              replyTxt = msgData.raw_message.replace(/\[CQ:[^\]]+\]/g, '').trim()
+            }
+            const senderData = msgData.sender || {}
+            cachedRep = {
+              messageId: msgData.message_id || rId,
+              userId: senderData.user_id || msgData.user_id,
+              sender: {
+                userId: senderData.user_id || msgData.user_id || 0,
+                nickname: senderData.nickname || '',
+                card: senderData.card || '',
+              },
+              text: replyTxt.trim(),
+              rawText: msgData.raw_message || replyTxt,
+              images: replyImgs,
+              raw: msgData,
+            }
+            return cachedRep
+          } catch {
+            return null
+          }
+        }
+        return null
+      }
+      ;(event as any).getReplyImages = async () => {
+        const rep = await (event as any).getReply()
+        return rep?.images || []
+      }
+      ;(event as any).getAllImages = async (includeReply = true) => {
+        if (Array.isArray(event.images) && event.images.length > 0) return event.images
+        if (includeReply) return (event as any).getReplyImages()
+        return []
+      }
+      if (!(event as any).source) {
+        Object.defineProperty(event, 'source', {
+          get: () => (event as any).getReply(),
+          configurable: true,
+          enumerable: true,
+        })
+      }
+    }
   }
 
   // 主人列表：面板配置（config.management.masterUsers）优先；未配置时回退宿主注入的

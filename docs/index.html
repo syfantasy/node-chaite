@@ -330,6 +330,31 @@ export default function setup(ctx) {
           <td>是否为戳一戳通知，<code>isSelfPoke</code> 指示是否戳的是机器人自身</td>
         </tr>
         <tr>
+          <td><code>e.replyId</code></td>
+          <td><code>number | string | null</code></td>
+          <td>当前消息若有引用回复则为被引用的原始消息 ID，无引用则为 <code>null</code></td>
+        </tr>
+        <tr>
+          <td><code>await e.getReply()</code></td>
+          <td><code>Promise&lt;ReplyMessageInfo | null&gt;</code></td>
+          <td>跨协议获取被引用的统一消息对象（按需懒加载并缓存，含 <code>messageId, sender, text, rawText, images</code>）</td>
+        </tr>
+        <tr>
+          <td><code>await e.getReplyImages()</code></td>
+          <td><code>Promise&lt;ImageAttachment[]&gt;</code></td>
+          <td>快捷获取被引用消息中的所有图片列表</td>
+        </tr>
+        <tr>
+          <td><code>await e.getAllImages(includeReply?)</code></td>
+          <td><code>Promise&lt;ImageAttachment[]&gt;</code></td>
+          <td>获取本轮关联图片（优先当前消息图，缺图且 <code>includeReply=true</code> 时自动回退被引用的图片）</td>
+        </tr>
+        <tr>
+          <td><code>e.source</code></td>
+          <td><code>Promise&lt;ReplyMessageInfo | null&gt;</code></td>
+          <td>兼容 icqq / Yunzai 插件生态习惯的 Getter 别名，等同于 <code>e.getReply()</code></td>
+        </tr>
+        <tr>
           <td><code>await e.reply(content)</code></td>
           <td><code>Promise&lt;any&gt;</code></td>
           <td>跨协议多功能回复（支持纯文本、艾特、图片数组、引用或无引用）</td>

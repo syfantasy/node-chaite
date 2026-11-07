@@ -1,3 +1,4 @@
+import { ReplyMessageInfo } from './types.js';
 export interface SenderInfo {
     userId: number | string;
     nickname: string;
@@ -50,8 +51,11 @@ export declare class ChaiteEvent {
     readonly subType?: string;
     readonly flag?: string;
     readonly comment?: string;
+    readonly replyId?: number | string | null;
     command?: string;
     args: string;
+    private _replyInfo?;
+    private _replyLoaded;
     private replyHandler;
     constructor(params: {
         userId: number | string;
@@ -71,6 +75,7 @@ export declare class ChaiteEvent {
         subType?: string;
         flag?: string;
         comment?: string;
+        replyId?: number | string | null;
         command?: string;
         args?: string;
         replyHandler: (content: ReplyContent) => Promise<any>;
@@ -81,6 +86,23 @@ export declare class ChaiteEvent {
      * 快捷调用底层适配器协议动作 (如 OneBot 的 callAction)
      */
     callAction(action: string, params?: Record<string, any>): Promise<any>;
+    /**
+     * 跨协议统一获取被引用/被回复的消息对象（按需懒加载并缓存）
+     * 自动抹平 icqq (e.source) 与 OneBot (get_msg) 的协议差异
+     */
+    getReply(): Promise<ReplyMessageInfo | null>;
+    /**
+     * 快捷获取被引用消息中的图片列表
+     */
+    getReplyImages(): Promise<ImageAttachment[]>;
+    /**
+     * 快捷获取本轮相关图片（优先当前消息携带的图片，无图且 includeReply 为 true 时回退被引用的图片）
+     */
+    getAllImages(includeReply?: boolean): Promise<ImageAttachment[]>;
+    /**
+     * 兼容 icqq / Yunzai 插件生态习惯的 e.source 访问器 (返回 Promise<ReplyMessageInfo | null>)
+     */
+    get source(): Promise<ReplyMessageInfo | null>;
     /**
      * 快捷同意好友申请或入群申请 (仅在 request 事件中生效)
      */
