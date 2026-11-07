@@ -8,7 +8,7 @@
 
 ### 1. 网络拓扑与协议接入
 - **协议端**: 通过 WebSocket（OneBot v11 正向 / 反向连接）与协议端进行全双工消息通信；
-- **网络代理**: 外部 API 及模型请求支持通过本地或局域网代理节点出海，国内接口与协议端通信保持直连。
+- **网络代理**: 外部 API 及模型请求支持通过本地或局域网代理节点出海，局域网 Clash 节点为 `http://192.168.31.238:7897`；国内接口与协议端通信保持直连。
 
 ### 2. 系统架构图
 
@@ -320,7 +320,14 @@ npm run check
   - `await e.callAction(action, params)`: 直接调用底层协议动作（如 OneBot `get_msg`、`send_group_forward_msg` 等），彻底告别全局变量；
   - `await e.getMemberList()`: 原生群成员查询；
   - `await e.render(options)`: 便捷调用已注册渲染服务；
-  - **戳一戳事件 (`e.isPoke` / `e.isSelfPoke`)**: 协议端自动捕获 OneBot Poke 通知事件，群友戳 Bot 时无缝触发。
+  - **戳一戳事件 (`e.isPoke` / `e.isSelfPoke`)**: 协议端自动捕获 OneBot Poke 通知事件，群友戳 Bot 时无缝触发；
+  - **跨协议统一引用消息抽象 (Reply / Quote Abstraction)**:
+    - 针对 icqq 自带 `e.source` 预加载引用与 OneBot v11 仅推送 `[CQ:reply,id=xxx]` 裸 ID 的协议碎片化痛点，框架层实现统一按需懒加载；
+    - `e.replyId`: 结构化提取被引用的消息 ID（无引用为 `null`）；
+    - `await e.getReply()`: 返回标准化的 `ReplyMessageInfo`（含 `messageId`、`sender`、`text`、`rawText`、`images` 与原始 `raw`），单轮多处调用自动享受内存缓存；
+    - `await e.getReplyImages()`: 快捷获取被引用消息内的完整图片段；
+    - `await e.getAllImages(includeReply = true)`: 优先提取当前消息图片，缺图时自动回退提取被引用的图片，极大精简画图/搜图/视觉类插件的样板代码；
+    - `e.source`: 兼容 icqq / Yunzai 经典插件习惯的 Getter 别名（返回 `Promise<ReplyMessageInfo | null>`）。
 - **插件上下文能力 (`PluginContext`)**:
   - `ctx.onPoke(handler)`: 极简注册戳一戳监听处理器，响应群友动作；
   - `ctx.registerAction(name, handler)`: 注册自定义动作处理器，响应 Web 控制台按钮点击；
