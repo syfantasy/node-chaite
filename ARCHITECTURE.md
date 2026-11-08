@@ -286,15 +286,27 @@ npm run check
 - 预设或渠道配置中经常使用带有命名空间的渠道标识（如 `antigravity/gemini-3.8-flash-high`）；
 - 系统在调度时执行安全剥离机制，渠道路由完成后，传给底层客户端 Adapter 的参数中强制保留纯粹的模型名 `gemini-3.8-flash-high`，杜绝因带上前缀而触发上游 Google / Anthropic / OpenAI 报 404 Model Not Found。
 
-### 5. 预设默认工具组兜底 (`default_local`) 与动态 MCP 发现
+### 5. 主流厂商模型思考与独立适配器规范
+- **Google Gemini 思考配置与安全阈值**:
+  - 全面采用 `geminiThinkingLevel` (`minimal` | `low` | `medium` | `high`) 与 `includeThoughts` 标志，废弃并移除了老旧冲突的 `geminiThinkingBudget`；
+  - 安全过滤设置（`safetySettings`）在未显式配置时完全省略并继承官方模型默认级别，前端提供一键放宽/关闭/恢复官方默认的快捷控制；
+- **Anthropic Claude 自适应思考**:
+  - 支持自适应思考模式（Adaptive Thinking）与细粒度强度 `effort` (`low` | `medium` | `high` | `max`)，并在多轮 Tool 交互中严格保留 thinking 块与上下文传递；
+- **OpenAI 官方与兼容规范**:
+  - 支持 `reasoning_effort` (`none` | `low` | `medium` | `high` | `max`) 与 `max_completion_tokens`；
+- **DeepSeek 独立适配器规范**:
+  - DeepSeek 从 OpenAI 适配器中完全剥离，设立独立 `DeepSeekClient`、转换器与流式累加器；
+  - 自动维护 `reasoning_content` 的跨轮持久化与 Tool Calling 上下文交错要求，支持预设独立的推理力度（`deepseekReasoningEffort`）。
+
+### 6. 预设默认工具组兜底 (`default_local`) 与动态 MCP 发现
 - **工具组默认继承**: 基础模式（Basic Mode）下若预设未选择任何工具组，系统运行时与配置表单均自动 fallback 继承 `default_local`（`全部工具 (系统默认)`），保证开箱即可使用全部已注册本地工具；
 - **按需暴露 MCP 探索**: 仅在预设指定或系统存在已启用的 MCP Server 时，才会按需挂载紧凑型 MCP 发现与自愈工具。
 
-### 6. 群聊随机概率自动唤醒 (`autoTriggerProbability`)
+### 7. 群聊随机概率自动唤醒 (`autoTriggerProbability`)
 - 支持在预设中配置 0 ~ 1 浮点数概率值；
 - 当群聊中产生的消息未命中前缀亦未 @Bot 时，系统自动掷骰判定，按概率唤醒并以“随机唤醒 (自动插话)”身份自然切入群聊互动。
 
-### 7. 存储与多模态维护
+### 8. 存储与多模态维护
 - **后台日常维护任务**: 启动后及每 24 小时自动触发一次孤儿图片清理与过期聊天历史截断。
 - **Web 端维护控制台**: 前端配置面板实时展示会话库体积、图片占用量，并支持一键手动清理。
 
@@ -327,7 +339,13 @@ npm run check
     - `await e.getReply()`: 返回标准化的 `ReplyMessageInfo`（含 `messageId`、`sender`、`text`、`rawText`、`images` 与原始 `raw`），单轮多处调用自动享受内存缓存；
     - `await e.getReplyImages()`: 快捷获取被引用消息内的完整图片段；
     - `await e.getAllImages(includeReply = true)`: 优先提取当前消息图片，缺图时自动回退提取被引用的图片，极大精简画图/搜图/视觉类插件的样板代码；
-    - `e.source`: 兼容 icqq / Yunzai 经典插件习惯的 Getter 别名（返回 `Promise<ReplyMessageInfo | null>`）。
+    - `e.source`: 兼容 icqq / Yunzai 经典插件习惯的 Getter 别名（返回 `Promise<ReplyMessageInfo | null>`）；
+  - **跨协议统一合并转发卡片嗅探与获取 (`e.getForwardMsg`)**:
+    - 针对 QQ 聊天记录转发在不同协议端的形态分歧（icqq 的 XML 卡片 `action="viewMultiMsg"`、JSON 卡片 `app="com.tencent.multimsg"`、OneBot 的 `forward` 段），框架层提供统一的 `extractForwardIdFromSegment` 递归嗅探机制，将 `m_resid` / `resid` 解析并转存为引用，避免卡片在多模态与插件中退化为无意义文本；
+    - 统一暴露 `await e.getForwardMsg(forwardId?)`：优先探测宿主 icqq 原生直通实例（`e.group.getForwardMsg` / `e.bot.getForwardMsg`），自动降级回退 OneBot `get_forward_msg` 协议动作，抹平多协议层差异；
+  - **思考过程转发呈现机制**:
+    - 全局预设开关「以合并转发输出思考」（`showThinking`）独立控制是否将模型 Reasoning 输出转发为富文本节点，解耦各模型底层思考传参；
+    - 统一优先使用 OneBot 规范协议动作 `send_group_forward_msg` / `send_private_forward_msg` 发送思考气泡节点，并在不支持时优雅降级。
 - **插件上下文能力 (`PluginContext`)**:
   - `ctx.onPoke(handler)`: 极简注册戳一戳监听处理器，响应群友动作；
   - `ctx.registerAction(name, handler)`: 注册自定义动作处理器，响应 Web 控制台按钮点击；
