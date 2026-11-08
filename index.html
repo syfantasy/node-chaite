@@ -375,6 +375,16 @@ export default function setup(ctx) {
           <td>群聊场景原生查询完整群成员列表</td>
         </tr>
         <tr>
+          <td><code>await e.getForwardMsg(forwardId?)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>跨协议统一获取合并转发消息详情（自动兼容 OneBot 与 icqq 原生 API）</td>
+        </tr>
+        <tr>
+          <td><code>await e.sendForward(messages)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>跨协议统一发送合并转发消息（支持群聊与私聊，自动抹平协议差异与节点排版）</td>
+        </tr>
+        <tr>
           <td><code>await e.callAction(action, params)</code></td>
           <td><code>Promise&lt;any&gt;</code></td>
           <td>直通底层协议原生动作（如发送合并转发 <code>send_group_forward_msg</code> 等）</td>
