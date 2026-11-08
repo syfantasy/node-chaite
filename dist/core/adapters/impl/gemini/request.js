@@ -13,31 +13,36 @@ export function geminiApiVersion(baseUrl, builtinTools = false) {
 export function buildGeminiThinking(model, options) {
     const match = /gemini-(\d+)(?:[.-](\d+))?/i.exec(model);
     const major = Number(match?.[1] || 0);
-    const minor = Number(match?.[2] || 0);
-    const reasoning = options.enableReasoning || options.isThinkingModel;
+    // 1. 提取显式指定的 includeThoughts
     const explicitIncludeThoughts = options.geminiIncludeThoughts ?? options.includeThoughts;
     const shouldInclude = explicitIncludeThoughts !== undefined
         ? Boolean(explicitIncludeThoughts)
-        : Boolean(reasoning || options.showThinking);
-    let level = options.geminiThinkingLevel || (reasoning ? options.reasoningEffort : undefined);
-    if (!level && major >= 4) {
+        : Boolean(options.enableReasoning || options.isThinkingModel || options.showThinking);
+    // 2. 提取 ThinkingLevel（优先专有 geminiThinkingLevel，其次通用 reasoningEffort）
+    let level = options.geminiThinkingLevel || (options.enableReasoning ? options.reasoningEffort : undefined);
+    if (!level && major >= 4 && (options.enableReasoning || explicitIncludeThoughts !== undefined)) {
         level = 'medium';
     }
-    // If level is explicitly 'off' or disabled
-    if (level === 'off' || options.enableReasoning === false) {
-        // For modern Gemini models, omit thinkingLevel or return undefined if thoughts not needed
+    // 3. 如果显式关闭（level === 'off'）
+    if (level === 'off') {
         if (explicitIncludeThoughts === false) {
             return { includeThoughts: false };
         }
         return undefined;
     }
-    if (level || reasoning || explicitIncludeThoughts !== undefined) {
-        return {
-            ...(level ? { thinkingLevel: level.toUpperCase() } : {}),
-            includeThoughts: shouldInclude,
-        };
+    // 4. 如果没有开启专有 includeThoughts，且没有指定专有 geminiThinkingLevel，且通用 enableReasoning 为 false/undefined
+    if (explicitIncludeThoughts === undefined && !options.geminiThinkingLevel && !options.enableReasoning && !options.isThinkingModel) {
+        return undefined;
     }
-    return undefined;
+    // 5. 构建 ThinkingConfig
+    const thinkingConfig = {};
+    if (level && level !== 'off') {
+        thinkingConfig.thinkingLevel = level.toUpperCase();
+    }
+    if (explicitIncludeThoughts !== undefined || options.enableReasoning || options.showThinking) {
+        thinkingConfig.includeThoughts = shouldInclude;
+    }
+    return Object.keys(thinkingConfig).length > 0 ? thinkingConfig : undefined;
 }
 /** Remote public images must be downloaded, not passed as base64 strings. */
 async function prepareImages(message) {
