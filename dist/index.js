@@ -1528,7 +1528,8 @@ export async function handleMessage(event, storageCtx) {
             }
         }
         // 6. Send formatted packets
-        const shouldOutputThinking = preset?.showThinking === true || preset?.sendMessageOption?.showThinking === true;
+        const shouldOutputThinking = preset?.showThinking === true ||
+            preset?.sendMessageOption?.showThinking === true;
         const reasoningParts = response?.contents?.filter((c) => c.type === 'reasoning') || [];
         const reasoningText = reasoningParts.map((c) => c.text || '').join('').trim();
         if (shouldOutputThinking && reasoningText) {
@@ -1550,13 +1551,31 @@ export async function handleMessage(event, storageCtx) {
                         },
                     });
                 }
-                if (onebotAdapter?.callAction) {
-                    await onebotAdapter.callAction('send_forward_msg', {
+                if (onebotAdapter && typeof onebotAdapter.sendForwardMsg === 'function') {
+                    await onebotAdapter.sendForwardMsg({
                         message_type: rawEvent.message_type,
                         group_id: rawEvent.group_id,
                         user_id: rawEvent.user_id,
                         messages: nodes,
                     });
+                }
+                else if (onebotAdapter?.callAction) {
+                    const isGroup = rawEvent.message_type === 'group' && rawEvent.group_id;
+                    const action = isGroup ? 'send_group_forward_msg' : 'send_private_forward_msg';
+                    const payload = isGroup
+                        ? { group_id: rawEvent.group_id, messages: nodes }
+                        : { user_id: rawEvent.user_id, messages: nodes };
+                    try {
+                        await onebotAdapter.callAction(action, payload);
+                    }
+                    catch {
+                        await onebotAdapter.callAction('send_forward_msg', {
+                            message_type: rawEvent.message_type,
+                            group_id: rawEvent.group_id,
+                            user_id: rawEvent.user_id,
+                            messages: nodes,
+                        });
+                    }
                 }
                 else {
                     await event.reply({ text: `💭 思考过程:\n${reasoningText}`, reply: false });

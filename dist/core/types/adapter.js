@@ -21,6 +21,7 @@ export class SendMessageOption {
         this.openaiThinkingBudgetTokens = option.openaiThinkingBudgetTokens;
         this.openaiMaxTokenField = option.openaiMaxTokenField;
         this.geminiThinkingLevel = option.geminiThinkingLevel;
+        this.geminiIncludeThoughts = option.geminiIncludeThoughts ?? option.includeThoughts;
         this.toolChoice = option.toolChoice;
         this.preProcessorIds = option.preProcessorIds;
         this.postProcessorIds = option.postProcessorIds;
@@ -76,7 +77,9 @@ export class SendMessageOption {
             openaiReasoningEffort: this.openaiReasoningEffort,
             openaiThinkingBudgetTokens: this.openaiThinkingBudgetTokens,
             openaiMaxTokenField: this.openaiMaxTokenField,
+            deepseekReasoningEffort: this.deepseekReasoningEffort,
             geminiThinkingLevel: this.geminiThinkingLevel,
+            geminiIncludeThoughts: this.geminiIncludeThoughts,
             toolChoice: this.toolChoice,
             preProcessorIds: this.preProcessorIds,
             postProcessorIds: this.postProcessorIds,

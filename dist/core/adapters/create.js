@@ -1,6 +1,7 @@
 import { OpenAIClient } from './impl/openai/OpenAIClient.js';
 import { ClaudeClient } from './impl/claude/ClaudeClient.js';
 import { GeminiClient } from './impl/gemini/GeminiClient.js';
+import { DeepSeekClient } from './impl/deepseek/DeepSeekClient.js';
 export function createClient(name, options, context) {
     switch (name) {
         case 'openai': {
@@ -11,6 +12,9 @@ export function createClient(name, options, context) {
         }
         case 'gemini': {
             return new GeminiClient(options, context);
+        }
+        case 'deepseek': {
+            return new DeepSeekClient(options, context);
         }
     }
 }

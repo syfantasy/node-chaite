@@ -260,6 +260,82 @@ function describeCardSegment(seg) {
     return describeCardText(text) ?? '[卡片消息]';
 }
 /**
+ * 提取合并转发 ID（支持 OneBot 原生 forward 段、icqq/QQ XML 卡片以及 JSON 转发卡片）
+ */
+export function extractForwardIdFromSegment(seg) {
+    if (!seg)
+        return null;
+    if (seg.type === 'forward' && (seg.data?.id || seg.id)) {
+        return String(seg.data?.id || seg.id);
+    }
+    const data = seg.data ?? {};
+    const raw = data.data ?? data.xml ?? data.content ?? seg.content ?? '';
+    if (typeof raw === 'string' && raw) {
+        // 1. XML 中的 m_resid="xxx" 或 resid="xxx"
+        const mResid = raw.match(/(?:m_resid|resid)=["']([^"']+)["']/i);
+        if (mResid && mResid[1])
+            return mResid[1];
+        // 2. JSON 中的 resid / detail_1.resid
+        if (raw.startsWith('{') || raw.startsWith('[')) {
+            try {
+                const obj = JSON.parse(raw);
+                const resid = obj?.meta?.detail_1?.resid || obj?.meta?.detail?.resid || obj?.resid || obj?.extra?.resid;
+                if (resid)
+                    return String(resid);
+            }
+            catch { }
+        }
+    }
+    if (typeof seg === 'object' && seg.resid) {
+        return String(seg.resid);
+    }
+    return null;
+}
+/**
+ * 统一解析合并转发消息并存入 mediaRefStore
+ */
+async function resolveForwardMessage(forwardId, onebot, meta) {
+    let summary = '合并转发聊天记录';
+    let previewMessages = [];
+    if (forwardId && onebot) {
+        try {
+            const fwdRes = await (typeof onebot.getForwardMsg === 'function'
+                ? onebot.getForwardMsg(forwardId)
+                : onebot.callAction('get_forward_msg', { id: forwardId }));
+            const list = fwdRes?.data?.messages || fwdRes?.messages || fwdRes?.data || (Array.isArray(fwdRes) ? fwdRes : []);
+            if (Array.isArray(list)) {
+                summary = `共 ${list.length} 条记录`;
+                previewMessages = list.slice(0, 15).map((m) => {
+                    const parsed = parseForwardNodeToText(m, {
+                        groupId: meta?.groupId,
+                        messageId: meta?.messageId,
+                    });
+                    return {
+                        senderName: parsed.senderName,
+                        text: parsed.text,
+                    };
+                });
+            }
+        }
+        catch { }
+    }
+    const ref = mediaRefStore.saveForward({
+        forwardId,
+        summary,
+        previewMessages,
+        groupId: meta?.groupId,
+        senderId: undefined,
+        messageId: meta?.messageId,
+    });
+    const previewStr = previewMessages.length > 0
+        ? ` 摘要: ${previewMessages.slice(0, 5).map((p) => `${p.senderName}: ${p.text}`).join('; ')}...`
+        : '';
+    return {
+        text: ` [聊天记录:${summary}${previewStr} ref:${ref}] `,
+        ref,
+    };
+}
+/**
  * Convert OneBot message to Chaite UserMessage
  */
 export async function oneBotToUserMessage(event, options = {}) {
@@ -320,28 +396,13 @@ export async function oneBotToUserMessage(event, options = {}) {
                             const durStr = duration > 0 ? ` (${duration}秒)` : '';
                             quotedText += ` [语音${durStr} ref:${ref}] `;
                         }
-                        else if (qSeg.type === 'forward') {
-                            const forwardId = qSeg.data?.id || '';
-                            let fwdSummary = '合并转发聊天记录';
-                            if (forwardId && options.onebot) {
-                                try {
-                                    const fwdRes = await options.onebot.callAction('get_forward_msg', { id: forwardId });
-                                    const list = fwdRes?.data?.messages || fwdRes?.data || [];
-                                    if (Array.isArray(list)) {
-                                        const samples = list.slice(0, 3).map((m) => {
-                                            const p = parseForwardNodeToText(m, { groupId: event.group_id, messageId: quotedMsgId });
-                                            return `${p.senderName}: ${p.text.slice(0, 30)}`;
-                                        });
-                                        fwdSummary = `聊天记录(${list.length}条: ${samples.join('; ')})`;
-                                    }
-                                }
-                                catch { }
-                            }
-                            const ref = mediaRefStore.saveForward({
-                                forwardId,
-                                summary: fwdSummary,
+                        else if (qSeg.type === 'forward' || extractForwardIdFromSegment(qSeg)) {
+                            const forwardId = extractForwardIdFromSegment(qSeg) || qSeg.data?.id || '';
+                            const resolved = await resolveForwardMessage(forwardId, options.onebot, {
+                                groupId: event.group_id,
+                                messageId: quotedMsgId,
                             });
-                            quotedText += ` [${fwdSummary} ref:${ref}] `;
+                            quotedText += resolved.text;
                         }
                         else if (qSeg.type === 'file') {
                             const name = qSeg.data?.name || qSeg.data?.file_name || '';
@@ -453,44 +514,27 @@ export async function oneBotToUserMessage(event, options = {}) {
             const durStr = duration > 0 ? ` (${duration}秒)` : '';
             rawText += ` [语音${durStr} ref:${ref}] `;
         }
-        else if (seg.type === 'forward') {
-            const forwardId = seg.data?.id || '';
-            let summary = '合并转发聊天记录';
-            let previewMessages = [];
-            if (forwardId && options.onebot) {
-                try {
-                    const fwdRes = await options.onebot.callAction('get_forward_msg', { id: forwardId });
-                    const list = fwdRes?.data?.messages || fwdRes?.data || [];
-                    if (Array.isArray(list)) {
-                        summary = `共 ${list.length} 条记录`;
-                        previewMessages = list.slice(0, 15).map((m) => {
-                            const parsed = parseForwardNodeToText(m, {
-                                groupId: event.group_id,
-                                messageId: event.message_id,
-                            });
-                            return {
-                                senderName: parsed.senderName,
-                                text: parsed.text,
-                            };
-                        });
-                    }
-                }
-                catch { }
-            }
-            const ref = mediaRefStore.saveForward({
-                forwardId,
-                summary,
-                previewMessages,
+        else if (seg.type === 'forward' || extractForwardIdFromSegment(seg)) {
+            const forwardId = extractForwardIdFromSegment(seg) || seg.data?.id || '';
+            const resolved = await resolveForwardMessage(forwardId, options.onebot, {
                 groupId: event.group_id,
-                senderId: event.user_id,
                 messageId: event.message_id,
             });
-            const previewStr = previewMessages.length > 0 ? ` 摘要: ${previewMessages.slice(0, 5).map((p) => `${p.senderName}: ${p.text}`).join('; ')}...` : '';
-            rawText += ` [聊天记录:${summary}${previewStr} ref:${ref}] `;
+            rawText += resolved.text;
         }
         else if (seg.type === 'json' || seg.type === 'xml' || seg.type === 'card' || seg.type === 'share') {
-            // 小程序/链接/分享卡片：本身没有 text 段，不处理就会得到空消息体
-            rawText += ` ${describeCardSegment(seg)} `;
+            const fwdId = extractForwardIdFromSegment(seg);
+            if (fwdId) {
+                const resolved = await resolveForwardMessage(fwdId, options.onebot, {
+                    groupId: event.group_id,
+                    messageId: event.message_id,
+                });
+                rawText += resolved.text;
+            }
+            else {
+                // 小程序/链接/分享卡片：本身没有 text 段，不处理就会得到空消息体
+                rawText += ` ${describeCardSegment(seg)} `;
+            }
         }
         else if (seg.type === 'face' || seg.type === 'mface' || seg.type === 'sface') {
             rawText += ' [表情] ';
@@ -504,7 +548,17 @@ export async function oneBotToUserMessage(event, options = {}) {
             .find((v) => typeof v === 'string' && v.trim());
         if (fallback) {
             const text = String(fallback).trim();
-            rawText = describeCardText(text) ?? text;
+            const fallbackFwdId = extractForwardIdFromSegment({ content: text });
+            if (fallbackFwdId) {
+                const resolved = await resolveForwardMessage(fallbackFwdId, options.onebot, {
+                    groupId: event.group_id,
+                    messageId: event.message_id,
+                });
+                rawText += resolved.text;
+            }
+            else {
+                rawText = describeCardText(text) ?? text;
+            }
         }
     }
     // 2. Second pass: limit images to recent maxRecentImages

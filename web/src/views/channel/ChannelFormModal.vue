@@ -276,6 +276,7 @@ watch(showModal, (val) => {
                   { label: 'OpenAI', value: 'openai' },
                   { label: 'Gemini', value: 'gemini' },
                   { label: 'Claude', value: 'claude' },
+                  { label: 'DeepSeek', value: 'deepseek' },
                 ]"
                 placeholder="请选择适配器类型"
               />

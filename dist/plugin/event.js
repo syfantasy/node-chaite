@@ -188,6 +188,46 @@ export class ChaiteEvent {
         return this.getReply();
     }
     /**
+     * 跨协议统一获取合并转发消息详情
+     * 自动抹平 icqq (e.group.getForwardMsg / e.bot.getForwardMsg) 与 OneBot (get_forward_msg) 协议差异
+     */
+    async getForwardMsg(forwardId) {
+        let fid = forwardId || this.raw?.forward_id || this.raw?.resid || this.raw?.id;
+        if (!fid) {
+            const rep = await this.getReply();
+            const rawMsg = rep?.raw || this.raw;
+            const fwdSeg = Array.isArray(rawMsg?.message)
+                ? rawMsg.message.find((s) => s.type === 'forward' || (s.data && (s.data.id || s.data.resid)))
+                : null;
+            fid = fwdSeg?.data?.id || fwdSeg?.data?.resid || fwdSeg?.id;
+        }
+        if (!fid)
+            return null;
+        // 1. 若宿主/协议端具备 direct icqq API (如 Yunzai / icqq 原生实例)
+        const rawGroup = this.raw?.group;
+        if (rawGroup && typeof rawGroup.getForwardMsg === 'function') {
+            try {
+                return await rawGroup.getForwardMsg(fid);
+            }
+            catch { }
+        }
+        const rawBot = this.raw?.bot;
+        if (rawBot && typeof rawBot.getForwardMsg === 'function') {
+            try {
+                return await rawBot.getForwardMsg(fid);
+            }
+            catch { }
+        }
+        // 2. OneBot callAction('get_forward_msg', { id: fid })
+        try {
+            const res = await this.callAction('get_forward_msg', { id: fid });
+            return res?.data?.messages || res?.data || res;
+        }
+        catch {
+            return null;
+        }
+    }
+    /**
      * 快捷同意好友申请或入群申请 (仅在 request 事件中生效)
      */
     async approve(remark) {

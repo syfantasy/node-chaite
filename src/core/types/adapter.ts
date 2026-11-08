@@ -39,6 +39,7 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
     this.openaiThinkingBudgetTokens = option.openaiThinkingBudgetTokens
     this.openaiMaxTokenField = option.openaiMaxTokenField
     this.geminiThinkingLevel = option.geminiThinkingLevel
+    this.geminiIncludeThoughts = option.geminiIncludeThoughts ?? option.includeThoughts
     this.toolChoice = option.toolChoice
     this.preProcessorIds = option.preProcessorIds
     this.postProcessorIds = option.postProcessorIds
@@ -122,7 +123,10 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
   /** Nonstandard compatible-server extension; never sent to api.openai.com. */
   openaiThinkingBudgetTokens?: number
   openaiMaxTokenField?: 'max_tokens' | 'max_completion_tokens'
+  deepseekReasoningEffort?: 'none' | 'low' | 'high' | 'max'
   geminiThinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  geminiIncludeThoughts?: boolean
+  includeThoughts?: boolean
 
   toolChoice?: ToolChoice
 
@@ -236,7 +240,9 @@ export class SendMessageOption implements Serializable, DeSerializable<SendMessa
       openaiReasoningEffort: this.openaiReasoningEffort,
       openaiThinkingBudgetTokens: this.openaiThinkingBudgetTokens,
       openaiMaxTokenField: this.openaiMaxTokenField,
+      deepseekReasoningEffort: this.deepseekReasoningEffort,
       geminiThinkingLevel: this.geminiThinkingLevel,
+      geminiIncludeThoughts: this.geminiIncludeThoughts,
       toolChoice: this.toolChoice,
       preProcessorIds: this.preProcessorIds,
       postProcessorIds: this.postProcessorIds,
@@ -266,7 +272,7 @@ export interface EmbeddingOption {
     dimensions?: number
 }
 
-export type ClientType = 'openai' | 'gemini' | 'claude'
+export type ClientType = 'openai' | 'gemini' | 'claude' | 'deepseek'
 
 export interface IClient {
     name: ClientType

@@ -13,6 +13,11 @@ export function registerIntoChaiteConverter(_clientType, converter) {
         }
         case 'claude': {
             converters.claude = converter;
+            break;
+        }
+        case 'deepseek': {
+            converters.deepseek = converter;
+            break;
         }
     }
 }
@@ -26,6 +31,9 @@ export function getIntoChaiteConverter(_clientType) {
         }
         case 'claude': {
             return converters.claude;
+        }
+        case 'deepseek': {
+            return converters.deepseek;
         }
     }
 }
@@ -44,6 +52,11 @@ export function registerFromChaiteConverter(_clientType, converter) {
         }
         case 'claude': {
             fromConverters.claude = converter;
+            break;
+        }
+        case 'deepseek': {
+            fromConverters.deepseek = converter;
+            break;
         }
     }
 }
@@ -57,6 +70,9 @@ export function getFromChaiteConverter(_clientType) {
         }
         case 'claude': {
             return fromConverters.claude;
+        }
+        case 'deepseek': {
+            return fromConverters.deepseek;
         }
     }
 }
@@ -75,6 +91,11 @@ export function registerFromChaiteToolConverter(_clientType, converter) {
         }
         case 'claude': {
             fromToolConverters.claude = converter;
+            break;
+        }
+        case 'deepseek': {
+            fromToolConverters.deepseek = converter;
+            break;
         }
     }
 }
@@ -88,6 +109,9 @@ export function getFromChaiteToolConverter(_clientType) {
         }
         case 'claude': {
             return fromToolConverters.claude;
+        }
+        case 'deepseek': {
+            return fromToolConverters.deepseek;
         }
     }
 }

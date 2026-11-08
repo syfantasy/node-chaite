@@ -79,6 +79,9 @@ function createColumns({
             alt: 'Claude',
             style: 'width: 69px; -webkit-user-drag: none',
           }),
+          deepseek: h('div', { style: { display: 'flex', alignItems: 'center', userSelect: 'none' } }, [
+            h('span', { style: 'font-weight: 700; font-size: 14px; color: #1E6FFF; letter-spacing: 0.5px;' }, 'DeepSeek'),
+          ]),
         }
 
         // const nameMap = {
@@ -419,6 +422,10 @@ const filterAdapterOptions = computed(() => {
     {
       label: 'Claude',
       value: 'claude',
+    },
+    {
+      label: 'DeepSeek',
+      value: 'deepseek',
     },
   ]
 })

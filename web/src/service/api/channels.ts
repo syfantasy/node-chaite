@@ -4,7 +4,7 @@ import type { LocalPageResult } from './pagination'
 
 export interface ListChannels {
   name?: string
-  type?: 'openai' | 'gemini' | 'claude'
+  type?: 'openai' | 'gemini' | 'claude' | 'deepseek'
   status?: 'enabled' | 'disabled'
   model?: string
   page?: number

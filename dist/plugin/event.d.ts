@@ -104,6 +104,11 @@ export declare class ChaiteEvent {
      */
     get source(): Promise<ReplyMessageInfo | null>;
     /**
+     * 跨协议统一获取合并转发消息详情
+     * 自动抹平 icqq (e.group.getForwardMsg / e.bot.getForwardMsg) 与 OneBot (get_forward_msg) 协议差异
+     */
+    getForwardMsg(forwardId?: string): Promise<any>;
+    /**
      * 快捷同意好友申请或入群申请 (仅在 request 事件中生效)
      */
     approve(remark?: string): Promise<any>;

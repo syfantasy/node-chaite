@@ -32,6 +32,10 @@ export declare function optimizeGifBuffer(buffer: Buffer, targetMaxBytes?: numbe
     method: 'original' | 'compressed_anim' | 'first_frame';
 };
 /**
+ * 提取合并转发 ID（支持 OneBot 原生 forward 段、icqq/QQ XML 卡片以及 JSON 转发卡片）
+ */
+export declare function extractForwardIdFromSegment(seg: any): string | null;
+/**
  * Convert OneBot message to Chaite UserMessage
  */
 export declare function oneBotToUserMessage(event: OneBotMessageEvent, options?: ConvertOptions): Promise<{

@@ -54,7 +54,7 @@ namespace Shareable {
     query: string
   }
 
-  type ClientType = 'openai' | 'gemini' | 'claude'
+  type ClientType = 'openai' | 'gemini' | 'claude' | 'deepseek'
   type MultipleKeyStrategy = 'random' | 'round-robin' | 'conversation-hash'
   type Feature = 'chat' | 'visual' | 'tool' | 'embedding'
 
@@ -181,7 +181,9 @@ namespace Shareable {
     openaiReasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     openaiThinkingBudgetTokens?: number
     openaiMaxTokenField?: 'max_tokens' | 'max_completion_tokens'
+    deepseekReasoningEffort?: 'none' | 'low' | 'high' | 'max'
     geminiThinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+    geminiIncludeThoughts?: boolean
 
     toolChoice?: ToolChoice
 

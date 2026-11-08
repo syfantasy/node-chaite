@@ -24,7 +24,7 @@ export interface MessageContent {
  */
 export interface ProviderContextContent extends MessageContent {
   type: 'provider_context'
-  provider: 'gemini' | 'claude' | 'openai'
+  provider: 'gemini' | 'claude' | 'openai' | 'deepseek'
   data: Record<string, unknown>
 }
 

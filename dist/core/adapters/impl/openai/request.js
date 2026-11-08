@@ -62,10 +62,6 @@ export function buildOpenAIRequest(histories, tools, options, baseUrl = '') {
     const budget = options.openaiThinkingBudgetTokens;
     if (options.openaiThinkingBudgetTokens !== undefined && officialEndpoint)
         throw new Error('OpenAI 官方接口不支持 thinking_budget_tokens');
-    const isDeepSeek = /deepseek/i.test(name) || /deepseek/i.test(baseUrl);
-    const deepseekThinking = isDeepSeek && options.enableReasoning !== undefined
-        ? { thinking: { type: options.enableReasoning ? 'enabled' : 'disabled' } }
-        : {};
     const customParams = options.customOptions || {};
     return {
         model,
@@ -74,7 +70,6 @@ export function buildOpenAIRequest(histories, tools, options, baseUrl = '') {
         ...(!reasoningModel || effort === 'none' ? (options.temperature !== undefined ? { temperature: options.temperature } : {}) : {}),
         ...(reasoning || options.openaiReasoningEffort ? (effort ? { reasoning_effort: effort } : {}) : {}),
         ...(budget !== undefined ? { thinking_budget_tokens: budget } : {}),
-        ...deepseekThinking,
         ...(tools.length && !(responsesTools && toolChoice === 'none') ? { tools: tools.map(getFromChaiteToolConverter('openai')), tool_choice: toolChoice } : {}),
         ...customParams,
     };

@@ -60,7 +60,10 @@ export declare class SendMessageOption implements Serializable, DeSerializable<S
     /** Nonstandard compatible-server extension; never sent to api.openai.com. */
     openaiThinkingBudgetTokens?: number;
     openaiMaxTokenField?: 'max_tokens' | 'max_completion_tokens';
+    deepseekReasoningEffort?: 'none' | 'low' | 'high' | 'max';
     geminiThinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
+    geminiIncludeThoughts?: boolean;
+    includeThoughts?: boolean;
     toolChoice?: ToolChoice;
     postProcessorIds?: string[];
     preProcessorIds?: string[];
@@ -137,7 +140,7 @@ export interface EmbeddingOption {
     model: string;
     dimensions?: number;
 }
-export type ClientType = 'openai' | 'gemini' | 'claude';
+export type ClientType = 'openai' | 'gemini' | 'claude' | 'deepseek';
 export interface IClient {
     name: ClientType;
     features: Feature[];

@@ -125,12 +125,36 @@ const openaiMaxTokenFieldOptions = [
   { label: 'max_tokens (标准)', value: 'max_tokens' },
 ]
 
-// Add options for safety settings
-const harmCategoryOptions = Object.entries(HarmCategory)
-  .map(([label, value]) => ({ label, value }))
+const deepseekReasoningEffortOptions = [
+  { label: 'None (关闭思考 · 快速回答)', value: 'none' },
+  { label: 'Low (快速推理)', value: 'low' },
+  { label: 'High (深度思考 · 推荐)', value: 'high' },
+  { label: 'Max (终极满血推理)', value: 'max' },
+]
 
-const harmBlockThresholdOptions = Object.entries(HarmBlockThreshold)
-  .map(([label, value]) => ({ label, value }))
+// Add options for safety settings
+const harmCategoryOptions = [
+  { label: '骚扰内容 (HARASSMENT)', value: HarmCategory.HARM_CATEGORY_HARASSMENT },
+  { label: '仇恨言论 (HATE_SPEECH)', value: HarmCategory.HARM_CATEGORY_HATE_SPEECH },
+  { label: '色情露骨 (SEXUALLY_EXPLICIT)', value: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT },
+  { label: '危险内容 (DANGEROUS_CONTENT)', value: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT },
+  { label: '公民诚信 (CIVIC_INTEGRITY) [已废弃]', value: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY },
+]
+
+const harmBlockThresholdOptions = [
+  { label: 'OFF (完全关闭过滤器 · 推荐免拦截)', value: HarmBlockThreshold.OFF },
+  { label: 'BLOCK_NONE (不拦截 · 保留安全评估)', value: HarmBlockThreshold.BLOCK_NONE },
+  { label: 'BLOCK_ONLY_HIGH (仅拦截极高风险)', value: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+  { label: 'BLOCK_MEDIUM_AND_ABOVE (拦截中及高风险 · 官方默认)', value: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+  { label: 'BLOCK_LOW_AND_ABOVE (极严格 · 拦截低中高风险)', value: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
+]
+
+const STANDARD_HARM_CATEGORIES = [
+  HarmCategory.HARM_CATEGORY_HARASSMENT,
+  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+]
 
 const channelRules = {
   'name': {
@@ -216,6 +240,7 @@ const addPreset = ref<Partial<Shareable.PresetModel>>({
     claudeThinkingMode: 'auto',
     claudeEffort: 'medium',
     geminiThinkingLevel: 'medium',
+    geminiIncludeThoughts: false,
     toolChoice: {
       type: 'auto',
       tools: [],
@@ -341,16 +366,18 @@ watch(() => props.initialData, (newVal) => {
   }
 }, { immediate: true })
 
-// Add safety setting
+// Add safety setting: pick next unused standard category
 function addSafetySetting() {
-  if (!addPreset.value.sendMessageOption!.safetySettings) {
-    addPreset.value.sendMessageOption!.safetySettings = []
+  if (!addPreset.value.sendMessageOption) return
+  if (!addPreset.value.sendMessageOption.safetySettings) {
+    addPreset.value.sendMessageOption.safetySettings = []
   }
+  const currentCategories = new Set(addPreset.value.sendMessageOption.safetySettings.map(s => s.category))
+  const nextCategory = STANDARD_HARM_CATEGORIES.find(c => !currentCategories.has(c)) || HarmCategory.HARM_CATEGORY_HARASSMENT
 
-  addPreset.value.sendMessageOption!.safetySettings.push({
-    // method: HarmBlockMethod.HARM_BLOCK_METHOD_UNSPECIFIED,
-    category: HarmCategory.HARM_CATEGORY_UNSPECIFIED,
-    threshold: HarmBlockThreshold.HARM_BLOCK_THRESHOLD_UNSPECIFIED,
+  addPreset.value.sendMessageOption.safetySettings.push({
+    category: nextCategory,
+    threshold: HarmBlockThreshold.OFF,
   })
 }
 
@@ -358,6 +385,25 @@ function addSafetySetting() {
 function removeSafetySetting(index: number) {
   if (addPreset.value.sendMessageOption?.safetySettings) {
     addPreset.value.sendMessageOption.safetySettings.splice(index, 1)
+    if (addPreset.value.sendMessageOption.safetySettings.length === 0) {
+      addPreset.value.sendMessageOption.safetySettings = undefined
+    }
+  }
+}
+
+// Quick apply threshold to all standard categories
+function applyQuickSafetySettings(threshold: string) {
+  if (!addPreset.value.sendMessageOption) return
+  addPreset.value.sendMessageOption.safetySettings = STANDARD_HARM_CATEGORIES.map(category => ({
+    category,
+    threshold,
+  }))
+}
+
+// Clear safety settings back to official defaults
+function clearSafetySettings() {
+  if (addPreset.value.sendMessageOption) {
+    addPreset.value.sendMessageOption.safetySettings = undefined
   }
 }
 
@@ -877,6 +923,22 @@ watch(showModal, (val) => {
                         placeholder="请选择思考级别"
                       />
                     </NFormItemGridItem>
+                    <NFormItemGridItem span="24 s:12 m:12" label="包含思考过程 (includeThoughts)" path="sendMessageOption.geminiIncludeThoughts">
+                      <div class="flex items-center h-full">
+                        <NSwitch v-model:value="addPreset.sendMessageOption!!.geminiIncludeThoughts" />
+                        <span class="ml-2 text-xs text-gray-500">
+                          {{ addPreset.sendMessageOption?.geminiIncludeThoughts ? '开启 (includeThoughts: true)' : '默认/关闭' }}
+                        </span>
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="16" class="ml-2 cursor-pointer text-gray-400 hover:text-gray-600">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          向 Gemini 传递 includeThoughts: true，在响应中输出思考。若同时开启了【以合并转发输出思考】，将在群聊中以转发聊天记录格式发送思考内容。
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
                     <NFormItemGridItem span="24 s:12 m:12" label="响应模态 (responseModalities)" path="sendMessageOption.responseModalities">
                       <NSelect
                         v-model:value="addPreset.sendMessageOption!!.responseModalities"
@@ -899,36 +961,58 @@ watch(showModal, (val) => {
                       </NCheckboxGroup>
                     </NFormItemGridItem>
                     <!-- 安全设置 -->
-                    <NFormItemGridItem span="24" label="安全设置" path="sendMessageOption.safetySettings">
+                    <NFormItemGridItem span="24" label="安全过滤设置 (Safety Settings)" path="sendMessageOption.safetySettings">
                       <div style="width: 100%;">
-                        <NButton size="small" type="primary" style="margin-bottom: 12px" @click="addSafetySetting">
-                          添加安全设置
-                        </NButton>
-                        <div v-if="!addPreset.sendMessageOption?.safetySettings?.length" class="text-xs text-gray-500">
-                          未添加安全设置（使用官方默认级别）
+                        <!-- 快捷操作栏 -->
+                        <div class="flex flex-wrap items-center gap-2 mb-3">
+                          <NButton size="tiny" secondary type="warning" @click="applyQuickSafetySettings(HarmBlockThreshold.OFF)">
+                            ⚡ 一键全关 (OFF · 防误杀)
+                          </NButton>
+                          <NButton size="tiny" secondary type="info" @click="applyQuickSafetySettings(HarmBlockThreshold.BLOCK_NONE)">
+                            ⚡ 一键放宽 (BLOCK_NONE)
+                          </NButton>
+                          <NButton size="tiny" secondary @click="applyQuickSafetySettings(HarmBlockThreshold.BLOCK_ONLY_HIGH)">
+                            ⚡ 仅拦高危 (BLOCK_ONLY_HIGH)
+                          </NButton>
+                          <NButton size="tiny" secondary type="primary" @click="applyQuickSafetySettings(HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE)">
+                            📋 填充四大分类 (官方标准)
+                          </NButton>
+                          <NButton size="tiny" dashed type="error" @click="clearSafetySettings">
+                            🗑️ 清空 (恢复官方默认)
+                          </NButton>
+                          <NButton size="tiny" type="primary" @click="addSafetySetting">
+                            + 单个添加
+                          </NButton>
                         </div>
+
+                        <!-- 未添加时的提示 -->
+                        <div v-if="!addPreset.sendMessageOption?.safetySettings?.length" class="text-xs text-gray-500 py-2 px-3 bg-gray-50 dark:bg-gray-800 rounded border border-dashed border-gray-300 dark:border-gray-700">
+                          🛡️ 当前未自定义安全过滤：将保持 Google Gemini 官方各模型默认的安全拦截级别。点击上方快捷按钮可一键放宽或完全关闭。
+                        </div>
+
+                        <!-- 列表展示 -->
                         <div
                           v-for="(setting, index) in addPreset.sendMessageOption?.safetySettings"
                           :key="index"
-                          class="mb-2 p-2 border rounded"
+                          class="mb-2 p-2 border rounded bg-gray-50/50 dark:bg-gray-800/30"
                         >
-                          <NGrid :cols="24" :x-gap="8">
-                            <NFormItemGridItem span="11" label="有害类别">
+                          <NGrid :cols="24" :x-gap="8" :y-gap="4">
+                            <NFormItemGridItem span="24 s:11 m:11" label="有害类别">
                               <NSelect
                                 v-model:value="setting.category"
                                 :options="harmCategoryOptions"
                                 placeholder="选择有害类别"
                               />
                             </NFormItemGridItem>
-                            <NFormItemGridItem span="11" label="拦截阈值">
+                            <NFormItemGridItem span="24 s:10 m:10" label="拦截阈值">
                               <NSelect
                                 v-model:value="setting.threshold"
                                 :options="harmBlockThresholdOptions"
                                 placeholder="选择拦截阈值"
                               />
                             </NFormItemGridItem>
-                            <NFormItemGridItem span="2" label="操作">
-                              <NButton size="small" type="error" @click="removeSafetySetting(index)">
+                            <NFormItemGridItem span="24 s:3 m:3" label="操作">
+                              <NButton size="small" type="error" quaternary @click="removeSafetySetting(index)">
                                 删除
                               </NButton>
                             </NFormItemGridItem>
@@ -961,6 +1045,20 @@ watch(showModal, (val) => {
                         v-model:value="addPreset.sendMessageOption!!.reasoningBudgetTokens"
                         placeholder="如 2000"
                         :min="1024"
+                      />
+                    </NFormItemGridItem>
+                  </NGrid>
+                </NTabPane>
+
+                <!-- DeepSeek 规范 -->
+                <NTabPane name="deepseek" tab="DeepSeek">
+                  <NGrid :cols="24" :x-gap="12" :y-gap="16" responsive="screen" item-responsive class="pt-2">
+                    <NFormItemGridItem span="24 s:12 m:12" label="推理力度 (Reasoning Effort)" path="sendMessageOption.deepseekReasoningEffort">
+                      <NSelect
+                        v-model:value="addPreset.sendMessageOption!!.deepseekReasoningEffort"
+                        :options="deepseekReasoningEffortOptions"
+                        clearable
+                        placeholder="默认 (按模型自动处理)"
                       />
                     </NFormItemGridItem>
                   </NGrid>

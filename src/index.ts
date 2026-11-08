@@ -1604,7 +1604,8 @@ export async function handleMessage(
     }
 
     // 6. Send formatted packets
-    const shouldOutputThinking = preset?.showThinking === true || (preset?.sendMessageOption as any)?.showThinking === true
+    const shouldOutputThinking = preset?.showThinking === true ||
+      (preset?.sendMessageOption as any)?.showThinking === true
     const reasoningParts = response?.contents?.filter((c: any) => c.type === 'reasoning') || []
     const reasoningText = reasoningParts.map((c: any) => c.text || '').join('').trim()
 
@@ -1627,13 +1628,29 @@ export async function handleMessage(
             },
           })
         }
-        if (onebotAdapter?.callAction) {
-          await onebotAdapter.callAction('send_forward_msg', {
+        if (onebotAdapter && typeof (onebotAdapter as any).sendForwardMsg === 'function') {
+          await (onebotAdapter as any).sendForwardMsg({
             message_type: rawEvent.message_type,
             group_id: rawEvent.group_id,
             user_id: rawEvent.user_id,
             messages: nodes,
           })
+        } else if (onebotAdapter?.callAction) {
+          const isGroup = rawEvent.message_type === 'group' && rawEvent.group_id
+          const action = isGroup ? 'send_group_forward_msg' : 'send_private_forward_msg'
+          const payload = isGroup
+            ? { group_id: rawEvent.group_id, messages: nodes }
+            : { user_id: rawEvent.user_id, messages: nodes }
+          try {
+            await onebotAdapter.callAction(action, payload)
+          } catch {
+            await onebotAdapter.callAction('send_forward_msg', {
+              message_type: rawEvent.message_type,
+              group_id: rawEvent.group_id,
+              user_id: rawEvent.user_id,
+              messages: nodes,
+            })
+          }
         } else {
           await event.reply({ text: `💭 思考过程:\n${reasoningText}`, reply: false })
         }
