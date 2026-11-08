@@ -1,4 +1,9 @@
 import { ReplyMessageInfo } from './types.js';
+export interface ForwardNode {
+    name?: string;
+    uin?: number | string;
+    content: string | any[];
+}
 export interface SenderInfo {
     userId: number | string;
     nickname: string;
@@ -108,6 +113,11 @@ export declare class ChaiteEvent {
      * 自动抹平 icqq (e.group.getForwardMsg / e.bot.getForwardMsg) 与 OneBot (get_forward_msg) 协议差异
      */
     getForwardMsg(forwardId?: string): Promise<any>;
+    /**
+     * 跨协议统一发送合并转发消息
+     * 自动抹平 icqq (e.group.makeForwardMsg) 与 OneBot (send_group_forward_msg / send_private_forward_msg) 差异
+     */
+    sendForward(messages: ForwardNode[] | any[]): Promise<any>;
     /**
      * 快捷同意好友申请或入群申请 (仅在 request 事件中生效)
      */

@@ -1,4 +1,4 @@
-import { ChaiteEvent } from './event.js';
+import { ChaiteEvent, type ForwardNode } from './event.js';
 export type PluginType = 'single-file' | 'directory';
 export interface PluginConfigField {
     key: string;
@@ -156,4 +156,4 @@ export interface ReplyMessageInfo {
     }>;
     raw?: any;
 }
-export { ChaiteEvent };
+export { ChaiteEvent, type ForwardNode };

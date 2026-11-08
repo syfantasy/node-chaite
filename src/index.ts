@@ -772,6 +772,10 @@ export async function handleMessage(
       isGroup: event.isGroup,
       groupId: event.groupId,
       userId: event.userId,
+      group_id: event.groupId ? Number(event.groupId) : undefined,
+      user_id: event.userId ? Number(event.userId) : undefined,
+      sendForward: event.sendForward?.bind(event),
+      getForwardMsg: event.getForwardMsg?.bind(event),
     }
     ;(globalThis as any).lastChaiteEvent = eMsg
 

@@ -228,6 +228,82 @@ export class ChaiteEvent {
         }
     }
     /**
+     * 跨协议统一发送合并转发消息
+     * 自动抹平 icqq (e.group.makeForwardMsg) 与 OneBot (send_group_forward_msg / send_private_forward_msg) 差异
+     */
+    async sendForward(messages) {
+        if (!Array.isArray(messages) || messages.length === 0)
+            return null;
+        const defaultUin = this.client?.uin || globalThis.onebotClient?.uin || 2854196306;
+        const defaultName = '智能助手';
+        // 格式化为 OneBot 标准 node 结构
+        const nodes = messages.map(msg => {
+            if (msg && msg.type === 'node')
+                return msg;
+            return {
+                type: 'node',
+                data: {
+                    name: msg.name || defaultName,
+                    uin: msg.uin || defaultUin,
+                    content: msg.content !== undefined ? msg.content : (typeof msg === 'string' ? msg : JSON.stringify(msg)),
+                },
+            };
+        });
+        // 1. 若宿主为 icqq 原生实例，优先尝试 group.makeForwardMsg / bot.makeForwardMsg
+        const rawGroup = this.raw?.group;
+        if (this.isGroup && rawGroup && typeof rawGroup.makeForwardMsg === 'function' && typeof rawGroup.sendMsg === 'function') {
+            try {
+                const forwardXml = await rawGroup.makeForwardMsg(nodes);
+                return await rawGroup.sendMsg(forwardXml);
+            }
+            catch { }
+        }
+        // 2. 检查适配器客户端是否具备 sendForwardMsg 方法
+        if (this.client && typeof this.client.sendForwardMsg === 'function') {
+            try {
+                return await this.client.sendForwardMsg({
+                    message_type: this.isGroup ? 'group' : 'private',
+                    group_id: this.groupId ? Number(this.groupId) : undefined,
+                    user_id: this.userId ? Number(this.userId) : undefined,
+                    messages: nodes,
+                });
+            }
+            catch { }
+        }
+        // 3. OneBot callAction: 群聊优先 send_group_forward_msg，私聊优先 send_private_forward_msg
+        if (this.isGroup && this.groupId) {
+            try {
+                return await this.callAction('send_group_forward_msg', {
+                    group_id: Number(this.groupId),
+                    messages: nodes,
+                });
+            }
+            catch {
+                return await this.callAction('send_forward_msg', {
+                    message_type: 'group',
+                    group_id: Number(this.groupId),
+                    messages: nodes,
+                });
+            }
+        }
+        else if (this.userId) {
+            try {
+                return await this.callAction('send_private_forward_msg', {
+                    user_id: Number(this.userId),
+                    messages: nodes,
+                });
+            }
+            catch {
+                return await this.callAction('send_forward_msg', {
+                    message_type: 'private',
+                    user_id: Number(this.userId),
+                    messages: nodes,
+                });
+            }
+        }
+        return null;
+    }
+    /**
      * 快捷同意好友申请或入群申请 (仅在 request 事件中生效)
      */
     async approve(remark) {
