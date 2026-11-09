@@ -21,6 +21,7 @@ async function bootstrapOnce() {
     pluginManager.setDriver(storageCtx.mainDriver);
     globalThis.chaitePluginManager = pluginManager;
     globalThis.mediaRefStore = mediaRefStore;
+    globalThis.groupHistoryBuffer = groupHistoryBuffer;
     // 1.1 Register Core Message Pipeline (AI conversation & system commands)
     pluginManager.setMessagePipelineHandler(async (event) => {
         try {
@@ -380,6 +381,8 @@ export async function handleMessage(event, storageCtx) {
     const currentText = (event.text || cleanText || '').trim();
     const masterUsers = effectiveMasters.map(Number);
     const isMaster = effectiveMasters.length === 0 || masterUsers.includes(Number(event.userId));
+    // 严格主人判定：仅用于环境元信息、花名册与人设上下文，绝不宽容回退为全员主人
+    const isStrictMaster = masterUsers.length > 0 && masterUsers.includes(Number(event.userId));
     const cmdHit = matchChaiteCommand(currentText, cmdPrefix);
     if (cmdHit) {
         switch (cmdHit.command.name) {
@@ -931,7 +934,7 @@ export async function handleMessage(event, storageCtx) {
                 if (isBotSelf) {
                     roleBadge = '[机器人]';
                 }
-                else if (isMaster) {
+                else if (isStrictMaster) {
                     if (event.sender?.role === 'owner') {
                         roleBadge = '[群主/主人]';
                     }

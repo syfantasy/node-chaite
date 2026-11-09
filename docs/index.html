@@ -375,6 +375,16 @@ export default function setup(ctx) {
           <td>群聊场景原生查询完整群成员列表</td>
         </tr>
         <tr>
+          <td><code>await e.getForwardMsg(forwardId?)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>跨协议统一获取合并转发消息详情（自动兼容 OneBot 与 icqq 原生 API）</td>
+        </tr>
+        <tr>
+          <td><code>await e.sendForward(messages)</code></td>
+          <td><code>Promise&lt;any&gt;</code></td>
+          <td>跨协议统一发送合并转发消息（支持群聊与私聊，自动抹平协议差异与节点排版）</td>
+        </tr>
+        <tr>
           <td><code>await e.callAction(action, params)</code></td>
           <td><code>Promise&lt;any&gt;</code></td>
           <td>直通底层协议原生动作（如发送合并转发 <code>send_group_forward_msg</code> 等）</td>
@@ -573,6 +583,60 @@ export default function setup(ctx) {
     }
     return true
   })
+}</code></pre>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <h3>工具与插件自主发送富媒体时的群聊流水回流规范 (Tool Media & Context Feedback)</h3>
+      <p>
+        在 Chaite 的上下文管理架构中，大模型的纯文本回复会在会话末尾由主消息管道自动沉淀进 <code>groupHistoryBuffer</code>。
+        然而，<strong>当自定义工具、技能或插件在执行过程中直接调用协议底层 API（如 <code>e.reply</code>、<code>bot.callAction('send_msg')</code>、画图工具、网页截图或联网搜索卡片）向聊天中发送了图片、合并转发或状态提示时</strong>，这些媒体消息如果未手动写入消息缓冲区，将在后续轮次中彻底“隐形”，导致多模态大模型产生记忆断层（如用户追问“你刚才发的图是什么/再帮我改一下”，模型在上下文流水中看不到这张图和对应的 <code>ref:img_xxxx</code>）。
+      </p>
+      <p>为此，框架已将 <code>groupHistoryBuffer</code> 正式挂载至全局 <code>globalThis.groupHistoryBuffer</code>，并支持从 <code>'chaite'</code> 中直接解构导出。工具在自主发图、发卡片或发提示后，应遵循以下标准模式进行上下文闭环回流：</p>
+      <ul>
+        <li>
+          <strong>发送图片回流：</strong>
+          先将图片注册进 <code>mediaRefStore.saveImage(...)</code> 并调用 <code>pin()</code> 锁定生命周期，获取轻量 <code>ref:img_xxxx</code>；发送成功后，调用 <code>groupHistoryBuffer.recordBotMessage(groupId, { text: `[图片 ref:${ref}]`, name: 'Bot' })</code> 记入流水。后续轮次中，模型即可在流水中精准识别并作为 <code>image_ref</code> 再次调用视觉工具。
+        </li>
+        <li>
+          <strong>发送合并转发卡片回流：</strong>
+          通过 <code>mediaRefStore.saveForward(...)</code> 记录转发摘要与节点，获取 <code>ref:fwd_xxxx</code>；发送成功后，调用 <code>groupHistoryBuffer.recordBotMessage(groupId, { text: `[合并转发 ref:${ref}: ${title}]`, name: 'Bot' })</code> 记入流水。
+        </li>
+        <li>
+          <strong>发送状态提示回流：</strong>
+          如“正在联网搜索...”、“正在以图搜图...”，发送成功后直接记入流水，保持群聊上下文的自然发言时序。
+        </li>
+        <li>
+          <strong>工具入参声明的最佳实践：</strong>
+          若工具需要处理上下文图片，入参推荐首选显式参数 <code>image_ref</code>（描述指明：必须从群聊流水 <code>[图片 ref:img_xxxx]</code> 中提取 ID 传入），避免声明“可选留空自动提取”导致模型倾向于传空参数 <code>{}</code> 偷懒；搜图出处类工具应在 description 中显式下达“止血指令”，严禁模型因相似度较低而强迫症循环调用二次网搜造成数分钟网络阻塞。
+        </li>
+      </ul>
+      <pre><code class="language-javascript">import { groupHistoryBuffer, mediaRefStore } from 'chaite'
+// 或直接读取全局单例: globalThis.groupHistoryBuffer, globalThis.mediaRefStore
+
+// 示例：自定义工具生成图片并发送到群聊后回流群聊流水
+async function sendImageAndRecord(groupId, imageBufferOrUrl, botUin = 'bot') {
+  // 1. 注册进多媒体引用库，生成轻量占位 ref 并固化
+  const isBase = typeof imageBufferOrUrl === 'string' && (imageBufferOrUrl.startsWith('base64://') || imageBufferOrUrl.startsWith('data:'))
+  const ref = mediaRefStore.saveImage({
+    url: !isBase && typeof imageBufferOrUrl === 'string' ? imageBufferOrUrl : undefined,
+    base64: isBase ? imageBufferOrUrl.replace(/^data:[^;]+;base64,/, '').replace(/^base64:\/\//, '') : (Buffer.isBuffer(imageBufferOrUrl) ? imageBufferOrUrl.toString('base64') : undefined),
+    mimeType: 'image/jpeg'
+  })
+  if (ref) mediaRefStore.pin(ref)
+
+  // 2. 调用协议端发送图片到群聊
+  await bot.sendGroupMsg(groupId, [{ type: 'image', data: { file: imageBufferOrUrl } }])
+
+  // 3. 关键：将发送动作回流到群聊上下文流水中
+  const ghb = globalThis.groupHistoryBuffer
+  if (ghb && typeof ghb.recordBotMessage === 'function') {
+    ghb.recordBotMessage(groupId, {
+      botUin,
+      name: '绘图助手',
+      text: `[图片 ref:${ref}]`
+    })
+  }
 }</code></pre>
     </div>
     <h2 id="renderer-service">6. 服务总线与原生渲染 (Shotium)</h2>

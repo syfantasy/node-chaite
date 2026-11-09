@@ -13,6 +13,7 @@ plugins/**/config.json
 plugins/**/.tmp_*
 plugins/.cache/
 archive/
+index.js
 # 插件目录：纯外挂插槽，走外部/市场按需安装，主仓库仅保留目录结构
 plugins/apps/*
 !plugins/apps/.gitkeep
