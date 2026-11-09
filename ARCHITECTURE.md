@@ -238,8 +238,8 @@ if (img) {
    - 预设层的 `isBymMode: true` 表示该预设为**单轮插话模式**（不绑定上文上下文、不存历史记录）；每个预设独立设置，互不干扰。
 2. **引用回复 (`quoteReply`) 可配置**:
    - 默认不追加引用回复，只有在具体预设中显式勾选 `quoteReply: true` 时才引用群友消息。
-3. **全局媒体引用暴露**:
-   - 启动时挂载 `globalThis.mediaRefStore` 和 `globalThis.onebotClient`，方便任意脚本与插件直接访问。
+3. **全局对象暴露与回流规范**:
+   - 启动时挂载 `globalThis.mediaRefStore`、`globalThis.groupHistoryBuffer` 和 `globalThis.onebotClient`，方便任意脚本与工具直接访问；工具在自主发送图片/合并转发后，应通过 `groupHistoryBuffer.recordBotMessage` 将媒体 Ref 闭环回流到群聊流水中，保障多模态上下文时序完整。
 
 ---
 
