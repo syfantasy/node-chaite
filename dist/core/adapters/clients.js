@@ -346,7 +346,7 @@ export class AbstractClient {
                 }
             }
         }
-        const filterTools = this.options?.allowedToolNames;
+        const filterTools = this.context.getOptions()?.allowedToolNames || this.options?.allowedToolNames;
         if (Array.isArray(filterTools) && filterTools.length > 0) {
             resolvedTools = resolvedTools.filter(t => {
                 const name = t.function?.name || t.name;
@@ -354,6 +354,7 @@ export class AbstractClient {
             });
         }
         this.tools = resolvedTools;
+        this.logger.info(`[fullfillTools] Successfully mounted ${this.tools.length} tools: [${this.tools.map(t => t.name).join(', ')}]`);
         return this.tools;
     }
     sendMessage(message, options) {

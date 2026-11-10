@@ -367,7 +367,7 @@ export class AbstractClient implements IClient {
       }
     }
 
-    const filterTools = (this.options as any)?.allowedToolNames
+    const filterTools = (this.context.getOptions() as any)?.allowedToolNames || (this.options as any)?.allowedToolNames
     if (Array.isArray(filterTools) && filterTools.length > 0) {
       resolvedTools = resolvedTools.filter(t => {
         const name = (t as any).function?.name || t.name
@@ -376,6 +376,7 @@ export class AbstractClient implements IClient {
     }
 
     this.tools = resolvedTools
+    this.logger.info(`[fullfillTools] Successfully mounted ${this.tools.length} tools: [${this.tools.map(t => t.name).join(', ')}]`)
     return this.tools
   }
 
