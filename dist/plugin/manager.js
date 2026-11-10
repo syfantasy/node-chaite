@@ -970,9 +970,20 @@ export class PluginManager {
         const handled = await this.dispatchCommand(event);
         if (handled)
             return true;
-        // 非普通聊天消息（例如戳一戳、群成员变动、加好友/群申请、撤回等通知事件），
+        // 戳一戳事件：若戳的不是机器人（群友互戳），直接阻断；若戳的是机器人，放行进入核心流水线以 poke_bot 方式唤醒 AI 模型！
+        if (event.isPoke) {
+            if (!event.isSelfPoke) {
+                return false;
+            }
+            if (this.messagePipelineHandler) {
+                await this.messagePipelineHandler(event);
+                return true;
+            }
+            return false;
+        }
+        // 非普通聊天消息（例如群成员变动、加好友/群申请、撤回等通知事件），
         // 若未被插件拦截消费，直接结束，绝不流入 AI 对话/随机概率触发流水线
-        if (event.isPoke || (event.eventType && event.eventType !== 'message')) {
+        if (event.eventType && event.eventType !== 'message') {
             return false;
         }
         if (this.messagePipelineHandler) {

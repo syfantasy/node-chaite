@@ -119,6 +119,8 @@ export interface AppConfig {
     maxMessageLength: number
     enableAt?: boolean
     atPresetId?: string
+    enablePoke?: boolean
+    pokePresetId?: string
   }
   llm: {
     defaultModel?: string
@@ -193,6 +195,8 @@ const DEFAULT_CONFIG: AppConfig = {
     maxMessageLength: 1500,
     enableAt: true,
     atPresetId: '',
+    enablePoke: true,
+    pokePresetId: '',
   },
   llm: {
     defaultModel: '',

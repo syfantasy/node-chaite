@@ -188,9 +188,20 @@ export async function handleMessage(
   const rawEvent: any = event.raw || {}
   const onebotAdapter = event.client || (globalThis as any).onebotAdapter || rawEvent._adapter
 
-  // 戳一戳与通知类事件（notice / poke / request / recall 等）不进入普通聊天/AI 对话处理流
-  if (
-    event?.isPoke ||
+  // 戳一戳与通知类事件拦截：
+  // 1. 如果是戳一戳事件，仅允许戳 Bot（isSelfPoke）进入后续 AI 对话流水线；群友互戳直接结束
+  // 2. 其他非聊天事件（notice / request / recall 等）不进入 AI 对话处理流
+  const rawBotUin = (event as any).selfId || rawEvent.self_id || config.onebot?.botUin || onebotAdapter?.getSelfId?.()
+  const isSelfPoke =
+    Boolean(event?.isPoke) &&
+    (Boolean(event.isSelfPoke) ||
+      (event.targetId !== undefined && rawBotUin !== undefined && String(event.targetId) === String(rawBotUin)))
+
+  if (event?.isPoke) {
+    if (!isSelfPoke) {
+      return
+    }
+  } else if (
     ((event as any)?.eventType && (event as any).eventType !== 'message') ||
     (rawEvent.post_type && rawEvent.post_type !== 'message')
   ) {
@@ -379,6 +390,10 @@ export async function handleMessage(
     onebot: onebotAdapter,
   })
 
+  if (event.isPoke) {
+    userMessage.content = [{ type: 'text', text: '[戳了你一下]' }]
+  }
+
   // 本轮注入的上下文（场景协议/流水/花名册/环境/附图）最终放在了哪里：
   //   · 并入历史首条 user 时，它不在 userMessage.content 里 —— 日志要单独补上；
   //   · 并入本轮消息时，userMessage.content 已包含它 —— 日志不能再补。
@@ -399,7 +414,9 @@ export async function handleMessage(
   // （如 chatgpt-plugin）通过 GET /api/bridge/commands 获取同一张表来决定
   // 转发哪些消息，宿主侧不再各自硬编码指令。
   const cmdPrefix = (config.chat.commandPrefix || '#').trim()
-  const currentText = (event.text || cleanText || '').trim()
+  const currentText = event.isPoke
+    ? '[戳了你一下]'
+    : (event.text || cleanText || '').trim()
 
   const masterUsers = effectiveMasters.map(Number)
   const isMaster = effectiveMasters.length === 0 || masterUsers.includes(Number(event.userId))
@@ -657,6 +674,23 @@ export async function handleMessage(
   let isTriggered = false
   let matchedPreset: any = null
   let triggerReason = ''
+
+  // 4.0 Check Poke Trigger (戳一戳唤醒，仅限戳机器人)
+  if (event.isPoke && isSelfPoke) {
+    const isPokeEnabled = config.chat.enablePoke !== false
+    if (isPokeEnabled) {
+      isTriggered = true
+      triggerReason = 'poke_bot'
+      const pokePresetId = (event as any).presetId || config.chat.pokePresetId
+      if (pokePresetId) {
+        try {
+          matchedPreset = await storageCtx.presetManager.getInstance(pokePresetId)
+        } catch (err: any) {
+          console.warn('[Runner] Failed to load pokePresetId preset:', err.message)
+        }
+      }
+    }
+  }
 
   const isPresetAllowed = (p: any): boolean => {
     if (!p) return true
@@ -1030,7 +1064,10 @@ export async function handleMessage(
 
         let triggerWay = '常规对话'
         let interactMode = '对话响应（结合当前发言者的意图与话题做出针对性回应）'
-        if (triggerReason === 'random_probability') {
+        if (triggerReason === 'poke_bot') {
+          triggerWay = '戳一戳唤醒 (对方在群里戳了你)'
+          interactMode = '戳一戳互动响应（对方刚刚在群里戳了你，请结合当前群聊流水、上下文氛围及你的人设做出活泼自然、符合角色性格的反应，不必生硬解释）'
+        } else if (triggerReason === 'random_probability') {
           triggerWay = '随机唤醒 (自动插话)'
           interactMode = '自然接梗/插话（群友未主动呼叫，无需刻意单点回复最后一人；可就近期话题发表看法、吐槽、接梗，表现得像正在看群的真实群友）'
         } else if (triggerReason === 'at_bot') {

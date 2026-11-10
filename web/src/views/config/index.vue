@@ -99,6 +99,8 @@ const config = reactive({
     commandPrefix: '#',
     enableAt: true,
     atPresetId: '',
+    enablePoke: true,
+    pokePresetId: '',
   },
   /**
    * 伪人模式，基于框架实现，因此机器人开启前缀后依然需要带上前缀。
@@ -631,6 +633,41 @@ onMounted(async () => {
                             </NIcon>
                           </template>
                           <span>开启 @ 触发时，若指定了预设，则 @ 触发就像在消息前加了该预设的前缀一样直接唤醒该预设。</span>
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+
+                    <NFormItemGridItem span="24 s:24 m:12" label="戳一戳触发">
+                      <div style="display: flex; align-items: center; height: 34px;">
+                        <NSwitch v-model:value="config.basic.enablePoke" />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>关闭时，群内戳机器人不会触发回复；开启时群友戳机器人会触发 AI 对话，群友互戳不响应。</span>
+                        </NTooltip>
+                      </div>
+                    </NFormItemGridItem>
+
+                    <NFormItemGridItem span="24 s:24 m:12" label="戳一戳预设">
+                      <div style="display: flex; align-items: center; width: 100%;">
+                        <NSelect
+                          v-model:value="config.basic.pokePresetId"
+                          :options="presetOptions"
+                          clearable
+                          placeholder="选择戳一戳触发时使用的预设（留空使用默认预设）"
+                          :disabled="!config.basic.enablePoke"
+                          style="flex: 1;"
+                        />
+                        <NTooltip placement="top" trigger="hover">
+                          <template #trigger>
+                            <NIcon size="18" style="margin-left: 8px; cursor: pointer; flex-shrink: 0;">
+                              <InformationCircleOutline />
+                            </NIcon>
+                          </template>
+                          <span>开启戳一戳触发时，若指定了预设，则戳一戳交互会使用该预设进行回复。</span>
                         </NTooltip>
                       </div>
                     </NFormItemGridItem>

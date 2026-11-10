@@ -53,6 +53,8 @@ export function startWebServer(config) {
                 debug: false,
                 enableAt: cur.chat.enableAt !== false,
                 atPresetId: cur.chat.atPresetId || '',
+                enablePoke: cur.chat.enablePoke !== false,
+                pokePresetId: cur.chat.pokePresetId || '',
             },
             management: {
                 whiteGroups: (cur.management.whiteGroups || []).map(String),
@@ -123,6 +125,10 @@ export function startWebServer(config) {
                 cur.chat.enableAt = Boolean(newCfg.basic.enableAt);
             if (newCfg.basic.atPresetId !== undefined)
                 cur.chat.atPresetId = newCfg.basic.atPresetId;
+            if (newCfg.basic.enablePoke !== undefined)
+                cur.chat.enablePoke = Boolean(newCfg.basic.enablePoke);
+            if (newCfg.basic.pokePresetId !== undefined)
+                cur.chat.pokePresetId = newCfg.basic.pokePresetId;
         }
         if (newCfg.llm) {
             const cleanedLlm = { ...newCfg.llm };
@@ -328,8 +334,30 @@ export function startWebServer(config) {
             res.status(200).json(ChaiteResponse.ok({}));
         });
         // Plugin Management API
-        expressApp.get('/api/plugins', (_req, res) => {
+        expressApp.get('/api/plugins', async (_req, res) => {
             const list = pluginManager.getPlugins();
+            try {
+                const storageCtx = getStorageContext();
+                if (storageCtx?.presetManager) {
+                    const presets = await storageCtx.presetManager.getAllPresets();
+                    const presetOptions = [
+                        { label: '使用系统默认预设', value: '' },
+                        ...presets.map((p) => ({ label: p.name || p.id, value: p.id })),
+                    ];
+                    for (const item of list) {
+                        if (Array.isArray(item.configSchema)) {
+                            for (const field of item.configSchema) {
+                                if (field.key === 'presetId' || field.source === 'presets') {
+                                    field.options = presetOptions;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (err) {
+                console.warn('[Server] Failed to populate preset options for plugins:', err.message);
+            }
             res.status(200).json(ChaiteResponse.ok(list));
         });
         expressApp.post('/api/plugins/:id/toggle', async (req, res) => {

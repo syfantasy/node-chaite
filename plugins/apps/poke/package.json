@@ -1,0 +1,9 @@
+{
+  "name": "chaite-plugin-poke",
+  "version": "1.1.0",
+  "description": "戳一戳事件响应插件：当机器人被戳时触发 AI 大模型回复或趣味互动，忽略群友互戳",
+  "main": "index.js",
+  "type": "module",
+  "author": "Chaite",
+  "dependencies": {}
+}

@@ -97,6 +97,8 @@ const DEFAULT_CONFIG = {
         maxMessageLength: 1500,
         enableAt: true,
         atPresetId: '',
+        enablePoke: true,
+        pokePresetId: '',
     },
     llm: {
         defaultModel: '',

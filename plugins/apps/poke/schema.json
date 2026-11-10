@@ -1,0 +1,35 @@
+[
+  {
+    "key": "mode",
+    "label": "回复模式",
+    "type": "select",
+    "default": "ai",
+    "options": [
+      { "label": "AI 大模型智能对话（推荐）", "value": "ai" },
+      { "label": "固定词库随机回复", "value": "fixed" }
+    ],
+    "description": "选择戳一戳时的响应模式：AI 大模型智能生成（携带群聊流水与花名册），或固定预置词库"
+  },
+  {
+    "key": "presetId",
+    "label": "专用预设",
+    "type": "select",
+    "default": "",
+    "options": [],
+    "description": "AI 回复时使用的预设（从系统预设列表中选择，留空使用全局默认预设）"
+  },
+  {
+    "key": "pokeBack",
+    "label": "反戳回去",
+    "type": "boolean",
+    "default": false,
+    "description": "被戳时是否同时尝试调用协议端的戳一戳接口反戳回去"
+  },
+  {
+    "key": "responses",
+    "label": "固定回复词库",
+    "type": "textarea",
+    "default": "",
+    "description": "仅在模式为「固定词库随机回复」时生效，每行一句；留空使用默认词"
+  }
+]

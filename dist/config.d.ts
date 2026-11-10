@@ -41,6 +41,8 @@ export interface AppConfig {
         maxMessageLength: number;
         enableAt?: boolean;
         atPresetId?: string;
+        enablePoke?: boolean;
+        pokePresetId?: string;
     };
     llm: {
         defaultModel?: string;
