@@ -28,9 +28,9 @@ async function bootstrapOnce() {
   ;(globalThis as any).groupHistoryBuffer = groupHistoryBuffer
 
   // 1.1 Register Core Message Pipeline (AI conversation & system commands)
-  pluginManager.setMessagePipelineHandler(async (event: ChaiteEvent) => {
+  pluginManager.setMessagePipelineHandler(async (event: ChaiteEvent, chatOptions?: any) => {
     try {
-      await handleMessage(event, storageCtx)
+      return await handleMessage(event, storageCtx, chatOptions)
     } catch (err: any) {
       console.error('[Runner] Error handling pipeline message:', err)
     }
@@ -182,8 +182,9 @@ function buildChatHistoryBlock(
 
 export async function handleMessage(
   event: ChaiteEvent,
-  storageCtx: any
-): Promise<void> {
+  storageCtx: any,
+  chatOptions?: any
+): Promise<any> {
   const config = getConfig()
   const rawEvent: any = event.raw || {}
   const onebotAdapter = event.client || (globalThis as any).onebotAdapter || rawEvent._adapter
@@ -351,16 +352,29 @@ export async function handleMessage(
   const effectiveMasters = getEffectiveMasters(rawEvent, config).map(String)
 
   // Record group message into rolling buffer so future turns have full context
-  // 注意：群聊流水应客观记录群内所有发言（包括被用户黑名单拦截的机器人发言），
+  // 注意：群聊流水应客观记录群内所有发言（包括被用户黑名单拦截的机器人发言及戳一戳动作），
   // 避免上下文断层或后续群友引用时丢失上下文；
   // 但若群本身已被黑名单封禁或不在群白名单内，则不维护该群的流水。
-  if (rawEvent.message_type === 'group' && rawEvent.group_id) {
-    const gid = Number(rawEvent.group_id)
+  const targetGroupId = event.groupId || rawEvent.group_id
+  if (targetGroupId) {
+    const gid = Number(targetGroupId)
     const isGroupAllowed =
       !isTargetBanned(gid, 'group', config) &&
       (config.management.whiteGroups.length === 0 || config.management.whiteGroups.includes(gid))
     if (isGroupAllowed) {
-      await groupHistoryBuffer.recordMessage(rawEvent, onebotAdapter)
+      if (rawEvent.message_type === 'group') {
+        await groupHistoryBuffer.recordMessage(rawEvent, onebotAdapter)
+      } else if (event.isPoke) {
+        const pokeActionText = event.isSelfPoke
+          ? '[戳了戳 机器人]'
+          : `[戳了戳 QQ ${event.targetId || '群友'}]`
+        groupHistoryBuffer.recordCustomMessage(gid, {
+          userId: event.userId || rawEvent.operator_id || rawEvent.user_id,
+          nickname: event.sender?.nickname || '',
+          card: event.sender?.card || '',
+          text: pokeActionText,
+        })
+      }
     }
   }
 
@@ -414,9 +428,17 @@ export async function handleMessage(
   // （如 chatgpt-plugin）通过 GET /api/bridge/commands 获取同一张表来决定
   // 转发哪些消息，宿主侧不再各自硬编码指令。
   const cmdPrefix = (config.chat.commandPrefix || '#').trim()
-  const currentText = event.isPoke
-    ? '[戳了你一下]'
-    : (event.text || cleanText || '').trim()
+  const currentText = chatOptions?.input !== undefined
+    ? String(chatOptions.input).trim()
+    : (event.isPoke
+      ? '[戳了你一下]'
+      : (event.text || cleanText || '').trim())
+
+  if (chatOptions?.input !== undefined) {
+    userMessage.content = [{ type: 'text', text: String(chatOptions.input) }]
+  } else if (event.isPoke) {
+    userMessage.content = [{ type: 'text', text: '[戳了你一下]' }]
+  }
 
   const masterUsers = effectiveMasters.map(Number)
   const isMaster = effectiveMasters.length === 0 || masterUsers.includes(Number(event.userId))
@@ -1717,7 +1739,9 @@ export async function handleMessage(
     const replyId = shouldQuote ? rawEvent.message_id : undefined
     const packets = formatModelResponse(response, replyId, config.chat.maxMessageLength, shouldOutputThinking && Boolean(reasoningText))
 
-    if (onebotAdapter?.callAction) {
+    if (chatOptions?.autoReply === false) {
+      // 插件要求自行接管回复
+    } else if (onebotAdapter?.callAction) {
       for (const packet of packets) {
         if (packet.length === 0) continue
         await onebotAdapter.callAction('send_msg', {
@@ -1733,19 +1757,22 @@ export async function handleMessage(
       await event.reply({ text: respText, reply: shouldQuote })
     }
 
-    // Record Bot reply into rolling buffer
+    // Record Bot reply into rolling buffer (群聊普通消息、戳一戳及插件调度回复均统一记入流水)
     const botReplyText = response?.contents
       ?.filter((c: any) => c.type === 'text')
       ?.map((c: any) => c.text)
       ?.join('\n')
-    if (rawEvent.message_type === 'group' && rawEvent.group_id && botReplyText) {
-      groupHistoryBuffer.recordBotMessage(rawEvent.group_id, {
+    const recordGroupId = event.groupId || rawEvent.group_id
+    if (recordGroupId && botReplyText) {
+      groupHistoryBuffer.recordBotMessage(recordGroupId, {
         botUin: config.onebot?.botUin || botUin,
         name: preset?.name || 'Bot',
         text: botReplyText,
         messageId: response?.id,
       })
     }
+
+    return response
   } catch (err: any) {
     console.error('[Runner] Failed to send message to Chaite:', err.message)
     if (err.message && err.message.includes('No available channels')) {

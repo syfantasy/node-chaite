@@ -14,6 +14,9 @@ export class PluginManager {
         this.plugins = new Map();
         this.adapters = new Map();
         this.services = new Map();
+        this.protocolHooks = [];
+        this.rosterHooks = [];
+        this.flowHooks = [];
         this.scriptsDir = path.join(pluginsDir, 'scripts');
         this.appsDir = path.join(pluginsDir, 'apps');
         this.cacheDir = path.join(pluginsDir, '.cache', 'runtime');
@@ -577,6 +580,38 @@ export class PluginManager {
                 }
                 return groupHistoryBuffer.getRecentMessages(groupId, limit);
             },
+            chat: async (event, options) => {
+                if (!this.messagePipelineHandler) {
+                    throw new Error('Chat pipeline handler is not initialized');
+                }
+                return this.messagePipelineHandler(event, options);
+            },
+            hooks: {
+                onBuildProtocol: (hook) => {
+                    this.protocolHooks.push(hook);
+                    instance.cleanupFns.push(() => {
+                        const idx = this.protocolHooks.indexOf(hook);
+                        if (idx >= 0)
+                            this.protocolHooks.splice(idx, 1);
+                    });
+                },
+                onBuildRosterItem: (hook) => {
+                    this.rosterHooks.push(hook);
+                    instance.cleanupFns.push(() => {
+                        const idx = this.rosterHooks.indexOf(hook);
+                        if (idx >= 0)
+                            this.rosterHooks.splice(idx, 1);
+                    });
+                },
+                onFilterFlow: (hook) => {
+                    this.flowHooks.push(hook);
+                    instance.cleanupFns.push(() => {
+                        const idx = this.flowHooks.indexOf(hook);
+                        if (idx >= 0)
+                            this.flowHooks.splice(idx, 1);
+                    });
+                },
+            },
             onDestroy: (cleanupFn) => {
                 instance.cleanupFns.push(cleanupFn);
             },
@@ -962,6 +997,42 @@ export class PluginManager {
         }
         console.log(`[PluginManager] Reset configuration for plugin "${id}" to defaults`);
         return defaultConfig;
+    }
+    applyProtocolHooks(protocol, ctx) {
+        let result = protocol;
+        for (const hook of this.protocolHooks) {
+            try {
+                result = hook(result, ctx) || result;
+            }
+            catch (err) {
+                console.warn('[PluginManager] protocol hook error:', err.message);
+            }
+        }
+        return result;
+    }
+    applyRosterHooks(member, defaultStr, ctx) {
+        let result = defaultStr;
+        for (const hook of this.rosterHooks) {
+            try {
+                result = hook(member, result, ctx) || result;
+            }
+            catch (err) {
+                console.warn('[PluginManager] roster hook error:', err.message);
+            }
+        }
+        return result;
+    }
+    applyFlowHooks(msg, ctx) {
+        for (const hook of this.flowHooks) {
+            try {
+                if (!hook(msg, ctx))
+                    return false;
+            }
+            catch (err) {
+                console.warn('[PluginManager] flow hook error:', err.message);
+            }
+        }
+        return true;
     }
     setMessagePipelineHandler(handler) {
         this.messagePipelineHandler = handler;

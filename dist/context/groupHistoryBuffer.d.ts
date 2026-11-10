@@ -22,6 +22,12 @@ export interface GroupContextOptions {
      * 普通对话需要去掉序号（`[HH:mm]`），伪人模式仍保留序号以便短引用定位。
      */
     includeSeqIndex?: boolean;
+    /** 允许插件或调用方自定义单条花名册的格式 */
+    transformRosterItem?: (member: any, defaultStr: string) => string;
+    /** 允许插件或调用方过滤群聊流水条目 */
+    filterFlow?: (msg: any) => boolean;
+    /** 允许插件或调用方自定义单条流水发言的格式 */
+    transformFlowItem?: (msg: any, defaultStr: string) => string;
 }
 export interface GroupContextResult {
     membersBlock: string | null;
@@ -114,6 +120,8 @@ export declare class GroupHistoryBuffer {
     fetchMemberMeta(groupId: string | number, userId: string | number, onebotClient?: any): Promise<{
         title?: string;
         level?: string | number;
+        age?: number;
+        sex?: string;
     }>;
     private pinMessageRefs;
     private unpinMessageRefs;
@@ -143,6 +151,18 @@ export declare class GroupHistoryBuffer {
         name?: string;
         text: string;
         messageId?: string | number;
+    }): void;
+    /**
+     * Append custom/action message (e.g. poke, system notice, plugin action) to group buffer
+     */
+    recordCustomMessage(groupId: string | number, data: {
+        userId?: string | number;
+        nickname?: string;
+        card?: string;
+        role?: string;
+        text: string;
+        messageId?: string | number;
+        time?: number;
     }): void;
     /**
      * Get recent image refs from group history (chronological order)

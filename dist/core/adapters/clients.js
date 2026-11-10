@@ -94,7 +94,7 @@ export class AbstractClient {
         };
     }
     async fullfillTools(toolGroupIds) {
-        const resolvedTools = [];
+        let resolvedTools = [];
         const pushUnique = (tool) => {
             if (tool && !resolvedTools.find(t => t.name === tool.name)) {
                 resolvedTools.push(tool);
@@ -345,6 +345,10 @@ export class AbstractClient {
                     }
                 }
             }
+        }
+        if (Array.isArray(this.options?.tools)) {
+            const allowed = this.options.tools;
+            resolvedTools = resolvedTools.filter(t => allowed.includes(t.function.name));
         }
         this.tools = resolvedTools;
         return this.tools;

@@ -74,6 +74,42 @@ export interface PluginSkillDefinition {
     instructions?: string;
     validate?: (event: ChaiteEvent) => boolean | Promise<boolean>;
 }
+export interface ChatExecutionOptions {
+    /** 指定使用的预设 ID（若不传则遵循常规匹配/默认预设） */
+    presetId?: string;
+    /** 显式覆盖本轮模型输入内容（如分析 GitHub 仓库内容），缺省使用 event.text */
+    input?: string;
+    /** 限制工具白名单（仅允许调用的工具名称数组） */
+    tools?: string[];
+    /** 是否将本轮交互存入持久会话历史（默认 true；临时/特定任务可置为 false 避免上下文污染） */
+    saveHistory?: boolean;
+    /** 是否由框架自动将回复发送至群聊/私聊（默认 true；设为 false 时由调用方自行处理返回值） */
+    autoReply?: boolean;
+    /** 触发原因标识，体现在操作日志与环境提示块（如 poke_bot、github_analysis） */
+    triggerReason?: string;
+    /** 自定义环境描述块（覆盖 <chat_environment> 中的 triggerWay 或 interactMode） */
+    environment?: {
+        triggerWay?: string;
+        interactMode?: string;
+        [key: string]: any;
+    };
+    /** 单次自定义场景协议提示词转换/精简函数 */
+    transformProtocol?: (protocol: string) => string;
+    /** 单次自定义群聊花名册条目渲染函数（可注入年龄、性别、专属头衔等） */
+    transformRosterItem?: (member: any, defaultStr: string) => string;
+    /** 单次自定义群聊流水条目过滤函数 */
+    filterFlow?: (msg: any) => boolean;
+    /** 单次自定义群聊流水条目格式转换函数 */
+    transformFlowItem?: (msg: any, defaultStr: string) => string;
+}
+export interface PluginHooks {
+    /** 注册全局场景协议转换钩子 */
+    onBuildProtocol: (hook: (protocol: string, ctx?: any) => string) => void;
+    /** 注册全局花名册条目渲染钩子 */
+    onBuildRosterItem: (hook: (member: any, defaultStr: string, ctx?: any) => string) => void;
+    /** 注册全局群聊流水过滤钩子 */
+    onFilterFlow: (hook: (msg: any, ctx?: any) => boolean) => void;
+}
 export interface PluginContext {
     pluginId: string;
     config: Record<string, any>;
@@ -112,6 +148,8 @@ export interface PluginContext {
     readonly services: Map<string, any>;
     registerSkill: (skill: PluginSkillDefinition) => void;
     getGroupHistory: (groupId: string | number, limit?: number, formatted?: boolean) => any;
+    chat: (event: ChaiteEvent, options?: ChatExecutionOptions) => Promise<any>;
+    hooks: PluginHooks;
 }
 export interface PluginInstance {
     meta: PluginMeta;

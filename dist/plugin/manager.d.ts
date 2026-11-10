@@ -52,8 +52,14 @@ export declare class PluginManager {
     }>;
     deletePlugin(id: string, keepConfig?: boolean): Promise<boolean>;
     resetPluginConfig(id: string): Promise<Record<string, any>>;
+    readonly protocolHooks: Array<(protocol: string, ctx?: any) => string>;
+    readonly rosterHooks: Array<(member: any, defaultStr: string, ctx?: any) => string>;
+    readonly flowHooks: Array<(msg: any, ctx?: any) => boolean>;
+    applyProtocolHooks(protocol: string, ctx?: any): string;
+    applyRosterHooks(member: any, defaultStr: string, ctx?: any): string;
+    applyFlowHooks(msg: any, ctx?: any): boolean;
     private messagePipelineHandler?;
-    setMessagePipelineHandler(handler: (event: ChaiteEvent) => Promise<void>): void;
+    setMessagePipelineHandler(handler: (event: ChaiteEvent, options?: any) => Promise<any>): void;
     emitMessage(event: ChaiteEvent): Promise<boolean>;
     private parseListConfig;
     private isBlockedByPluginCommonConfig;

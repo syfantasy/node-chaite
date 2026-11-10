@@ -27,6 +27,12 @@ export interface GroupContextOptions {
    * 普通对话需要去掉序号（`[HH:mm]`），伪人模式仍保留序号以便短引用定位。
    */
   includeSeqIndex?: boolean
+  /** 允许插件或调用方自定义单条花名册的格式 */
+  transformRosterItem?: (member: any, defaultStr: string) => string
+  /** 允许插件或调用方过滤群聊流水条目 */
+  filterFlow?: (msg: any) => boolean
+  /** 允许插件或调用方自定义单条流水发言的格式 */
+  transformFlowItem?: (msg: any, defaultStr: string) => string
 }
 
 export interface GroupContextResult {
@@ -361,7 +367,7 @@ export class GroupHistoryBuffer {
   private hardCapacity = 300
 
   // groupId:userId -> member metadata (title, level, etc.)
-  private memberMetaCache = new Map<string, { title?: string; level?: string | number; expire: number }>()
+  private memberMetaCache = new Map<string, { title?: string; level?: string | number; age?: number; sex?: string; expire: number }>()
 
   /**
    * Fetch member metadata (title, level) via OneBot API with caching
@@ -370,7 +376,7 @@ export class GroupHistoryBuffer {
     groupId: string | number,
     userId: string | number,
     onebotClient?: any
-  ): Promise<{ title?: string; level?: string | number }> {
+  ): Promise<{ title?: string; level?: string | number; age?: number; sex?: string }> {
     const gid = String(groupId)
     const uid = String(userId)
     if (uid === 'bot' || !uid || isNaN(Number(uid))) return {}
@@ -393,12 +399,16 @@ export class GroupHistoryBuffer {
       if (res?.data) {
         const title = res.data.title || undefined
         const level = res.data.level || res.data.qq_level || undefined
+        const age = res.data.age !== undefined && res.data.age !== null ? Number(res.data.age) : undefined
+        const sex = res.data.sex || undefined
         this.memberMetaCache.set(key, {
           title,
           level,
+          age,
+          sex,
           expire: Date.now() + 30 * 60 * 1000, // 30 minutes cache
         })
-        return { title, level }
+        return { title, level, age, sex }
       }
     } catch {}
 
@@ -940,6 +950,8 @@ export class GroupHistoryBuffer {
         roleTitle: string
         title?: string
         level?: string | number
+        age?: number
+        sex?: string
       }
     >()
 
@@ -994,6 +1006,8 @@ export class GroupHistoryBuffer {
           roleTitle,
           title: meta?.title || m.title,
           level: meta?.level || m.level,
+          age: (meta as any)?.age ?? (m as any)?.age,
+          sex: (meta as any)?.sex ?? (m as any)?.sex,
         })
       } else {
         const existing = memberMap.get(uidStr)!
@@ -1006,6 +1020,8 @@ export class GroupHistoryBuffer {
         else if (!existing.title && m.title) existing.title = m.title
         if (meta?.level) existing.level = meta.level
         else if (!existing.level && m.level) existing.level = m.level
+        if ((meta as any)?.age !== undefined) (existing as any).age = (meta as any).age
+        if ((meta as any)?.sex !== undefined) (existing as any).sex = (meta as any).sex
       }
     }
 
@@ -1032,8 +1048,21 @@ export class GroupHistoryBuffer {
       if (m.roleTitle) details.push(`角色: ${m.roleTitle}`)
       if (m.title) details.push(`头衔: ${quoteStr(m.title)}`)
       if (m.level) details.push(`等级: Lv.${m.level}`)
+      if ((m as any).age !== undefined && (m as any).age !== null) details.push(`年龄: ${(m as any).age}岁`)
+      if ((m as any).sex && (m as any).sex !== 'unknown') {
+        const sexText = (m as any).sex === 'male' ? '男' : (m as any).sex === 'female' ? '女' : (m as any).sex
+        details.push(`性别: ${sexText}`)
+      }
 
-      memberLines.push(`- 群名片: ${cardStr}, QQ昵称: ${nickStr} (${details.join(', ')})`)
+      let line = `- 群名片: ${cardStr}, QQ昵称: ${nickStr} (${details.join(', ')})`
+      if (typeof options.transformRosterItem === 'function') {
+        try {
+          line = options.transformRosterItem(m, line) || line
+        } catch (e: any) {
+          console.warn('[GroupHistoryBuffer] transformRosterItem error:', e.message)
+        }
+      }
+      memberLines.push(line)
     }
 
     // 2. Build concise message stream with verified badges and index/id
@@ -1052,6 +1081,11 @@ export class GroupHistoryBuffer {
     const ephemeralList: EphemeralGroupMessage[] = []
     for (let idx = 0; idx < effectiveSlice.length; idx++) {
       const msg = effectiveSlice[idx]
+      if (typeof options.filterFlow === 'function') {
+        try {
+          if (!options.filterFlow(msg)) continue
+        } catch {}
+      }
       const userMeta = memberMap.get(msg.userId)
       let speakerName = userMeta ? userMeta.displayName : getSafeSpeakerName(msg.card, msg.nickname, msg.userId)
       if ((nameCounts.get(speakerName) || 0) > 1 && msg.userId && !speakerName.startsWith('QQ ')) {
@@ -1101,7 +1135,13 @@ export class GroupHistoryBuffer {
       // Keep single line per message, escaping inner linebreaks if necessary
       const inlineText = msg.text.replace(/\r\n|\r|\n/g, ' ')
       const seqPrefix = includeSeqIndex ? `#${seq} ` : ''
-      messageLines.push(`[${seqPrefix}${msg.timeStr}] ${speakerName}${badgeStr}: ${replyPrefixStr}${inlineText}`)
+      let formattedMsgLine = `[${seqPrefix}${msg.timeStr}] ${speakerName}${badgeStr}: ${replyPrefixStr}${inlineText}`
+      if (typeof options.transformFlowItem === 'function') {
+        try {
+          formattedMsgLine = options.transformFlowItem(msg, formattedMsgLine) || formattedMsgLine
+        } catch {}
+      }
+      messageLines.push(formattedMsgLine)
     }
 
     if (ephemeralList.length > 0) {
@@ -1161,6 +1201,55 @@ export class GroupHistoryBuffer {
       nickname: data.name || 'Bot',
       card: data.name || 'Bot',
       role: 'bot',
+      text: data.text.trim(),
+      tokens,
+    }
+
+    let list = this.buffers.get(gid)
+    if (!list) {
+      list = []
+      this.buffers.set(gid, list)
+    }
+    list.push(buffered)
+    if (list.length > this.hardCapacity) {
+      list.splice(0, list.length - this.hardCapacity)
+    }
+  }
+
+  /**
+   * Append custom/action message (e.g. poke, system notice, plugin action) to group buffer
+   */
+  recordCustomMessage(
+    groupId: string | number,
+    data: {
+      userId?: string | number
+      nickname?: string
+      card?: string
+      role?: string
+      text: string
+      messageId?: string | number
+      time?: number
+    }
+  ): void {
+    if (!data.text?.trim()) return
+    const gid = String(groupId)
+    const date = data.time ? new Date(data.time * 1000) : new Date()
+    const timeStr = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date)
+    const tokens = estimateTokens(data.text)
+
+    const buffered: BufferedMessage = {
+      messageId: data.messageId || Date.now(),
+      rawTime: data.time || Math.floor(Date.now() / 1000),
+      timeStr,
+      userId: String(data.userId || 'action'),
+      nickname: data.nickname || '',
+      card: data.card || '',
+      role: data.role || 'member',
       text: data.text.trim(),
       tokens,
     }

@@ -125,7 +125,7 @@ export class AbstractClient implements IClient {
   }
 
   async fullfillTools (toolGroupIds?: string[]): Promise<Tool[]> {
-    const resolvedTools: Tool[] = []
+    let resolvedTools: Tool[] = []
     const pushUnique = (tool?: Tool) => {
       if (tool && !resolvedTools.find(t => t.name === tool.name)) {
         resolvedTools.push(tool)
@@ -365,6 +365,11 @@ export class AbstractClient implements IClient {
           }
         }
       }
+    }
+
+    if (Array.isArray((this.options as any)?.tools)) {
+      const allowed = (this.options as any).tools as string[]
+      resolvedTools = resolvedTools.filter(t => allowed.includes(t.function.name))
     }
 
     this.tools = resolvedTools

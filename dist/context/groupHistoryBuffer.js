@@ -293,12 +293,16 @@ export class GroupHistoryBuffer {
             if (res?.data) {
                 const title = res.data.title || undefined;
                 const level = res.data.level || res.data.qq_level || undefined;
+                const age = res.data.age !== undefined && res.data.age !== null ? Number(res.data.age) : undefined;
+                const sex = res.data.sex || undefined;
                 this.memberMetaCache.set(key, {
                     title,
                     level,
+                    age,
+                    sex,
                     expire: Date.now() + 30 * 60 * 1000, // 30 minutes cache
                 });
-                return { title, level };
+                return { title, level, age, sex };
             }
         }
         catch { }
@@ -842,6 +846,8 @@ export class GroupHistoryBuffer {
                     roleTitle,
                     title: meta?.title || m.title,
                     level: meta?.level || m.level,
+                    age: meta?.age ?? m?.age,
+                    sex: meta?.sex ?? m?.sex,
                 });
             }
             else {
@@ -860,6 +866,10 @@ export class GroupHistoryBuffer {
                     existing.level = meta.level;
                 else if (!existing.level && m.level)
                     existing.level = m.level;
+                if (meta?.age !== undefined)
+                    existing.age = meta.age;
+                if (meta?.sex !== undefined)
+                    existing.sex = meta.sex;
             }
         };
         // Always register currentSender first so model always knows who is asking right now
@@ -884,7 +894,22 @@ export class GroupHistoryBuffer {
                 details.push(`头衔: ${quoteStr(m.title)}`);
             if (m.level)
                 details.push(`等级: Lv.${m.level}`);
-            memberLines.push(`- 群名片: ${cardStr}, QQ昵称: ${nickStr} (${details.join(', ')})`);
+            if (m.age !== undefined && m.age !== null)
+                details.push(`年龄: ${m.age}岁`);
+            if (m.sex && m.sex !== 'unknown') {
+                const sexText = m.sex === 'male' ? '男' : m.sex === 'female' ? '女' : m.sex;
+                details.push(`性别: ${sexText}`);
+            }
+            let line = `- 群名片: ${cardStr}, QQ昵称: ${nickStr} (${details.join(', ')})`;
+            if (typeof options.transformRosterItem === 'function') {
+                try {
+                    line = options.transformRosterItem(m, line) || line;
+                }
+                catch (e) {
+                    console.warn('[GroupHistoryBuffer] transformRosterItem error:', e.message);
+                }
+            }
+            memberLines.push(line);
         }
         // 2. Build concise message stream with verified badges and index/id
         const messageLines = [];
@@ -900,6 +925,13 @@ export class GroupHistoryBuffer {
         const ephemeralList = [];
         for (let idx = 0; idx < effectiveSlice.length; idx++) {
             const msg = effectiveSlice[idx];
+            if (typeof options.filterFlow === 'function') {
+                try {
+                    if (!options.filterFlow(msg))
+                        continue;
+                }
+                catch { }
+            }
             const userMeta = memberMap.get(msg.userId);
             let speakerName = userMeta ? userMeta.displayName : getSafeSpeakerName(msg.card, msg.nickname, msg.userId);
             if ((nameCounts.get(speakerName) || 0) > 1 && msg.userId && !speakerName.startsWith('QQ ')) {
@@ -947,7 +979,14 @@ export class GroupHistoryBuffer {
             // Keep single line per message, escaping inner linebreaks if necessary
             const inlineText = msg.text.replace(/\r\n|\r|\n/g, ' ');
             const seqPrefix = includeSeqIndex ? `#${seq} ` : '';
-            messageLines.push(`[${seqPrefix}${msg.timeStr}] ${speakerName}${badgeStr}: ${replyPrefixStr}${inlineText}`);
+            let formattedMsgLine = `[${seqPrefix}${msg.timeStr}] ${speakerName}${badgeStr}: ${replyPrefixStr}${inlineText}`;
+            if (typeof options.transformFlowItem === 'function') {
+                try {
+                    formattedMsgLine = options.transformFlowItem(msg, formattedMsgLine) || formattedMsgLine;
+                }
+                catch { }
+            }
+            messageLines.push(formattedMsgLine);
         }
         if (ephemeralList.length > 0) {
             groupMessageRefStore.registerTurn(groupId, ephemeralList);
@@ -995,6 +1034,42 @@ export class GroupHistoryBuffer {
             nickname: data.name || 'Bot',
             card: data.name || 'Bot',
             role: 'bot',
+            text: data.text.trim(),
+            tokens,
+        };
+        let list = this.buffers.get(gid);
+        if (!list) {
+            list = [];
+            this.buffers.set(gid, list);
+        }
+        list.push(buffered);
+        if (list.length > this.hardCapacity) {
+            list.splice(0, list.length - this.hardCapacity);
+        }
+    }
+    /**
+     * Append custom/action message (e.g. poke, system notice, plugin action) to group buffer
+     */
+    recordCustomMessage(groupId, data) {
+        if (!data.text?.trim())
+            return;
+        const gid = String(groupId);
+        const date = data.time ? new Date(data.time * 1000) : new Date();
+        const timeStr = new Intl.DateTimeFormat('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).format(date);
+        const tokens = estimateTokens(data.text);
+        const buffered = {
+            messageId: data.messageId || Date.now(),
+            rawTime: data.time || Math.floor(Date.now() / 1000),
+            timeStr,
+            userId: String(data.userId || 'action'),
+            nickname: data.nickname || '',
+            card: data.card || '',
+            role: data.role || 'member',
             text: data.text.trim(),
             tokens,
         };

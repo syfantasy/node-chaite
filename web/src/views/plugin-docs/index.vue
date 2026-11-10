@@ -68,6 +68,42 @@ export default function setup(ctx) {
 }
 `
 
+const sampleCodePipeline = `// 核心对话管线主动调度与上下文拦截 Hooks
+export default function setup(ctx) {
+  // 1. 扩展花名册条目：在成员后追加年龄、性别与自定义属性
+  ctx.hooks.onBuildRosterItem((member, defaultStr) => {
+    const extra = []
+    if (member.sex) extra.push(\`性别:\${member.sex}\`)
+    if (member.age) extra.push(\`年龄:\${member.age}岁\`)
+    return extra.length > 0 ? \`\${defaultStr} [\${extra.join(', ')}]\` : defaultStr
+  })
+
+  // 2. 流水安全过滤：动态阻断违规发言进入模型上下文
+  ctx.hooks.onFilterFlow((msg) => {
+    return msg.userId !== '12345678'
+  })
+
+  // 3. 主动调度核心对话管线：定制预设、提示词、工具与环境
+  ctx.onPoke(async (e) => {
+    if (!e.isSelfPoke) return true
+
+    const response = await ctx.chat(e, {
+      input: '[戳了你一下]',
+      presetId: 'tsundere_bot',
+      triggerReason: 'poke_bot',
+      tools: ['web_fetch', 'GetQQAvatar'],
+      autoReply: false, // 禁用默认回复，由插件自行处理
+    })
+
+    const text = response?.contents?.find(c => c.type === 'text')?.text
+    if (text) {
+      await e.reply(\`[专属回应] \${text}\`)
+    }
+    return true
+  })
+}
+`
+
 const sampleCodeTool = `// 注入给大模型的 Function Call 工具示例
 export default function setup(ctx) {
   ctx.registerTool({
@@ -263,6 +299,17 @@ export default function setup(ctx) {
         <h2>5. 进阶：群聊上下文分析插件</h2>
         <div class="code-wrapper">
           <NCode :code="sampleCodeDir" language="javascript" />
+        </div>
+      </section>
+
+      <!-- 5.1 核心管线调度与 Context Hooks -->
+      <section class="doc-card">
+        <h2>5.1 高级：核心对话调度管线 (ctx.chat) 与上下文 Hook 拦截</h2>
+        <p>
+          通过 <code>ctx.chat(event, options)</code>，插件可在特定业务场景（戳一戳、小游戏裁判、主动唤醒）下按需编排大模型对话，支持覆盖 prompt、指定预设、限定工具白名单或关闭自动回复。同时可通过 <code>ctx.hooks</code> 对花名册、群流水和场景协议进行全局动态修饰。
+        </p>
+        <div class="code-wrapper" style="margin-top: 12px;">
+          <NCode :code="sampleCodePipeline" language="javascript" />
         </div>
       </section>
 

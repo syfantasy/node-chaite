@@ -591,6 +591,35 @@ export class PluginManager {
         }
         return groupHistoryBuffer.getRecentMessages(groupId, limit)
       },
+      chat: async (event, options) => {
+        if (!this.messagePipelineHandler) {
+          throw new Error('Chat pipeline handler is not initialized')
+        }
+        return this.messagePipelineHandler(event, options)
+      },
+      hooks: {
+        onBuildProtocol: (hook) => {
+          this.protocolHooks.push(hook)
+          instance.cleanupFns.push(() => {
+            const idx = this.protocolHooks.indexOf(hook)
+            if (idx >= 0) this.protocolHooks.splice(idx, 1)
+          })
+        },
+        onBuildRosterItem: (hook) => {
+          this.rosterHooks.push(hook)
+          instance.cleanupFns.push(() => {
+            const idx = this.rosterHooks.indexOf(hook)
+            if (idx >= 0) this.rosterHooks.splice(idx, 1)
+          })
+        },
+        onFilterFlow: (hook) => {
+          this.flowHooks.push(hook)
+          instance.cleanupFns.push(() => {
+            const idx = this.flowHooks.indexOf(hook)
+            if (idx >= 0) this.flowHooks.splice(idx, 1)
+          })
+        },
+      },
       onDestroy: (cleanupFn) => {
         instance.cleanupFns.push(cleanupFn)
       },
@@ -1012,9 +1041,48 @@ export class PluginManager {
     return defaultConfig
   }
 
-  private messagePipelineHandler?: (event: ChaiteEvent) => Promise<void>
+  readonly protocolHooks: Array<(protocol: string, ctx?: any) => string> = []
+  readonly rosterHooks: Array<(member: any, defaultStr: string, ctx?: any) => string> = []
+  readonly flowHooks: Array<(msg: any, ctx?: any) => boolean> = []
 
-  setMessagePipelineHandler(handler: (event: ChaiteEvent) => Promise<void>) {
+  applyProtocolHooks(protocol: string, ctx?: any): string {
+    let result = protocol
+    for (const hook of this.protocolHooks) {
+      try {
+        result = hook(result, ctx) || result
+      } catch (err: any) {
+        console.warn('[PluginManager] protocol hook error:', err.message)
+      }
+    }
+    return result
+  }
+
+  applyRosterHooks(member: any, defaultStr: string, ctx?: any): string {
+    let result = defaultStr
+    for (const hook of this.rosterHooks) {
+      try {
+        result = hook(member, result, ctx) || result
+      } catch (err: any) {
+        console.warn('[PluginManager] roster hook error:', err.message)
+      }
+    }
+    return result
+  }
+
+  applyFlowHooks(msg: any, ctx?: any): boolean {
+    for (const hook of this.flowHooks) {
+      try {
+        if (!hook(msg, ctx)) return false
+      } catch (err: any) {
+        console.warn('[PluginManager] flow hook error:', err.message)
+      }
+    }
+    return true
+  }
+
+  private messagePipelineHandler?: (event: ChaiteEvent, options?: any) => Promise<any>
+
+  setMessagePipelineHandler(handler: (event: ChaiteEvent, options?: any) => Promise<any>) {
     this.messagePipelineHandler = handler
   }
 

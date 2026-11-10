@@ -1,6 +1,6 @@
 import { groupHistoryBuffer, groupMessageRefStore } from './context/groupHistoryBuffer.js';
 import { ChaiteEvent } from './plugin/index.js';
-export declare function handleMessage(event: ChaiteEvent, storageCtx: any): Promise<void>;
+export declare function handleMessage(event: ChaiteEvent, storageCtx: any, chatOptions?: any): Promise<any>;
 export * from './core/index.js';
 export * from './config.js';
 export * from './storage.js';
