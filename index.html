@@ -511,6 +511,79 @@ if (msg) {
 }</code></pre>
     </div>
 
+    <div class="card">
+      <h3>核心对话管线调度与上下文 Hook 拦截 (Pipeline Dispatch & Context Hooks)</h3>
+      <p>Chaite 提供了强大的底层对话调度与切片定制能力。插件不仅可以通过 <code>ctx.chat(event, options)</code> 主动调起系统的核心对话流水线，还可以通过全局 Hooks 对场景协议、花名册成员项及历史发言流水进行深度清洗与定制：</p>
+
+      <h4>1. 主动调度对话管线 <code>ctx.chat(event, options)</code></h4>
+      <p>适用于戳一戳唤醒、群事件主动唤醒、游戏裁判或特定交互模式下的 AI 触发：</p>
+      <pre><code class="language-javascript">ctx.onPoke(async (e) => {
+  if (!e.isSelfPoke) return true // 过滤群友互戳
+
+  // 方式 A：放行给主流水线自动处理
+  // return false
+
+  // 方式 B：插件完全自主编排核心对话
+  const response = await ctx.chat(e, {
+    // 覆盖输入内容
+    input: '[戳了你一下]',
+    // 切换至专属预设（例如戳一戳互动预设）
+    presetId: 'tsundere_bot',
+    // 自定义触发原因标识
+    triggerReason: 'poke_bot',
+    // 定制环境说明与互动指南
+    environment: {
+      triggerWay: '戳一戳唤醒 (对方在群里戳了你)',
+      interactMode: '戳一戳互动响应（做出活泼、符合角色性格的自然反应）'
+    },
+    // 工具白名单限制（仅允许特定工具，隔离敏感系统操作）
+    tools: ['web_fetch', 'GetQQAvatar'],
+    // 禁用默认自动发消息，由插件自行处理富媒体分片发送
+    autoReply: false,
+    // 不持久化写入历史记录
+    saveHistory: false
+  })
+
+  // 自行处理回复（如富媒体、卡片、图文渲染）
+  const replyText = response?.contents?.find(c => c.type === 'text')?.text
+  if (replyText) {
+    await e.reply(`[傲娇回应] ${replyText}`)
+  }
+  return true
+})</code></pre>
+
+      <h4>2. 上下文全局 Hook (Context Customization Hooks)</h4>
+      <p>插件可以在生命周期内注册钩子，插件卸载或重载时会自动注销，绝无内存泄漏：</p>
+      <ul>
+        <li><code>ctx.hooks.onBuildRosterItem((member, defaultStr, ctx) => string)</code>: 拦截与定制群成员花名册条目，可追加年龄、性别、群内战力、VIP 标识等自定义属性；</li>
+        <li><code>ctx.hooks.onFilterFlow((msg, ctx) => boolean)</code>: 过滤送入大模型的群聊流水，返回 <code>false</code> 即可屏蔽黑名单成员发言、敏感信息或指定关键词；</li>
+        <li><code>ctx.hooks.onBuildProtocol((protocol, ctx) => string)</code>: 深度重写或微调注入大模型的场景协议规范。</li>
+      </ul>
+      <pre><code class="language-javascript">export default function setup(ctx) {
+  // 1. 扩展花名册：展示群成员年龄、性别与自定义属性
+  ctx.hooks.onBuildRosterItem((member, defaultStr) => {
+    const extra = []
+    if (member.sex) extra.push(`性别:${member.sex}`)
+    if (member.age) extra.push(`年龄:${member.age}岁`)
+    if (extra.length > 0) {
+      return `${defaultStr} [${extra.join(', ')}]`
+    }
+    return defaultStr
+  })
+
+  // 2. 流水过滤：屏蔽某违规用户的历史流水进入大模型上下文
+  ctx.hooks.onFilterFlow((msg) => {
+    if (msg.userId === '12345678') return false
+    return true
+  })
+
+  // 3. 场景协议微调：追加群内特殊规则
+  ctx.hooks.onBuildProtocol((protocol) => {
+    return protocol + '\n- [特别提示]：本群当前正在举行猜灯谜活动，请适时给出有趣谜题。'
+  })
+}</code></pre>
+    </div>
+
     <!-- 5. 多媒体 Ref 体系规范 -->
     <h2 id="media-ref">5. 多媒体 Ref 体系规范 (Media Ref Specification)</h2>
     <p>
