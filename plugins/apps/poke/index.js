@@ -33,6 +33,16 @@ export default async function setup(ctx) {
     }
 
     const userId = event.userId || event.operatorId
+
+    // 检查黑名单：若操作者在黑名单中，直接阻断，既不反戳也不回复
+    const isBanned = globalThis.banManager?.isTargetBanned
+      ? globalThis.banManager.isTargetBanned(userId, 'user', globalThis.chaiteConfig)
+      : false
+    if (isBanned) {
+      logger.info(`黑名单用户 [${userId}] 戳了机器人，已直接拦截阻断`)
+      return true
+    }
+
     logger.info(`收到来自用户 [${userId}] 的戳一戳`)
 
     // 反戳逻辑（如果开启）：尝试反戳回去

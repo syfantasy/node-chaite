@@ -379,12 +379,19 @@ export async function handleMessage(
   }
 
   // 1. Check permissions (Enforce dynamic black/white lists via config)
-  // 判定当前消息是否允许触发 Bot（若发送者在黑名单中，阻断其触发 Bot 响应与命令，但上方已确保流水被记录）
-  if (rawEvent.post_type === 'message') {
-    const perm = checkPermission(rawEvent, config)
-    if (!perm.allow) {
-      return
-    }
+  // 判定当前事件/消息是否允许触发 Bot（若发送者在黑名单中，阻断其触发 Bot 响应与命令，但上方已确保流水被记录）
+  const senderUserId = event.userId || rawEvent.operator_id || rawEvent.user_id
+  if (senderUserId && isTargetBanned(senderUserId, 'user', config)) {
+    return
+  }
+  const perm = checkPermission({
+    user_id: senderUserId,
+    group_id: event.groupId || rawEvent.group_id,
+    message_type: (event.groupId || rawEvent.group_id) ? 'group' : 'private',
+    ...rawEvent,
+  }, config)
+  if (!perm.allow) {
+    return
   }
 
   // 2. Convert message to Chaite format
@@ -911,6 +918,12 @@ export async function handleMessage(
       sendOptions.disableHistoryRead = true
       sendOptions.disableHistorySave = true
       sendOptions.stream = false
+    }
+    if (chatOptions?.saveHistory === false) {
+      sendOptions.disableHistorySave = true
+    }
+    if (chatOptions?.tools && Array.isArray(chatOptions.tools)) {
+      sendOptions.allowedToolNames = chatOptions.tools
     }
 
     // 预拉取长期记忆（如果预设开启记忆）

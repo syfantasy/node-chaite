@@ -52,13 +52,16 @@ export function unbanTarget(targetId, type) {
  * 检查目标是否被封禁 (自动清理已过期项)
  */
 export function isTargetBanned(targetId, type, config) {
-    if (type === 'user' && config.management.blackUsers.includes(targetId)) {
+    const tid = String(targetId);
+    if (!tid || tid === '0' || tid === 'NaN')
+        return false;
+    if (type === 'user' && config.management?.blackUsers?.some(u => String(u) === tid)) {
         return true;
     }
-    if (type === 'group' && config.management.blackGroups.includes(targetId)) {
+    if (type === 'group' && config.management?.blackGroups?.some(g => String(g) === tid)) {
         return true;
     }
-    const key = `${type}_${targetId}`;
+    const key = `${type}_${tid}`;
     const item = timedBans.get(key);
     if (item) {
         if (Date.now() < item.expireAt) {
@@ -94,11 +97,11 @@ export function getEffectiveMasters(event, config = getConfig()) {
     return host;
 }
 export function checkPermission(event, config = getConfig()) {
-    const userId = Number(event.user_id);
-    const isGroup = event.message_type === 'group';
-    const groupId = isGroup && event.group_id ? Number(event.group_id) : undefined;
+    const userId = Number(event.user_id || event.userId || event.operator_id || event.operatorId);
+    const isGroup = event.message_type === 'group' || Boolean(event.group_id || event.groupId);
+    const groupId = isGroup && (event.group_id || event.groupId) ? Number(event.group_id || event.groupId) : undefined;
     // 1. Blacklist check (always drop blacklisted users, including timed bans)
-    if (isTargetBanned(userId, 'user', config)) {
+    if (userId && isTargetBanned(userId, 'user', config)) {
         return { allow: false, reason: 'user_in_blacklist' };
     }
     // 2. Group checks
@@ -110,7 +113,7 @@ export function checkPermission(event, config = getConfig()) {
             return { allow: false, reason: 'group_in_blacklist' };
         }
         // Strict group whitelist check: only allowed groups can trigger the bot
-        if (config.management.whiteGroups.length > 0 && !config.management.whiteGroups.includes(groupId)) {
+        if (config.management?.whiteGroups?.length > 0 && !config.management.whiteGroups.some(g => String(g) === String(groupId))) {
             return { allow: false, reason: 'group_not_in_whitelist' };
         }
     }
@@ -118,14 +121,14 @@ export function checkPermission(event, config = getConfig()) {
         // 3. Private message checks
         const effectiveMasters = getEffectiveMasters(event, config);
         if (!config.chat.allowPrivate) {
-            const isMaster = effectiveMasters.includes(userId);
+            const isMaster = effectiveMasters.some(m => String(m) === String(userId));
             if (!isMaster) {
                 return { allow: false, reason: 'private_chat_disabled' };
             }
         }
-        if (config.management.whiteUsers.length > 0) {
-            const isWhitelisted = config.management.whiteUsers.includes(userId);
-            const isMaster = effectiveMasters.includes(userId);
+        if (config.management?.whiteUsers?.length > 0) {
+            const isWhitelisted = config.management.whiteUsers.some(u => String(u) === String(userId));
+            const isMaster = effectiveMasters.some(m => String(m) === String(userId));
             if (!isWhitelisted && !isMaster) {
                 return { allow: false, reason: 'user_not_in_whitelist' };
             }

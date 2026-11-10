@@ -346,9 +346,12 @@ export class AbstractClient {
                 }
             }
         }
-        if (Array.isArray(this.options?.tools)) {
-            const allowed = this.options.tools;
-            resolvedTools = resolvedTools.filter(t => allowed.includes(t.function.name));
+        const filterTools = this.options?.allowedToolNames;
+        if (Array.isArray(filterTools) && filterTools.length > 0) {
+            resolvedTools = resolvedTools.filter(t => {
+                const name = t.function?.name || t.name;
+                return filterTools.includes(name);
+            });
         }
         this.tools = resolvedTools;
         return this.tools;

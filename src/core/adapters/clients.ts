@@ -367,9 +367,12 @@ export class AbstractClient implements IClient {
       }
     }
 
-    if (Array.isArray((this.options as any)?.tools)) {
-      const allowed = (this.options as any).tools as string[]
-      resolvedTools = resolvedTools.filter(t => allowed.includes(t.function.name))
+    const filterTools = (this.options as any)?.allowedToolNames
+    if (Array.isArray(filterTools) && filterTools.length > 0) {
+      resolvedTools = resolvedTools.filter(t => {
+        const name = (t as any).function?.name || t.name
+        return filterTools.includes(name)
+      })
     }
 
     this.tools = resolvedTools
