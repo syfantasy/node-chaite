@@ -91,11 +91,11 @@ export abstract class ExecutableShareableManager<T extends Shareable<T>, C> {
               getLogger().debug(`Loaded ${this.type} '${instanceName}' from file '${file}'`)
               newInstanceMap.set(instanceName, file)
 
-              // 自动同步：若数据库中无此记录，自动补全入库，确保 Web 管理面板和预设选择器可见
+              // 自动同步：若数据库中无此记录，自动补全入库；若磁盘文件被修改，自动同步更新数据库
               try {
                 const existing = await this.storage.getItem(instanceName)
+                const fileContent = await fsPromises.readFile(filePath, 'utf-8')
                 if (!existing) {
-                  const fileContent = await fsPromises.readFile(filePath, 'utf-8')
                   const description =
                     (instance as { function?: { description?: string } })?.function?.description ||
                     (instance as { description?: string })?.description ||
@@ -118,6 +118,11 @@ export abstract class ExecutableShareableManager<T extends Shareable<T>, C> {
                     extraData: '{}',
                   } as unknown as T)
                   getLogger().info(`Auto-registered ${this.type} '${instanceName}' into database for Web panel visibility`)
+                } else if (existing.code !== fileContent) {
+                  existing.code = fileContent
+                  existing.updatedAt = new Date().toISOString()
+                  await this.storage.setItem(instanceName, existing)
+                  getLogger().info(`Auto-synced disk changes of ${this.type} '${instanceName}' to storage`)
                 }
               } catch (storageSyncErr: unknown) {
                 getLogger().warn(`Failed to auto-sync ${this.type} '${instanceName}' to storage:`, storageSyncErr as never)

@@ -188,6 +188,15 @@ export async function handleMessage(
   const rawEvent: any = event.raw || {}
   const onebotAdapter = event.client || (globalThis as any).onebotAdapter || rawEvent._adapter
 
+  // 戳一戳与通知类事件（notice / poke / request / recall 等）不进入普通聊天/AI 对话处理流
+  if (
+    event?.isPoke ||
+    ((event as any)?.eventType && (event as any).eventType !== 'message') ||
+    (rawEvent.post_type && rawEvent.post_type !== 'message')
+  ) {
+    return
+  }
+
   // 规范化 isGroup/isPrivate：bridge/chat 与插件内嵌路径构造的是普通对象（非
   // ChaiteEvent 类实例），没有 event.js 里的派生 getter。缺失时按 type/raw 推导，
   // 否则群聊上下文注入（event.isGroup 判断）、群会话 ID 等全部失效。
@@ -729,8 +738,8 @@ export async function handleMessage(
     }
   }
 
-  // 4.3 Check Random Auto Trigger Probability (群聊随机唤醒 / 自动插话)
-  if (!isTriggered && event.isGroup) {
+  // 4.3 Check Random Auto Trigger Probability (群聊随机唤醒 / 自动插话，仅针对普通聊天消息)
+  if (!isTriggered && event.isGroup && !event.isPoke && (!event.eventType || event.eventType === 'message')) {
     try {
       const allPresets = await storageCtx.presetManager.listInstances()
       for (const p of allPresets) {

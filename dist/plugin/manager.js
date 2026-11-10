@@ -970,6 +970,11 @@ export class PluginManager {
         const handled = await this.dispatchCommand(event);
         if (handled)
             return true;
+        // 非普通聊天消息（例如戳一戳、群成员变动、加好友/群申请、撤回等通知事件），
+        // 若未被插件拦截消费，直接结束，绝不流入 AI 对话/随机概率触发流水线
+        if (event.isPoke || (event.eventType && event.eventType !== 'message')) {
+            return false;
+        }
         if (this.messagePipelineHandler) {
             await this.messagePipelineHandler(event);
             return true;
