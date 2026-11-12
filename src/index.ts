@@ -957,13 +957,16 @@ export async function handleMessage(
         // user 消息里：
         //   · 历史为空（新会话 / 伪人模式）→ 直接并入本轮 user 消息的头部；
         //   · 历史非空 → 并入历史首条 user 消息，避免出现连续两条 user（多数渠道不接受）；
-        // 这样对话结构是 [user: 上下文 + 首句] [assistant] [user] ... [user: 本轮发言]，
-        // 稳定头部内容才能持续命中前缀缓存（KV Cache）。
-        // 写入 history 时仍由 persistMessage 剥掉注入块，只在「并入本轮消息」时需要剥离。
-        const installPrependContext = (parts: (TextContent | ImageContent)[]) => {
-          if (parts.length === 0) return
+        // 这样对话结构是 [user: 上下文 + 首句] [assistant] [user] ... [user: 附图 + 本轮发言]，
+        // 稳定头部内容（协议/流水/花名册）置顶持续命中前缀缓存（KV Cache），
+        // 而多模态附图直接附加在当前这轮提问的前方，确保多模态视觉模型在多轮对话中能够精准读取当前轮次的图片！
+        // 写入 history 时仍由 persistMessage 剥掉注入块，只保留图片与用户真实发言。
+        const installPrependContext = (
+          headParts: (TextContent | ImageContent)[],
+          currentVisualParts: (TextContent | ImageContent)[] = []
+        ) => {
+          if (headParts.length === 0 && currentVisualParts.length === 0) return
           hasInjectedContext = true
-          const injectedCount = parts.length
           let ctxAttachedToCurrent = false
           let hasInjected = false
           sendOptions.prependContext = (histories: any[], current?: any) => {
@@ -978,36 +981,64 @@ export async function handleMessage(
               role: String(m.role),
               content: Array.isArray(m.content) ? [...m.content] : [],
             }))
-            const cloned = parts.map((p) => ({ ...p }))
-            // 无论最终并入「历史首条」还是「本轮消息」，userMessage.content 本身都不含注入块
-            // （clients 内部是 new 了一个 thisRequestMsg，改的是副本），所以日志统一补这一段
-            logPrependedParts = cloned
-            // 列表里只有本轮这一条（无历史）：上下文与发言同属最前面的一条消息
+            const clonedHead = headParts.map((p) => ({ ...p }))
+            const clonedVisual = currentVisualParts.map((p) => ({ ...p }))
+            logPrependedParts = [...clonedHead, ...clonedVisual]
+
+            // 列表里只有本轮这一条（无历史）：上下文、附图与发言统一并入当前消息
             if (histories.length === 1 && (!current || histories[0] === current)) {
               const target = current || histories[0]
-              target.content = [...cloned, ...((target.content as any[]) || [])]
+              target.content = [...clonedHead, ...clonedVisual, ...((target.content as any[]) || [])]
               ctxAttachedToCurrent = true
               return
             }
-            const head: any = histories[0]
-            if (head && head.role === 'user' && Array.isArray(head.content)) {
-              head.content = [...cloned, ...head.content]
-            } else {
-              histories.unshift({
-                id: crypto.randomUUID(),
-                parentId: null,
-                role: 'user',
-                content: cloned,
-              } as any)
+
+            // 已有历史：附图索引与图片必须挂载在当前提问轮次（current）的首部，绝不能塞入历史首条，
+            // 确保多模态大模型直接在当前问题中感知完整的附图输入与上下文图像！
+            if (clonedVisual.length > 0) {
+              const targetCurrent = current || histories[histories.length - 1]
+              if (targetCurrent && Array.isArray(targetCurrent.content)) {
+                targetCurrent.content = [...clonedVisual, ...targetCurrent.content]
+              }
+            }
+
+            // 静态头部协议、群聊流水与花名册合并进历史首条 user 消息
+            if (clonedHead.length > 0) {
+              const head: any = histories[0]
+              if (head && head.role === 'user' && Array.isArray(head.content)) {
+                head.content = [...clonedHead, ...head.content]
+              } else {
+                histories.unshift({
+                  id: crypto.randomUUID(),
+                  parentId: null,
+                  role: 'user',
+                  content: clonedHead,
+                } as any)
+              }
             }
           }
           if (!isBym) {
             sendOptions.persistMessage = (msg: any) => {
               if (!msg || !Array.isArray(msg.content)) return msg
-              // 上下文已并入历史首条（或独立成条）时，本轮发言本身就是干净的
-              if (!ctxAttachedToCurrent) return msg
-              if (msg.content.length <= injectedCount) return { ...msg, content: [] }
-              return { ...msg, content: msg.content.slice(injectedCount) }
+              const cleanContent = msg.content.filter((part: any) => {
+                if (part.type === 'image') return true // 真实图片资产始终持久化
+                if (part.type === 'text') {
+                  const txt = String(part.text || '')
+                  if (
+                    txt.startsWith('### 场景协议：') ||
+                    txt.startsWith('### 最近群聊发言流水记录：') ||
+                    txt.startsWith('### 当前群聊成员花名册：') ||
+                    txt.startsWith('### 长期记忆背景：') ||
+                    txt.startsWith('### 会话环境与时间：') ||
+                    txt.startsWith('### 本轮会话附带的多模态图像索引') ||
+                    txt.startsWith('【下方附图 ')
+                  ) {
+                    return false
+                  }
+                }
+                return true
+              })
+              return { ...msg, content: cleanContent }
             }
           }
         }
@@ -1333,23 +1364,22 @@ export async function handleMessage(
             // 3. 紧接着推入本轮动态的会话环境与时间戳（后置下移，避免每秒变化的时间戳击穿头部缓存）
             contextParts.push(envPart)
 
-            // 4. 多模态附图索引 + 图文交错的视觉素材
-            //    附图是「流水里那张图」的补充素材，必须紧跟在流水/环境之后，和其他上下文
-            //    同处一块；放进本轮发言里会把末端那句 `[#N HH:mm] 谁: 说了什么` 冲散。
+            // 4. 多模态附图索引 + 图文交错的视觉素材（独立为 visualParts，直接挂载到当前轮次发言前）
+            const visualParts: (TextContent | ImageContent)[] = []
             if (visualAttachments.length > 0) {
               const imageIndexLines = visualAttachments.map(
                 (att) => `- 附图 ${att.seq}: ${att.detail}`
               )
-              contextParts.push({
+              visualParts.push({
                 type: 'text',
                 text: `### 本轮会话附带的多模态图像索引（按顺序严格对应紧随其后的图文交错附图）：\n<attached_images>\n${imageIndexLines.join('\n')}\n</attached_images>`,
               })
               for (const att of visualAttachments) {
-                contextParts.push({
+                visualParts.push({
                   type: 'text',
                   text: `【下方附图 ${att.seq} 对应 ${att.desc}】：\n`,
                 })
-                contextParts.push({
+                visualParts.push({
                   type: 'image',
                   mimeType: att.mimeType,
                   image: att.base64,
@@ -1406,11 +1436,10 @@ export async function handleMessage(
               userMessage.content.push(...originalUserParts)
             }
 
-            // ── 持久化裁剪 + 上下文置顶 ────────────────────────────────────
-            // 上面构建的「场景协议 / 流水 / 花名册 / 环境 / 附图索引」通过 prependContext
-            // 放到对话最前面（新会话即本轮这条消息的头部；已有历史则并入历史首条 user）。
-            // 写入 history 时剥掉，只保留附图 + 本轮发言，否则每轮注入的快照都会堆进历史。
-            installPrependContext(contextParts)
+            // ── 持久化裁剪 + 上下文置顶与当前轮次附图挂载 ─────────────────
+            // 文本上下文（协议/流水/花名册/环境）置顶历史首条利于 KV 缓存；
+            // 视觉附图（visualParts）直接挂载至当前轮次提问前，多轮对话中让大模型直面当前图像素材！
+            installPrependContext(contextParts, visualParts)
           }
         } else {
           // 未启用群聊历史上下文时，直接注入记忆与基础会话环境
@@ -1439,8 +1468,12 @@ export async function handleMessage(
         // 私聊的长期记忆同样是「本轮临时注入」，不落库，避免每轮堆一份
         sendOptions.persistMessage = (msg: any) => {
           if (!msg || !Array.isArray(msg.content)) return msg
-          if (msg.content.length <= 1) return { ...msg, content: [] }
-          return { ...msg, content: msg.content.slice(1) }
+          return {
+            ...msg,
+            content: msg.content.filter(
+              (p: any) => !(p.type === 'text' && String(p.text).startsWith('### 长期记忆背景：'))
+            ),
+          }
         }
       }
     }

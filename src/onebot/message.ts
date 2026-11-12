@@ -15,8 +15,8 @@ import {
   OneBotSegmentText,
   OneBotSegmentImage,
 } from './types.js'
-import { mediaRefStore } from './refStore.js'
-import { parseForwardNodeToText } from '../context/groupHistoryBuffer.js'
+import { mediaRefStore, fetchRawImageBuffer } from './refStore.js'
+import { parseForwardNodeToText, parseCqMessageToSegments } from '../context/groupHistoryBuffer.js'
 import { getConfig } from '../config.js'
 import { compressImageBuffer } from '../core/utils/imageCompressor.js'
 
@@ -372,7 +372,15 @@ export async function oneBotToUserMessage(
 }> {
   const maxRecentImages = typeof options.maxRecentImages === 'number' ? options.maxRecentImages : 3
 
-  const segments = Array.isArray(event.message) ? event.message : []
+  let segments: any[] = []
+  const rawMsgAny = (event as any).message
+  if (Array.isArray(rawMsgAny)) {
+    segments = rawMsgAny
+  } else if (typeof rawMsgAny === 'string' && rawMsgAny.includes('[CQ:')) {
+    segments = parseCqMessageToSegments(rawMsgAny)
+  } else if (typeof (event as any).raw_message === 'string' && (event as any).raw_message.includes('[CQ:')) {
+    segments = parseCqMessageToSegments((event as any).raw_message)
+  }
   const contents: Array<TextContent | ImageContent | AudioContent> = []
 
   let isAtBot = false
@@ -585,8 +593,8 @@ export async function oneBotToUserMessage(
 
   for (let idx = 0; idx < imageSegments.length; idx++) {
     const seg = imageSegments[idx]
-    const url = seg.data?.url || seg.data?.file
-    const refId = (url || `img_${idx}`).slice(-8)
+    const rawTarget = seg.data?.url || seg.data?.file || ''
+    const refId = (rawTarget || `img_${idx}`).slice(-8)
 
     if (idx < recentStartIndex) {
       // Exceeded recent image cap -> downgrade to placeholder
@@ -594,60 +602,91 @@ export async function oneBotToUserMessage(
       continue
     }
 
-    if (url && url.startsWith('http')) {
-      try {
-        const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 })
-        let buf = Buffer.from(resp.data)
-        const mimeType = detectSupportedImageMime(buf) || String(resp.headers['content-type'] || 'image/jpeg')
+    let rawBuffer: Buffer | null = null
+    let detectedMime: string | null = null
 
-        if (mimeType === 'image/gif' && buf.length > 1.2 * 1024 * 1024) {
-          const opt = optimizeGifBuffer(buf, 1.2 * 1024 * 1024)
-          if (opt.method === 'compressed_anim') {
-            console.log(
-              `[Message] Compressed animated GIF (${(buf.length / 1024 / 1024).toFixed(2)}MB -> ${(opt.buffer.length / 1024).toFixed(1)}KB) preserving motion`
-            )
-            buf = opt.buffer
-          } else if (opt.method === 'first_frame') {
-            console.log(
-              `[Message] Optimized large GIF (${(buf.length / 1024 / 1024).toFixed(2)}MB -> ${(opt.buffer.length / 1024).toFixed(1)}KB) by first-frame fallback`
-            )
-            buf = opt.buffer
+    if (rawTarget) {
+      const res = await fetchRawImageBuffer(rawTarget)
+      if (res) {
+        rawBuffer = res.buffer
+        detectedMime = res.mime
+      }
+    }
+
+    // 若直接解析失败且存在 file 参数，尝试调用 OneBot get_image 刷新有效链接或拉取本地文件
+    if (!rawBuffer && seg.data?.file && options.onebot) {
+      try {
+        const caller = options.onebot.callAction ? options.onebot.callAction.bind(options.onebot) : (options.onebot.send ? options.onebot.send.bind(options.onebot) : null)
+        if (caller) {
+          const resp = await caller('get_image', { file: seg.data.file })
+          const fetchedTarget = resp?.data?.url || resp?.data?.file
+          if (fetchedTarget) {
+            const res = await fetchRawImageBuffer(fetchedTarget)
+            if (res) {
+              rawBuffer = res.buffer
+              detectedMime = res.mime
+            }
           }
         }
-
-        let finalMime = mimeType
-        try {
-          const cfg = getConfig()
-          const compResult = await compressImageBuffer(buf, mimeType, cfg?.vision?.compression)
-          buf = compResult.buffer
-          finalMime = compResult.mimeType
-        } catch {}
-
-        if (buf.length > 2.5 * 1024 * 1024) {
-          console.warn(`[Message] Skipping oversized image (${(buf.length / 1024 / 1024).toFixed(2)}MB > 2.5MB) to avoid payload rejection`)
-          rawText += ` [图片过大已略过: ${refId}] `
-          continue
-        }
-
-        const base64 = buf.toString('base64')
-        contents.push({
-          type: 'image',
-          image: base64,
-          mimeType: finalMime,
-        })
       } catch (err: any) {
-        console.warn(`[Message] Failed to download image ${url}:`, err.message)
-        rawText += ` [图片下载失败: ${refId}] `
+        console.warn(`[Message] Failed to fetch image via get_image for ${seg.data?.file}:`, err?.message || err)
       }
-    } else if (url && url.startsWith('base64://')) {
-      const dataStr = url.replace('base64://', '')
-      const buf = Buffer.from(dataStr, 'base64')
-      contents.push({
-        type: 'image',
-        image: dataStr,
-        mimeType: detectSupportedImageMime(buf) || 'image/jpeg',
-      })
     }
+
+    if (!rawBuffer) {
+      rawText += ` [图片解析失败: ${refId}] `
+      continue
+    }
+
+    let buf = rawBuffer
+    const mimeType = detectedMime || 'image/jpeg'
+
+    if (mimeType === 'image/gif' && buf.length > 1.2 * 1024 * 1024) {
+      const opt = optimizeGifBuffer(buf, 1.2 * 1024 * 1024)
+      if (opt.method === 'compressed_anim') {
+        console.log(
+          `[Message] Compressed animated GIF (${(buf.length / 1024 / 1024).toFixed(2)}MB -> ${(opt.buffer.length / 1024).toFixed(1)}KB) preserving motion`
+        )
+        buf = opt.buffer
+      } else if (opt.method === 'first_frame') {
+        console.log(
+          `[Message] Optimized large GIF (${(buf.length / 1024 / 1024).toFixed(2)}MB -> ${(opt.buffer.length / 1024).toFixed(1)}KB) by first-frame fallback`
+        )
+        buf = opt.buffer
+      }
+    }
+
+    let finalMime = mimeType
+    try {
+      const cfg = getConfig()
+      const compResult = await compressImageBuffer(buf, mimeType, cfg?.vision?.compression)
+      buf = compResult.buffer
+      finalMime = compResult.mimeType
+    } catch {}
+
+    if (buf.length > 2.5 * 1024 * 1024) {
+      console.warn(`[Message] Skipping oversized image (${(buf.length / 1024 / 1024).toFixed(2)}MB > 2.5MB) to avoid payload rejection`)
+      rawText += ` [图片过大已略过: ${refId}] `
+      continue
+    }
+
+    const base64 = buf.toString('base64')
+    contents.push({
+      type: 'image',
+      image: base64,
+      mimeType: finalMime,
+    })
+
+    // 同时注册并持久缓存到 refStore 中，供群聊流水后续无缝引用
+    mediaRefStore.saveImage({
+      url: typeof rawTarget === 'string' && rawTarget.startsWith('http') ? rawTarget : undefined,
+      file: seg.data?.file,
+      base64,
+      mimeType: finalMime,
+      groupId: event.group_id,
+      senderId: event.user_id,
+      messageId: event.message_id,
+    })
   }
 
   let cleanText = rawText.trim()

@@ -78,13 +78,14 @@ export function unbanTarget(targetId: number, type: 'user' | 'group'): void {
 /**
  * 检查目标是否被封禁 (自动清理已过期项)
  */
-export function isTargetBanned(targetId: number | string, type: 'user' | 'group', config: AppConfig): boolean {
+export function isTargetBanned(targetId: number | string, type: 'user' | 'group', config?: AppConfig): boolean {
   const tid = String(targetId)
   if (!tid || tid === '0' || tid === 'NaN') return false
-  if (type === 'user' && config.management?.blackUsers?.some(u => String(u) === tid)) {
+  const cfg = config || getConfig()
+  if (type === 'user' && cfg?.management?.blackUsers?.some(u => String(u) === tid)) {
     return true
   }
-  if (type === 'group' && config.management?.blackGroups?.some(g => String(g) === tid)) {
+  if (type === 'group' && cfg?.management?.blackGroups?.some(g => String(g) === tid)) {
     return true
   }
 

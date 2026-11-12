@@ -55,10 +55,11 @@ export function isTargetBanned(targetId, type, config) {
     const tid = String(targetId);
     if (!tid || tid === '0' || tid === 'NaN')
         return false;
-    if (type === 'user' && config.management?.blackUsers?.some(u => String(u) === tid)) {
+    const cfg = config || getConfig();
+    if (type === 'user' && cfg?.management?.blackUsers?.some(u => String(u) === tid)) {
         return true;
     }
-    if (type === 'group' && config.management?.blackGroups?.some(g => String(g) === tid)) {
+    if (type === 'group' && cfg?.management?.blackGroups?.some(g => String(g) === tid)) {
         return true;
     }
     const key = `${type}_${tid}`;

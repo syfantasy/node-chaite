@@ -50,6 +50,10 @@ export interface FileRefData extends BaseRefData {
     fileSize?: number;
 }
 export type RefData = VoiceRefData | ForwardRefData | ImageRefData | VideoRefData | FileRefData | BaseRefData;
+export declare function fetchRawImageBuffer(target: string): Promise<{
+    buffer: Buffer;
+    mime: string;
+} | null>;
 declare class MediaRefStore {
     private store;
     private pinnedRefs;

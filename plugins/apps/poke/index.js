@@ -21,7 +21,8 @@ export default async function setup(ctx) {
   ctx.onPoke(async (event) => {
     const cfg = ctx.config || {}
     const adapter = ctx.getAdapter?.('onebot') || event.client
-    const selfId = adapter?.getSelfId ? adapter.getSelfId() : globalThis.chaiteConfig?.onebot?.botUin
+    const appConfig = globalThis.chaiteConfig || ctx.getAppConfig?.()
+    const selfId = adapter?.getSelfId ? adapter.getSelfId() : appConfig?.onebot?.botUin
 
     const isSelfPoke =
       Boolean(event.isSelfPoke) ||
@@ -36,7 +37,7 @@ export default async function setup(ctx) {
 
     // 检查黑名单：若操作者在黑名单中，直接阻断，既不反戳也不回复
     const isBanned = globalThis.banManager?.isTargetBanned
-      ? globalThis.banManager.isTargetBanned(userId, 'user', globalThis.chaiteConfig)
+      ? globalThis.banManager.isTargetBanned(userId, 'user', appConfig)
       : false
     if (isBanned) {
       logger.info(`黑名单用户 [${userId}] 戳了机器人，已直接拦截阻断`)

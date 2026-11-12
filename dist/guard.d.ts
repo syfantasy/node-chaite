@@ -32,7 +32,7 @@ export declare function unbanTarget(targetId: number, type: 'user' | 'group'): v
 /**
  * 检查目标是否被封禁 (自动清理已过期项)
  */
-export declare function isTargetBanned(targetId: number | string, type: 'user' | 'group', config: AppConfig): boolean;
+export declare function isTargetBanned(targetId: number | string, type: 'user' | 'group', config?: AppConfig): boolean;
 /**
  * 生效的主人列表：面板配置（config.management.masterUsers）优先；
  * 未配置时回退宿主注入的 event.masters（如 Yunzai other.yaml 的 masterQQ）。

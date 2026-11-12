@@ -4,6 +4,53 @@ import axios from 'axios';
 import { detectSupportedImageMime, optimizeGifBuffer } from './message.js';
 import { getConfig } from '../config.js';
 import { compressImageBuffer } from '../core/utils/imageCompressor.js';
+export async function fetchRawImageBuffer(target) {
+    if (!target || typeof target !== 'string')
+        return null;
+    let cleanTarget = target.trim().replace(/&amp;/g, '&');
+    if (cleanTarget.startsWith('base64://')) {
+        try {
+            const b64 = cleanTarget.replace('base64://', '');
+            const buf = Buffer.from(b64, 'base64');
+            return { buffer: buf, mime: detectSupportedImageMime(buf) || 'image/jpeg' };
+        }
+        catch {
+            return null;
+        }
+    }
+    if (cleanTarget.startsWith('file://')) {
+        cleanTarget = cleanTarget.replace('file://', '');
+    }
+    if (cleanTarget.startsWith('http://') || cleanTarget.startsWith('https://')) {
+        try {
+            const resp = await axios.get(cleanTarget, {
+                responseType: 'arraybuffer',
+                timeout: 12000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                },
+            });
+            const buf = Buffer.from(resp.data);
+            const mime = detectSupportedImageMime(buf) || String(resp.headers['content-type'] || 'image/jpeg').split(';')[0].trim();
+            return { buffer: buf, mime };
+        }
+        catch (err) {
+            console.warn(`[RefStore] Failed to download image from ${cleanTarget.slice(0, 80)}:`, err?.message || err);
+            return null;
+        }
+    }
+    // 本地文件系统路径 (如 OneBot 宿主本地缓存目录)
+    try {
+        if (fs.existsSync(cleanTarget)) {
+            const buf = fs.readFileSync(cleanTarget);
+            const mime = detectSupportedImageMime(buf) || 'image/jpeg';
+            return { buffer: buf, mime };
+        }
+    }
+    catch { }
+    return null;
+}
 class MediaRefStore {
     constructor() {
         this.store = new Map();
@@ -206,62 +253,34 @@ class MediaRefStore {
         let detectedMime = null;
         // 1. Try URL directly
         let targetUrl = imgData.url;
-        if (!targetUrl && imgData.file && imgData.file.startsWith('http')) {
+        if (!targetUrl && imgData.file && (imgData.file.startsWith('http') || imgData.file.startsWith('file://') || imgData.file.startsWith('base64://'))) {
             targetUrl = imgData.file;
         }
         if (targetUrl) {
-            if (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) {
-                try {
-                    const resp = await axios.get(targetUrl, {
-                        responseType: 'arraybuffer',
-                        timeout: 10000,
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        },
-                    });
-                    rawBuffer = Buffer.from(resp.data);
-                    detectedMime = detectSupportedImageMime(rawBuffer) || String(resp.headers['content-type'] || 'image/jpeg');
-                }
-                catch (err) {
-                    console.warn(`[RefStore] Failed to download image from url ${targetUrl}:`, err.message);
-                }
-            }
-            else if (targetUrl.startsWith('base64://')) {
-                const b64 = targetUrl.replace('base64://', '');
-                rawBuffer = Buffer.from(b64, 'base64');
-                detectedMime = detectSupportedImageMime(rawBuffer) || 'image/jpeg';
-            }
-            else if (targetUrl.startsWith('file://')) {
-                const filePath = targetUrl.replace('file://', '');
-                if (fs.existsSync(filePath)) {
-                    rawBuffer = fs.readFileSync(filePath);
-                    detectedMime = detectSupportedImageMime(rawBuffer) || 'image/jpeg';
-                }
-            }
-            else if (fs.existsSync(targetUrl)) {
-                rawBuffer = fs.readFileSync(targetUrl);
-                detectedMime = detectSupportedImageMime(rawBuffer) || 'image/jpeg';
+            const res = await fetchRawImageBuffer(targetUrl);
+            if (res) {
+                rawBuffer = res.buffer;
+                detectedMime = res.mime;
             }
         }
         // 2. If URL failed or missing, try OneBot get_image API using file ID
         if (!rawBuffer && imgData.file && onebotClient) {
             try {
-                const resp = await onebotClient.callAction('get_image', { file: imgData.file });
-                const fetchedUrl = resp?.data?.url || resp?.data?.file;
-                if (fetchedUrl && (fetchedUrl.startsWith('http://') || fetchedUrl.startsWith('https://'))) {
-                    const dlResp = await axios.get(fetchedUrl, {
-                        responseType: 'arraybuffer',
-                        timeout: 10000,
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        },
-                    });
-                    rawBuffer = Buffer.from(dlResp.data);
-                    detectedMime = detectSupportedImageMime(rawBuffer) || String(dlResp.headers['content-type'] || 'image/jpeg');
+                const caller = onebotClient.callAction ? onebotClient.callAction.bind(onebotClient) : (onebotClient.send ? onebotClient.send.bind(onebotClient) : null);
+                if (caller) {
+                    const resp = await caller('get_image', { file: imgData.file });
+                    const fetchedTarget = resp?.data?.url || resp?.data?.file;
+                    if (fetchedTarget) {
+                        const res = await fetchRawImageBuffer(fetchedTarget);
+                        if (res) {
+                            rawBuffer = res.buffer;
+                            detectedMime = res.mime;
+                        }
+                    }
                 }
             }
             catch (err) {
-                console.warn(`[RefStore] Failed to get image via OneBot get_image for file ${imgData.file}:`, err.message);
+                console.warn(`[RefStore] Failed to get image via OneBot get_image for file ${imgData.file}:`, err?.message || err);
             }
         }
         if (!rawBuffer)
