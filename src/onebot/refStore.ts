@@ -194,16 +194,29 @@ class MediaRefStore {
     return ref
   }
 
-  saveImage(data: Omit<ImageRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string {
+  saveImage(data: Omit<ImageRefData, 'id' | 'ref' | 'type' | 'createdAt'> | Buffer, fallbackMime?: string): string {
     this.cleanup()
     const id = this.generateShortId()
     const ref = `img_${id}`
-    const record: ImageRefData = {
-      ...data,
-      id,
-      ref,
-      type: 'image',
-      createdAt: Date.now(),
+    let record: ImageRefData
+
+    if (Buffer.isBuffer(data)) {
+      record = {
+        id,
+        ref,
+        type: 'image',
+        base64: data.toString('base64'),
+        mimeType: fallbackMime || detectSupportedImageMime(data) || 'image/png',
+        createdAt: Date.now(),
+      }
+    } else {
+      record = {
+        ...data,
+        id,
+        ref,
+        type: 'image',
+        createdAt: Date.now(),
+      }
     }
     this.store.set(ref, record)
     return ref

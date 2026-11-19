@@ -75,7 +75,7 @@ declare class MediaRefStore {
     private generateShortId;
     saveVoice(data: Omit<VoiceRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string;
     saveForward(data: Omit<ForwardRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string;
-    saveImage(data: Omit<ImageRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string;
+    saveImage(data: Omit<ImageRefData, 'id' | 'ref' | 'type' | 'createdAt'> | Buffer, fallbackMime?: string): string;
     saveVideo(data: Omit<VideoRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string;
     saveFile(data: Omit<FileRefData, 'id' | 'ref' | 'type' | 'createdAt'>): string;
     /**
