@@ -716,6 +716,37 @@ export class GroupHistoryBuffer {
     async buildContext(groupId, options = {}, excludeMessageId, onebotClient) {
         const gid = String(groupId);
         const rawList = this.buffers.get(gid) || [];
+        const minMessages = options.minMessages ?? 20;
+        const minTokens = options.minTokens ?? 2000;
+        const maxMessages = options.maxMessages ?? 100;
+        const maxTokens = options.maxTokens ?? 10000;
+        // Compute total tokens currently in raw buffer
+        let rawTotalTokens = 0;
+        for (const msg of rawList) {
+            rawTotalTokens += msg.tokens;
+        }
+        // High watermark truncation check:
+        // When BOTH maxMessages AND maxTokens thresholds are exceeded, discard oldest items
+        if (rawList.length >= maxMessages && rawTotalTokens >= maxTokens) {
+            // Find the cutoff point from end to reset back to minimum watermark
+            let rewindTokens = 0;
+            let rewindCount = 0;
+            for (let i = rawList.length - 1; i >= 0; i--) {
+                rewindTokens += rawList[i].tokens;
+                rewindCount++;
+                if (rewindCount >= minMessages && rewindTokens >= minTokens) {
+                    break;
+                }
+            }
+            // Drop older messages before the reset point
+            const keepIndex = Math.max(0, rawList.length - rewindCount);
+            if (keepIndex > 0) {
+                const removed = rawList.splice(0, keepIndex);
+                for (const m of removed) {
+                    this.unpinMessageRefs(m);
+                }
+            }
+        }
         let list = rawList;
         let includesCurrentMessage = false;
         if (excludeMessageId !== undefined) {
@@ -731,48 +762,17 @@ export class GroupHistoryBuffer {
                 list = filtered;
             }
         }
-        const minMessages = options.minMessages ?? 20;
-        const minTokens = options.minTokens ?? 2000;
-        const maxMessages = options.maxMessages ?? 100;
-        const maxTokens = options.maxTokens ?? 10000;
-        // Compute total tokens currently in buffer
+        // Compute total tokens of candidate list for model
         let totalTokens = 0;
         for (const msg of list) {
             totalTokens += msg.tokens;
         }
-        // High watermark truncation check:
-        // When BOTH maxMessages AND maxTokens thresholds are exceeded, discard oldest items
-        if (list.length >= maxMessages && totalTokens >= maxTokens) {
-            // Find the cutoff point from end to reset back to minimum watermark
-            let rewindTokens = 0;
-            let rewindCount = 0;
-            for (let i = list.length - 1; i >= 0; i--) {
-                rewindTokens += list[i].tokens;
-                rewindCount++;
-                if (rewindCount >= minMessages && rewindTokens >= minTokens) {
-                    break;
-                }
-            }
-            // Drop older messages before the reset point
-            const keepIndex = Math.max(0, list.length - rewindCount);
-            if (keepIndex > 0) {
-                list.splice(0, keepIndex);
-            }
+        // 首次截取上下文门槛：必须同时满足最小条数和最小 token 数
+        if (list.length < minMessages || totalTokens < minTokens) {
+            return null;
         }
-        // Now select messages for current prompt context:
-        // We want at least minMessages and minTokens (or whatever is accumulated)
-        let selectedTokens = 0;
-        let startIndex = list.length - 1;
-        let count = 0;
-        while (startIndex >= 0) {
-            selectedTokens += list[startIndex].tokens;
-            count++;
-            if (count >= minMessages && selectedTokens >= minTokens) {
-                break;
-            }
-            startIndex--;
-        }
-        const effectiveSlice = list.slice(Math.max(0, startIndex));
+        // 达到最小门槛后，整段 list 即为上下文（纯末尾追加，直到触发高水位截断）
+        const effectiveSlice = list;
         // Prefetch missing member metadata (title, level) in parallel
         if (onebotClient && effectiveSlice.length > 0) {
             const uniqueUids = Array.from(new Set(effectiveSlice.map((m) => m.userId)));
@@ -1007,7 +1007,7 @@ export class GroupHistoryBuffer {
             recentImageRefs,
             fullText: fullParts.join('\n\n'),
             messageCount: effectiveSlice.length,
-            estimatedTokens: selectedTokens,
+            estimatedTokens: totalTokens,
             includesCurrentMessage,
         };
     }
