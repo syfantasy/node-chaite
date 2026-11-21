@@ -767,11 +767,11 @@ export class GroupHistoryBuffer {
         for (const msg of list) {
             totalTokens += msg.tokens;
         }
-        // 首次截取上下文门槛：必须同时满足最小条数和最小 token 数
-        if (list.length < minMessages || totalTokens < minTokens) {
+        // 若当前没有任何消息，直接返回空
+        if (list.length === 0) {
             return null;
         }
-        // 达到最小门槛后，整段 list 即为上下文（纯末尾追加，直到触发高水位截断）
+        // 在达到高水位阈值前，整段 list 即为上下文切片（从第 1 条起纯末尾追加，张三永远是 1、李四永远是 2）
         const effectiveSlice = list;
         // Prefetch missing member metadata (title, level) in parallel
         if (onebotClient && effectiveSlice.length > 0) {
