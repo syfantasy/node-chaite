@@ -93,6 +93,8 @@ export interface AppConfig {
     maintenance?: {
         historyRetentionDays: number;
         autoCleanImages: boolean;
+        maxMemoryMb?: number;
+        memoryCheckIntervalMs?: number;
     };
 }
 export declare function loadConfig(): AppConfig;

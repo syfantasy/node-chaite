@@ -133,6 +133,8 @@ const DEFAULT_CONFIG = {
     maintenance: {
         historyRetentionDays: 30,
         autoCleanImages: true,
+        maxMemoryMb: 0,
+        memoryCheckIntervalMs: 60000,
     },
 };
 let currentConfig = { ...DEFAULT_CONFIG };

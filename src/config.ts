@@ -171,6 +171,8 @@ export interface AppConfig {
   maintenance?: {
     historyRetentionDays: number
     autoCleanImages: boolean
+    maxMemoryMb?: number
+    memoryCheckIntervalMs?: number
   }
 }
 
@@ -231,6 +233,8 @@ const DEFAULT_CONFIG: AppConfig = {
   maintenance: {
     historyRetentionDays: 30,
     autoCleanImages: true,
+    maxMemoryMb: 0,
+    memoryCheckIntervalMs: 60000,
   },
 }
 

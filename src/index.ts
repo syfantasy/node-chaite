@@ -74,11 +74,56 @@ async function bootstrapOnce() {
   const maintenanceTimer = setTimeout(runMaintenanceJob, 30_000)
   const maintenanceInterval = setInterval(runMaintenanceJob, 24 * 60 * 60 * 1000)
 
+  // 4. Start periodic memory usage check & auto-restart on threshold exceeded
+  let consecutiveHighMemCount = 0
+  let isRestartingDueToMemory = false
+  const checkMemoryUsage = () => {
+    if (isRestartingDueToMemory) return
+    try {
+      const curCfg = getConfig()
+      const maxMb = Number(curCfg.maintenance?.maxMemoryMb) || 0
+      if (maxMb <= 0) {
+        consecutiveHighMemCount = 0
+        return
+      }
+
+      const mem = process.memoryUsage()
+      const rssMb = Math.round(mem.rss / 1024 / 1024)
+      const heapUsedMb = Math.round(mem.heapUsed / 1024 / 1024)
+
+      if (rssMb >= maxMb) {
+        consecutiveHighMemCount++
+        console.warn(
+          `[Memory Monitor] Chaite 常驻物理内存 (RSS) 已达 ${rssMb}MB (上限: ${maxMb}MB, Heap: ${heapUsedMb}MB, 次数: ${consecutiveHighMemCount}/2)`
+        )
+        // 连续 2 次检测超标，触发平滑重启防溢出
+        if (consecutiveHighMemCount >= 2) {
+          isRestartingDueToMemory = true
+          console.warn(
+            `[Memory Monitor] 内存占用持续超过上限 (${rssMb}MB >= ${maxMb}MB)，正在触发平滑自重启释放内存...`
+          )
+          restartProcess(process.cwd(), 1000)
+        }
+      } else {
+        consecutiveHighMemCount = 0
+      }
+    } catch (err: any) {
+      console.warn('[Memory Monitor] Check memory failed:', err?.message || err)
+    }
+  }
+
+  const memoryCheckIntervalMs = Math.max(
+    10_000,
+    Number(getConfig().maintenance?.memoryCheckIntervalMs) || 60_000
+  )
+  const memoryCheckTimer = setInterval(checkMemoryUsage, memoryCheckIntervalMs)
+
   // Graceful shutdown
   const shutdown = async () => {
     console.log('\n[Runner] Shutting down...')
     clearTimeout(maintenanceTimer)
     clearInterval(maintenanceInterval)
+    clearInterval(memoryCheckTimer)
     server.close()
     process.exit(0)
   }
@@ -968,19 +1013,41 @@ export async function handleMessage(
           if (headParts.length === 0 && currentVisualParts.length === 0) return
           hasInjectedContext = true
           let ctxAttachedToCurrent = false
-          let hasInjected = false
+
+          // 幂等防重判断：避免 Retry、Fallback 或工具调用递归轮次重复注入或丢失上下文
+          const isAlreadyInjectedHead = (msg: any): boolean => {
+            if (!msg || !Array.isArray(msg.content)) return false
+            return msg.content.some((p: any) =>
+              p?.type === 'text' && (
+                String(p.text || '').startsWith('### 场景协议：') ||
+                String(p.text || '').startsWith('### 最近群聊发言流水记录：') ||
+                String(p.text || '').startsWith('### 当前群聊成员花名册：')
+              )
+            )
+          }
+
+          const isAlreadyInjectedVisual = (msg: any): boolean => {
+            if (!msg || !Array.isArray(msg.content)) return false
+            return msg.content.some((p: any) =>
+              p?.type === 'text' && (
+                String(p.text || '').startsWith('### 本轮会话附带的多模态图像索引') ||
+                String(p.text || '').startsWith('【下方附图 ')
+              )
+            )
+          }
+
           sendOptions.prependContext = (histories: any[], current?: any) => {
-            if (hasInjected) return
-            hasInjected = true
             ctxAttachedToCurrent = false
             logPrependedParts = []
             if (!Array.isArray(histories) || histories.length === 0) return
             // 注入前抓一份对话快照（历史 + 本轮发言），供操作日志渲染一问一答的
             // <chat_history> 区块；注入块不属于对话上下文，不进这份快照。
-            logConversationMessages = histories.map((m: any) => ({
-              role: String(m.role),
-              content: Array.isArray(m.content) ? [...m.content] : [],
-            }))
+            if (logConversationMessages.length === 0) {
+              logConversationMessages = histories.map((m: any) => ({
+                role: String(m.role),
+                content: Array.isArray(m.content) ? [...m.content] : [],
+              }))
+            }
             const clonedHead = headParts.map((p) => ({ ...p }))
             const clonedVisual = currentVisualParts.map((p) => ({ ...p }))
             logPrependedParts = [...clonedHead, ...clonedVisual]
@@ -988,17 +1055,34 @@ export async function handleMessage(
             // 列表里只有本轮这一条（无历史）：上下文、附图与发言统一并入当前消息
             if (histories.length === 1 && (!current || histories[0] === current)) {
               const target = current || histories[0]
-              target.content = [...clonedHead, ...clonedVisual, ...((target.content as any[]) || [])]
+              const toPrepend: any[] = []
+              if (!isAlreadyInjectedHead(target) && clonedHead.length > 0) {
+                toPrepend.push(...clonedHead)
+              }
+              if (!isAlreadyInjectedVisual(target) && clonedVisual.length > 0) {
+                toPrepend.push(...clonedVisual)
+              }
+              if (toPrepend.length > 0) {
+                target.content = [...toPrepend, ...((target.content as any[]) || [])]
+              }
               ctxAttachedToCurrent = true
               return
             }
 
-            // 已有历史：附图索引与图片必须挂载在当前提问轮次（current）的首部，绝不能塞入历史首条，
+            // 已有历史：附图索引与图片必须挂载在当前提问轮次（最近的 user 消息）首部，绝不能塞入历史首条，
             // 确保多模态大模型直接在当前问题中感知完整的附图输入与上下文图像！
             if (clonedVisual.length > 0) {
-              const targetCurrent = current || histories[histories.length - 1]
-              if (targetCurrent && Array.isArray(targetCurrent.content)) {
-                targetCurrent.content = [...clonedVisual, ...targetCurrent.content]
+              let targetUserMsg = current
+              if (!targetUserMsg && Array.isArray(histories)) {
+                for (let i = histories.length - 1; i >= 0; i--) {
+                  if (histories[i]?.role === 'user') {
+                    targetUserMsg = histories[i]
+                    break
+                  }
+                }
+              }
+              if (targetUserMsg && Array.isArray(targetUserMsg.content) && !isAlreadyInjectedVisual(targetUserMsg)) {
+                targetUserMsg.content = [...clonedVisual, ...targetUserMsg.content]
               }
             }
 
@@ -1006,8 +1090,10 @@ export async function handleMessage(
             if (clonedHead.length > 0) {
               const head: any = histories[0]
               if (head && head.role === 'user' && Array.isArray(head.content)) {
-                head.content = [...clonedHead, ...head.content]
-              } else {
+                if (!isAlreadyInjectedHead(head)) {
+                  head.content = [...clonedHead, ...head.content]
+                }
+              } else if (!isAlreadyInjectedHead(head)) {
                 histories.unshift({
                   id: crypto.randomUUID(),
                   parentId: null,

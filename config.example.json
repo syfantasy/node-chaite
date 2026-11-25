@@ -50,6 +50,8 @@
   },
   "maintenance": {
     "historyRetentionDays": 30,
-    "autoCleanImages": true
+    "autoCleanImages": true,
+    "maxMemoryMb": 0,
+    "memoryCheckIntervalMs": 60000
   }
 }

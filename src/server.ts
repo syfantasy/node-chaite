@@ -101,6 +101,8 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
       maintenance: {
         historyRetentionDays: cur.maintenance?.historyRetentionDays ?? 30,
         autoCleanImages: cur.maintenance?.autoCleanImages ?? true,
+        maxMemoryMb: Number(cur.maintenance?.maxMemoryMb) || 0,
+        memoryCheckIntervalMs: Number(cur.maintenance?.memoryCheckIntervalMs) || 60000,
       },
       chaite: {
         storage: 'sql',
@@ -188,6 +190,8 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
       cur.maintenance = {
         historyRetentionDays: Number(newCfg.maintenance.historyRetentionDays) || 0,
         autoCleanImages: newCfg.maintenance.autoCleanImages !== false,
+        maxMemoryMb: Number(newCfg.maintenance.maxMemoryMb) || 0,
+        memoryCheckIntervalMs: Number(newCfg.maintenance.memoryCheckIntervalMs) || 60000,
       }
     }
     saveConfig(cur)

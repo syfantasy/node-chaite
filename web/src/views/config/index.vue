@@ -222,6 +222,8 @@ const config = reactive({
   maintenance: {
     historyRetentionDays: 30,
     autoCleanImages: true,
+    maxMemoryMb: 0,
+    memoryCheckIntervalMs: 60000,
   },
 })
 
@@ -1249,9 +1251,21 @@ onMounted(async () => {
                           <span class="text-xs">定时维护与历史清理时，自动从磁盘删除无引用的孤立图片</span>
                         </div>
                       </NFormItemGridItem>
+                      <NFormItemGridItem span="24 s:12 m:12" label="内存超限自动重启">
+                        <div style="display: flex; align-items: center; width: 100%;">
+                          <NInputNumber
+                            v-model:value="config.maintenance.maxMemoryMb"
+                            :min="0"
+                            :step="50"
+                            placeholder="如: 600"
+                            style="flex: 1;"
+                          />
+                          <span class="text-xs ml-2" style="white-space: nowrap;">MB（填 0 为不限制）</span>
+                        </div>
+                      </NFormItemGridItem>
                       <NFormItemGridItem span="24">
                         <NAlert type="info">
-                          系统每天会在后台自动执行一次定期维护；当历史消息因过期被清理后，若开启了孤立图片清理，与该消息关联的本地图片文件也会被自动删除并回收磁盘。
+                          系统每天会在后台自动执行一次定期维护；当历史消息因过期被清理后，若开启了孤立图片清理，与该消息关联的本地图片文件也会被自动删除并回收磁盘。当配置了内存超限阈值（MB）时，若常驻物理内存连续超标，将触发平滑自重启防止系统 OOM。
                         </NAlert>
                       </NFormItemGridItem>
                     </NGrid>

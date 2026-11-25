@@ -6,6 +6,7 @@ data/
 config.json
 *.log
 *.bak
+*.pid
 web/dist
 web/build
 plugins/.plugins_state.json
