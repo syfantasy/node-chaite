@@ -32,3 +32,7 @@ export function fetchSystemInfo() {
 export function fetchSystemUpdate() {
   return request.Post<Service.ResponseResult<{ mode: string; hasUpdate: boolean; command?: string; log: string; message: string }>>('/api/system/update')
 }
+
+export function fetchSystemRestart() {
+  return request.Post<Service.ResponseResult<{ restarting: boolean }>>('/api/system/restart')
+}

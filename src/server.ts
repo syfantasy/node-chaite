@@ -593,6 +593,17 @@ export function startWebServer(config: AppConfig): { app: any; server: Server } 
         }
       })
 
+      // 手动重启 Chaite
+      expressApp.post('/api/system/restart', async (_req: any, res: any) => {
+        try {
+          restartProcess(process.cwd(), 1000)
+          return res.status(200).json(ChaiteResponse.okm({ restarting: true }, '服务正在重启，请稍候...'))
+        } catch (err: any) {
+          console.error('[System Restart] 重启失败:', err)
+          return res.status(500).json(ChaiteResponse.fail(null, `重启失败: ${err?.message || String(err)}`))
+        }
+      })
+
       // ==================== Bridge API (供外部 Bot / chatgpt-plugin 对接) ====================
       // 1. 旁路群聊消息流水录入
       expressApp.post('/api/bridge/record', async (req: any, res: any) => {

@@ -31,7 +31,7 @@ import IconLinkLock from '~icons/icon-park-outline/electronic-locks-open'
 import IconLinkVision from '~icons/icon-park-outline/preview-open'
 import { useAuthStore } from '@/store/auth'
 import { fetchChangePassword } from '@/service/api/login'
-import { fetchSystemUpdate } from '@/service/api/system'
+import { fetchSystemRestart, fetchSystemUpdate } from '@/service/api/system'
 import type { CustomConfig } from '@/service/api/config'
 import { fetchConfig, saveConfig } from '@/service/api/config'
 import { fetchAllPresetList } from '@/service/api/presets'
@@ -273,9 +273,41 @@ async function handleChangePassword() {
 
 // 自动更新功能
 const updateLoading = ref(false)
+const restartLoading = ref(false)
 const updateLog = ref('')
 const updateFinished = ref(false)
 const restartCountdown = ref(0)
+
+function startRestartCountdown() {
+  restartCountdown.value = 6
+  const timer = setInterval(() => {
+    restartCountdown.value--
+    if (restartCountdown.value <= 0) {
+      clearInterval(timer)
+      window.location.reload()
+    }
+  }, 1000)
+}
+
+async function handleSystemRestart() {
+  restartLoading.value = true
+  try {
+    const res = await fetchSystemRestart()
+    if (res.isSuccess) {
+      message.success(res.message || '服务正在重启，请稍候...')
+      startRestartCountdown()
+    }
+    else {
+      message.error(res.message || '重启失败')
+    }
+  }
+  catch (err: any) {
+    message.error(`重启失败: ${err?.message || err}`)
+  }
+  finally {
+    restartLoading.value = false
+  }
+}
 
 async function handleSystemUpdate() {
   updateLoading.value = true
@@ -1376,8 +1408,20 @@ onMounted(async () => {
                     >
                       一键检查并更新 Chaite
                     </NButton>
+                    <NPopconfirm @positive-click="handleSystemRestart">
+                      <template #trigger>
+                        <NButton
+                          type="error"
+                          secondary
+                          :loading="restartLoading"
+                        >
+                          立即重启 Chaite
+                        </NButton>
+                      </template>
+                      确定要立即重启 Chaite 服务吗？重启期间对话会短暂中断几秒。
+                    </NPopconfirm>
                     <span v-if="restartCountdown > 0" class="text-sm text-green-500 font-medium">
-                      更新成功！服务正在重启，{{ restartCountdown }} 秒后自动刷新页面...
+                      服务正在重启，{{ restartCountdown }} 秒后自动刷新页面...
                     </span>
                   </NSpace>
 

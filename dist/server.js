@@ -558,6 +558,17 @@ export function startWebServer(config) {
                 return res.status(500).json(ChaiteResponse.fail(null, `自动更新失败: ${err?.message || String(err)}`));
             }
         });
+        // 手动重启 Chaite
+        expressApp.post('/api/system/restart', async (_req, res) => {
+            try {
+                restartProcess(process.cwd(), 1000);
+                return res.status(200).json(ChaiteResponse.okm({ restarting: true }, '服务正在重启，请稍候...'));
+            }
+            catch (err) {
+                console.error('[System Restart] 重启失败:', err);
+                return res.status(500).json(ChaiteResponse.fail(null, `重启失败: ${err?.message || String(err)}`));
+            }
+        });
         // ==================== Bridge API (供外部 Bot / chatgpt-plugin 对接) ====================
         // 1. 旁路群聊消息流水录入
         expressApp.post('/api/bridge/record', async (req, res) => {

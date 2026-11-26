@@ -2,13 +2,95 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { createDialect } from './dialect.js';
 import { log } from '../logger.js';
+function normalizeSqliteParams(params) {
+    return params.map((v) => {
+        if (v === undefined || v === null)
+            return null;
+        if (typeof v === 'boolean')
+            return v ? 1 : 0;
+        return v;
+    });
+}
+async function openWithNodeSqlite(dbPath, busyTimeout) {
+    let nodeSqlite;
+    try {
+        nodeSqlite = await import('node:sqlite');
+    }
+    catch {
+        return null;
+    }
+    if (!nodeSqlite?.DatabaseSync)
+        return null;
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    const raw = new nodeSqlite.DatabaseSync(dbPath, { timeout: busyTimeout });
+    raw.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = ${busyTimeout};
+  `);
+    const adapter = {
+        run(sql, params, callback) {
+            try {
+                const res = raw.prepare(sql).run(...normalizeSqliteParams(params));
+                callback.call({ lastID: Number(res?.lastInsertRowid ?? 0), changes: Number(res?.changes ?? 0) }, null);
+            }
+            catch (err) {
+                callback.call({ lastID: 0, changes: 0 }, err instanceof Error ? err : new Error(String(err)));
+            }
+        },
+        get(sql, params, callback) {
+            try {
+                const row = raw.prepare(sql).get(...normalizeSqliteParams(params));
+                callback(null, row);
+            }
+            catch (err) {
+                callback(err instanceof Error ? err : new Error(String(err)), undefined);
+            }
+        },
+        all(sql, params, callback) {
+            try {
+                const rows = raw.prepare(sql).all(...normalizeSqliteParams(params));
+                callback(null, rows);
+            }
+            catch (err) {
+                callback(err instanceof Error ? err : new Error(String(err)), []);
+            }
+        },
+        exec(sql, callback) {
+            try {
+                raw.exec(sql);
+                callback(null);
+            }
+            catch (err) {
+                callback(err instanceof Error ? err : new Error(String(err)));
+            }
+        },
+        configure() {
+            // busy_timeout 已在构造与 PRAGMA 中设置
+        },
+        close(callback) {
+            try {
+                raw.close();
+                callback(null);
+            }
+            catch (err) {
+                callback(err instanceof Error ? err : new Error(String(err)));
+            }
+        },
+    };
+    return adapter;
+}
 async function openNativeDatabase(dbPath, busyTimeout) {
+    const builtin = await openWithNodeSqlite(dbPath, busyTimeout);
+    if (builtin)
+        return builtin;
     let sqlite3;
     try {
         sqlite3 = (await import('sqlite3')).default;
     }
     catch (error) {
-        throw new Error('SQLite 存储需要安装 sqlite3：pnpm add sqlite3\n' +
+        throw new Error('SQLite 存储需要 Node.js >= 22.5（内置 node:sqlite）或安装 sqlite3：pnpm add sqlite3\n' +
             `原始错误：${error instanceof Error ? error.message : String(error)}`);
     }
     return new Promise((resolve, reject) => {
