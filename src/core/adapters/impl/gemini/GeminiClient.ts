@@ -9,7 +9,9 @@ import {
 import {
   Content,
   GenerateContentParameters,
+  GenerateContentResponse,
   GoogleGenAI,
+  Part,
 } from '@google/genai'
 import { getIntoChaiteConverter } from '../../../utils/converter.js'
 import './converter.js'
@@ -64,12 +66,84 @@ export class GeminiClient extends AbstractClient {
     if (debug) {
       this.logger.debug(`gemini request: ${JSON.stringify(req)}`)
     }
-    const result = await ai.models.generateContent(req)
+    const intoChaiteConverter = getIntoChaiteConverter('gemini')
+    let result: GenerateContentResponse
+    if (options.stream) {
+      const stream = await ai.models.generateContentStream(req)
+      const mergedParts: Part[] = []
+      let lastChunk: GenerateContentResponse | undefined
+      let lastUsage: GenerateContentResponse['usageMetadata'] | undefined
+      let lastFinishReason: any
+      let lastGrounding: any
+      let responseId: string | undefined
+      let modelVersion: string | undefined
+
+      for await (const chunk of stream) {
+        lastChunk = chunk
+        if (chunk.responseId) responseId = chunk.responseId
+        if (chunk.modelVersion) modelVersion = chunk.modelVersion
+        if (chunk.usageMetadata) lastUsage = chunk.usageMetadata
+        const cand = chunk.candidates?.[0]
+        if (cand?.finishReason) lastFinishReason = cand.finishReason
+        if (cand?.groundingMetadata) lastGrounding = cand.groundingMetadata
+
+        const chunkParts = cand?.content?.parts || []
+        for (const part of chunkParts) {
+          const prev = mergedParts[mergedParts.length - 1]
+          // 合并连续的纯文本或纯思考分片（无 thoughtSignature 时），避免产生大量碎片 part
+          if (
+            prev &&
+            part.text !== undefined &&
+            prev.text !== undefined &&
+            Boolean(part.thought) === Boolean(prev.thought) &&
+            !part.thoughtSignature &&
+            !prev.thoughtSignature &&
+            !part.functionCall &&
+            !prev.functionCall &&
+            !part.inlineData &&
+            !prev.inlineData
+          ) {
+            prev.text += part.text
+          } else {
+            mergedParts.push({ ...part })
+          }
+        }
+
+        if (options.onChunk && chunkParts.length > 0) {
+          const chunkMsg = intoChaiteConverter(chunk)
+          const delta = chunkMsg.content.filter(c => c.type !== 'provider_context')
+          if (delta.length > 0 || (chunkMsg.toolCalls && chunkMsg.toolCalls.length > 0)) {
+            await options.onChunk({
+              id: chunk.responseId,
+              model: chunk.modelVersion || model,
+              delta,
+              ...(chunkMsg.toolCalls && chunkMsg.toolCalls.length > 0 ? { toolCall: chunkMsg.toolCalls } : {}),
+            })
+          }
+        }
+      }
+
+      result = {
+        ...(lastChunk || {}),
+        ...(responseId ? { responseId } : {}),
+        ...(modelVersion ? { modelVersion } : {}),
+        ...(lastUsage ? { usageMetadata: lastUsage } : {}),
+        candidates: [
+          {
+            ...(lastChunk?.candidates?.[0] || {}),
+            content: { role: 'model', parts: mergedParts },
+            ...(lastFinishReason ? { finishReason: lastFinishReason } : {}),
+            ...(lastGrounding ? { groundingMetadata: lastGrounding } : {}),
+          },
+        ],
+      } as GenerateContentResponse
+    } else {
+      result = await ai.models.generateContent(req)
+    }
     if (debug) {
       this.logger.info(`gemini response: ${JSON.stringify(result)}`)
     }
     const id = crypto.randomUUID()
-    const intoChaiteConverter = getIntoChaiteConverter('gemini')
     const iMessage = intoChaiteConverter(result)
     const rspToSave = {
       id,

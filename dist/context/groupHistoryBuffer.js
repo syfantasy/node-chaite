@@ -916,12 +916,8 @@ export class GroupHistoryBuffer {
         const recentImageRefs = [];
         // 普通对话不展示流动序号，仅保留时间；伪人模式保留 [#N] 以便短引用
         const includeSeqIndex = options.includeSeqIndex === undefined ? true : Boolean(options.includeSeqIndex);
-        // 统计展示名称频次，用于在发言流中对重名群友加注 QQ 唯一消歧
-        const nameCounts = new Map();
-        for (const item of memberMap.values()) {
-            const count = nameCounts.get(item.displayName) || 0;
-            nameCounts.set(item.displayName, count + 1);
-        }
+        // 统计展示名称首次归属，按时间顺序仅对后出现的同名不同人加注 QQ 消歧，避免回溯改写历史行破坏 Prompt Cache
+        const seenSpeakerNames = new Map();
         const ephemeralList = [];
         for (let idx = 0; idx < effectiveSlice.length; idx++) {
             const msg = effectiveSlice[idx];
@@ -933,9 +929,15 @@ export class GroupHistoryBuffer {
                 catch { }
             }
             const userMeta = memberMap.get(msg.userId);
-            let speakerName = userMeta ? userMeta.displayName : getSafeSpeakerName(msg.card, msg.nickname, msg.userId);
-            if ((nameCounts.get(speakerName) || 0) > 1 && msg.userId && !speakerName.startsWith('QQ ')) {
-                speakerName = `${speakerName}(${msg.userId})`;
+            let speakerName = getSafeSpeakerName(msg.card, msg.nickname, msg.userId);
+            if (msg.userId && !speakerName.startsWith('QQ ')) {
+                const firstUid = seenSpeakerNames.get(speakerName);
+                if (!firstUid) {
+                    seenSpeakerNames.set(speakerName, msg.userId);
+                }
+                else if (firstUid !== msg.userId) {
+                    speakerName = `${speakerName}(${msg.userId})`;
+                }
             }
             const badgeStr = userMeta?.roleBadge ? ` ${userMeta.roleBadge}` : '';
             const seq = idx + 1;
@@ -965,8 +967,7 @@ export class GroupHistoryBuffer {
                 if (targetIdx >= 0) {
                     const targetSeq = targetIdx + 1;
                     const targetMsg = effectiveSlice[targetIdx];
-                    const targetUserMeta = memberMap.get(targetMsg.userId);
-                    const targetName = targetUserMeta ? targetUserMeta.displayName : getSafeSpeakerName(targetMsg.card, targetMsg.nickname, targetMsg.userId);
+                    const targetName = getSafeSpeakerName(targetMsg.card, targetMsg.nickname, targetMsg.userId);
                     replyPrefixStr = `(回复 #${targetSeq} @${targetName}) `;
                 }
                 else if (msg.quotedPrefix) {
