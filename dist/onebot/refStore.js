@@ -253,13 +253,18 @@ class MediaRefStore {
     /**
      * Resolve an image ref to base64 data and mimeType, caching results in memory
      */
-    async resolveImage(ref, onebotClient) {
+    async resolveImage(ref, onebotClient, options) {
         const item = this.get(ref);
         if (!item || item.type !== 'image')
             return null;
         const imgData = item;
+        const isCustomResize = Boolean(options?.maxDimension);
+        const isRaw = Boolean(options?.raw) && !isCustomResize;
         // Return cached base64 directly
-        if (imgData.base64 && imgData.mimeType) {
+        if (isRaw && imgData.rawBase64 && imgData.rawMimeType) {
+            return { base64: imgData.rawBase64, mimeType: imgData.rawMimeType };
+        }
+        if (!isRaw && !isCustomResize && imgData.base64 && imgData.mimeType) {
             return { base64: imgData.base64, mimeType: imgData.mimeType };
         }
         let rawBuffer = null;
@@ -312,26 +317,75 @@ class MediaRefStore {
                 detectedMime = 'image/jpeg';
             }
         }
-        // 4. Vision image compression (resize max dimension & compress quality)
-        try {
-            const cfg = getConfig();
-            const compResult = await compressImageBuffer(rawBuffer, detectedMime || 'image/jpeg', cfg?.vision?.compression);
-            rawBuffer = compResult.buffer;
-            detectedMime = compResult.mimeType;
+        // 4. Vision image compression (skip when raw=true unless custom maxDimension is requested)
+        const MAX_PAYLOAD_BYTES = 2.5 * 1024 * 1024;
+        if (isCustomResize) {
+            try {
+                const compResult = await compressImageBuffer(rawBuffer, detectedMime || 'image/jpeg', {
+                    enabled: true,
+                    maxDimension: options.maxDimension,
+                    quality: options?.quality ?? 80,
+                    thresholdBytes: 0,
+                });
+                rawBuffer = compResult.buffer;
+                detectedMime = compResult.mimeType;
+            }
+            catch (compErr) {
+                console.warn(`[RefStore] Custom image compression failed for ${ref}:`, compErr?.message || compErr);
+            }
         }
-        catch (compErr) {
-            console.warn(`[RefStore] Image compression failed for ${ref}, keeping original:`, compErr?.message || compErr);
+        else if (!isRaw) {
+            try {
+                const cfg = getConfig();
+                const compResult = await compressImageBuffer(rawBuffer, detectedMime || 'image/jpeg', cfg?.vision?.compression);
+                rawBuffer = compResult.buffer;
+                detectedMime = compResult.mimeType;
+            }
+            catch (compErr) {
+                console.warn(`[RefStore] Image compression failed for ${ref}, keeping original:`, compErr?.message || compErr);
+            }
         }
-        // Safety guard: reject single images that still exceed 2.5MB to prevent upstream HTTP 413
-        if (rawBuffer.length > 2.5 * 1024 * 1024) {
-            console.warn(`[RefStore] Image ${ref} is too large (${(rawBuffer.length / 1024 / 1024).toFixed(2)}MB > 2.5MB), skipping payload inclusion to avoid upstream 413 payload too large`);
+        // Safety guard: for non-raw context images, if image still exceeds 2.5MB, progressively compress to fit under 413 limit
+        if (!isRaw && rawBuffer.length > MAX_PAYLOAD_BYTES) {
+            const steps = [
+                { maxDimension: 2048, quality: 85 },
+                { maxDimension: 1600, quality: 75 },
+                { maxDimension: 1280, quality: 70 },
+                { maxDimension: 1024, quality: 65 },
+            ];
+            for (const step of steps) {
+                if (rawBuffer.length <= MAX_PAYLOAD_BYTES)
+                    break;
+                try {
+                    const compResult = await compressImageBuffer(rawBuffer, detectedMime || 'image/jpeg', {
+                        enabled: true,
+                        maxDimension: step.maxDimension,
+                        quality: step.quality,
+                        thresholdBytes: 0,
+                    });
+                    rawBuffer = compResult.buffer;
+                    detectedMime = compResult.mimeType;
+                }
+                catch {
+                    break;
+                }
+            }
+        }
+        if (!isRaw && rawBuffer.length > MAX_PAYLOAD_BYTES) {
+            console.warn(`[RefStore] Image ${ref} is still too large (${(rawBuffer.length / 1024 / 1024).toFixed(2)}MB > 2.5MB) after fallback compression, skipping payload inclusion`);
             return null;
         }
-        // Cache the resolved result
+        // Cache the resolved result without polluting compressed context cache when raw/custom
         const base64 = rawBuffer.toString('base64');
         const mimeType = detectedMime || 'image/jpeg';
-        imgData.base64 = base64;
-        imgData.mimeType = mimeType;
+        if (isRaw) {
+            imgData.rawBase64 = base64;
+            imgData.rawMimeType = mimeType;
+        }
+        else if (!isCustomResize) {
+            imgData.base64 = base64;
+            imgData.mimeType = mimeType;
+        }
         return { base64, mimeType };
     }
     cleanup() {

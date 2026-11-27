@@ -2,7 +2,10 @@
 node_modules
 package-lock.json
 pnpm-lock.yaml
-data/
+data/*
+!data/tools/
+data/tools/*
+!data/tools/ask_about_image.js
 config.json
 *.log
 *.bak

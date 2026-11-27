@@ -91,7 +91,11 @@ declare class MediaRefStore {
     /**
      * Resolve an image ref to base64 data and mimeType, caching results in memory
      */
-    resolveImage(ref: string, onebotClient?: any): Promise<{
+    resolveImage(ref: string, onebotClient?: any, options?: {
+        raw?: boolean;
+        maxDimension?: number;
+        quality?: number;
+    }): Promise<{
         base64: string;
         mimeType: string;
     } | null>;
