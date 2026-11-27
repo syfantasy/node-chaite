@@ -1,4 +1,45 @@
 import { CustomTool, Chaite, ChaiteContext, createClient } from 'chaite'
+import sharp from 'sharp'
+
+async function splitLongImageIfNeeded(base64, mimeType) {
+  try {
+    const buf = Buffer.from(base64, 'base64')
+    const img = sharp(buf, { failOn: 'none' }).rotate()
+    const meta = await img.metadata()
+    const w = meta.width || 0
+    const h = meta.height || 0
+    if (!w || !h || h / w <= 3 || h <= 2500) {
+      return [{ base64, mimeType }]
+    }
+
+    // 宽度超过 1280 时先等比缩到 1280，保证文字清晰且控制单张体积
+    const targetW = w > 1280 ? 1280 : w
+    const targetH = w > 1280 ? Math.round((h * 1280) / w) : h
+    const resizedBuf = w > 1280
+      ? await img.resize(targetW, targetH).toBuffer()
+      : await img.toBuffer()
+
+    const sliceH = 1600
+    const overlap = 120
+    const step = sliceH - overlap
+    const maxSlices = 6
+    const slices = []
+
+    for (let top = 0, idx = 0; top < targetH && idx < maxSlices; top += step, idx++) {
+      const extractH = Math.min(sliceH, targetH - top)
+      if (extractH < 100 && slices.length > 0) break
+      let p = sharp(resizedBuf).extract({ left: 0, top, width: targetW, height: extractH })
+      if (meta.hasAlpha) p = p.flatten({ background: '#ffffff' })
+      const out = await p.jpeg({ quality: 85 }).toBuffer()
+      slices.push({ base64: out.toString('base64'), mimeType: 'image/jpeg' })
+      if (top + extractH >= targetH) break
+    }
+
+    return slices.length > 0 ? slices : [{ base64, mimeType }]
+  } catch {
+    return [{ base64, mimeType }]
+  }
+}
 
 export default class AskAboutImage extends CustomTool {
   constructor() {
@@ -70,11 +111,14 @@ export default class AskAboutImage extends CustomTool {
       const currentFeatures = client?.features || []
       const currentCanVision = Array.isArray(currentFeatures) && currentFeatures.includes('visual')
 
-      const queryText = question ? `针对这张图片，请回答：${question}` : '请详细描述这张图片的内容和画面细节。'
+      const images = await splitLongImageIfNeeded(resolved.base64, resolved.mimeType)
+      const isSliced = images.length > 1
+      const queryText = (isSliced ? `（注：这是一张纵向长截图，已按从上到下顺序切分为 ${images.length} 张连续图片，请连贯阅读。）\n` : '')
+        + (question ? `针对这张图片，请回答：${question}` : '请详细描述这张图片的内容和画面细节。')
       const imagePayload = {
         role: 'user',
         content: [
-          { type: 'image', image: resolved.base64, mimeType: resolved.mimeType },
+          ...images.map(img => ({ type: 'image', image: img.base64, mimeType: img.mimeType })),
           { type: 'text', text: queryText }
         ]
       }
