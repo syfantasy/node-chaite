@@ -389,6 +389,11 @@ export default function setup(ctx) {
           <td><code>Promise&lt;any&gt;</code></td>
           <td>直通底层协议原生动作（如发送合并转发 <code>send_group_forward_msg</code> 等）</td>
         </tr>
+        <tr>
+          <td><code>ctx.client</code> / <code>ctx.getAdapter('onebot')</code></td>
+          <td><code>OneBotAdapter</code></td>
+          <td>获取全局 OneBot 适配器实例（在 AI Tool 等无 <code>e</code> 场景下使用），提供 <code>sendGroupMsg(groupId, msg)</code>、<code>sendPrivateMsg(userId, msg)</code>、<code>sendMsg(params)</code>、<code>callAction(action, params)</code>、<code>getSelfId()</code></td>
+        </tr>
       </tbody>
     </table>
 
