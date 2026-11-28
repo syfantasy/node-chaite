@@ -356,8 +356,17 @@ function openConfigModal(plugin: PluginMeta) {
   ) {
     currentCfg = (currentCfg as any).config
   }
-  configFormData.value = { ...currentCfg }
-  configRawJson.value = JSON.stringify(currentCfg, null, 2)
+  const schemaDefaults: Record<string, any> = {}
+  if (Array.isArray(plugin.configSchema)) {
+    for (const field of plugin.configSchema) {
+      if (field.type !== 'button' && field.key && field.default !== undefined) {
+        schemaDefaults[field.key] = field.default
+      }
+    }
+  }
+  const mergedCfg = { ...schemaDefaults, ...currentCfg }
+  configFormData.value = mergedCfg
+  configRawJson.value = JSON.stringify(mergedCfg, null, 2)
 
   if (plugin.configSchema && plugin.configSchema.length > 0) {
     configMode.value = 'form'
