@@ -453,9 +453,28 @@ export default function setup(ctx) {
 ]</code></pre>
       <p>
         <strong>字段类型：</strong> <code>string</code>, <code>number</code>, <code>boolean</code>, <code>textarea</code>, <code>select</code>, <code>button</code>（声明式交互按钮）。<br/>
-        <strong>按钮动作（Actions）：</strong> 在插件代码中通过 <code>ctx.registerAction('installEngine', async () =&gt; { ... })</code> 处理点击响应。<br/>
+        <strong>按钮动作（Actions）：</strong> 在插件代码中通过 <code>ctx.registerAction('installEngine', async (payload) =&gt; { ... })</code> 处理点击响应。<br/>
+        <strong>通用二维码扫码弹窗：</strong> 若按钮动作返回 <code>{ success: true, data: { qrImage, qrcodeKey, pollAction } }</code>（其中 <code>qrImage</code> 为 DataURL/图片地址），Web 控制台会自动弹出扫码弹窗，并每 2 秒携带 <code>{ qrcodeKey }</code> 轮询 <code>pollAction</code>；轮询返回 <code>data.status</code> 为 <code>waiting</code> / <code>scanned</code> / <code>expired</code> / <code>success</code> 时自动更新状态并在成功后关闭弹窗、刷新配置表单。<br/>
         <strong>控制台分栏：</strong> 面板自动将表单隔离为 <code>🔌 插件配置</code>（专有选项）与 <code>⚙️ 通用配置</code>（独立触发前缀、群聊及用户黑白名单），杜绝杂糅。
       </p>
+      <pre><code class="language-javascript">// 扫码登录 Action 示例（配合 schema.json 中的 type: "button"）
+ctx.registerAction('qr_login', async () =&gt; {
+  const qrImage = await QRCode.toDataURL(loginUrl)
+  return {
+    success: true,
+    message: '请使用手机客户端扫码',
+    data: { qrImage, qrcodeKey, pollAction: 'qr_poll' }
+  }
+})
+
+ctx.registerAction('qr_poll', async ({ qrcodeKey }) =&gt; {
+  // 轮询第三方状态：waiting | scanned | expired | success
+  if (ok) {
+    await ctx.saveConfig({ ...ctx.config, cookie })
+    return { success: true, message: '登录成功！', data: { status: 'success' } }
+  }
+  return { success: true, message: '等待扫码...', data: { status: 'waiting' } }
+})</code></pre>
     </div>
 
     <!-- 4. AI 赋能与对话流 -->
