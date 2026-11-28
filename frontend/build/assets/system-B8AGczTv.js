@@ -1,1 +1,0 @@
-import{$ as t}from"./index-CzVX18qX.js";function s(){return t.Get("/api/system/info")}function r(){return t.Post("/api/system/update")}function a(){return t.Post("/api/system/restart")}export{r as a,s as b,a as f};

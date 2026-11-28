@@ -25,7 +25,7 @@ import {
   NAlert,
   useMessage,
 } from 'naive-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   deletePlugin,
@@ -71,14 +71,100 @@ const savingConfig = ref(false)
 const resettingConfig = ref(false)
 const actionLoading = ref<Record<string, boolean>>({})
 
+// --- 通用二维码扫码弹窗 ---
+const qrModalVisible = ref(false)
+const qrTitle = ref('扫码登录')
+const qrImage = ref('')
+const qrStatusText = ref('请使用手机客户端扫描二维码')
+const qrStatusType = ref<'info' | 'success' | 'warning' | 'error'>('info')
+let qrPollTimer: ReturnType<typeof setInterval> | null = null
+
+function stopQrPoll() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer)
+    qrPollTimer = null
+  }
+}
+
+function closeQrModal() {
+  stopQrPoll()
+  qrModalVisible.value = false
+}
+
+onUnmounted(() => {
+  stopQrPoll()
+})
+
 async function handleTriggerAction(actionName: string, field: any) {
   if (!configPlugin.value || !actionName) return
+  const pluginId = configPlugin.value.id
   actionLoading.value[actionName] = true
   try {
-    const res = await triggerPluginAction(configPlugin.value.id, actionName)
+    const res = await triggerPluginAction(pluginId, actionName)
     if (res.code === 0) {
-      message.success(res.data?.message || res.message || '操作成功完成！')
-      await loadList()
+      const payload = res.data?.data
+      if (payload?.qrImage) {
+        stopQrPoll()
+        qrTitle.value = field?.buttonText || field?.label || '扫码登录'
+        qrImage.value = payload.qrImage
+        qrStatusText.value = res.data?.message || payload.message || '请使用手机客户端扫描二维码'
+        qrStatusType.value = 'info'
+        qrModalVisible.value = true
+
+        if (payload.pollAction && payload.qrcodeKey) {
+          const pollAction = payload.pollAction
+          const qrcodeKey = payload.qrcodeKey
+          qrPollTimer = setInterval(async () => {
+            if (!qrModalVisible.value) {
+              stopQrPoll()
+              return
+            }
+            try {
+              const pollRes = await triggerPluginAction(pluginId, pollAction, { qrcodeKey })
+              if (pollRes.code !== 0) return
+              const pData = pollRes.data?.data || {}
+              const pMsg = pollRes.data?.message || pData.message || ''
+              if (pData.status === 'success') {
+                stopQrPoll()
+                qrStatusType.value = 'success'
+                qrStatusText.value = pMsg || '登录成功！'
+                message.success(pMsg || '登录成功！')
+                await loadList()
+                const updated = plugins.value.find(p => p.id === pluginId)
+                if (updated) {
+                  configPlugin.value = updated
+                  configFormData.value = { ...(updated.config || {}) }
+                  configRawJson.value = JSON.stringify(updated.config || {}, null, 2)
+                }
+                setTimeout(() => {
+                  qrModalVisible.value = false
+                }, 800)
+              } else if (pData.status === 'scanned') {
+                qrStatusType.value = 'warning'
+                qrStatusText.value = pMsg || '已扫码，请在手机端确认登录...'
+              } else if (pData.status === 'expired') {
+                stopQrPoll()
+                qrStatusType.value = 'error'
+                qrStatusText.value = pMsg || '二维码已失效，请关闭后重新获取'
+              } else if (pMsg) {
+                qrStatusType.value = 'info'
+                qrStatusText.value = pMsg
+              }
+            } catch {
+              // 忽略单次轮询网络抖动
+            }
+          }, 2000)
+        }
+      } else {
+        message.success(res.data?.message || res.message || '操作成功完成！')
+        await loadList()
+        const updated = plugins.value.find(p => p.id === pluginId)
+        if (updated) {
+          configPlugin.value = updated
+          configFormData.value = { ...(updated.config || {}) }
+          configRawJson.value = JSON.stringify(updated.config || {}, null, 2)
+        }
+      }
     } else {
       message.error(res.message || '操作失败')
     }
@@ -982,6 +1068,33 @@ await e.reply({ text: '这是一条独立消息', reply: false })
         </div>
       </NDrawerContent>
     </NDrawer>
+
+    <!-- 通用二维码扫码弹窗 -->
+    <NModal
+      v-model:show="qrModalVisible"
+      preset="card"
+      :title="qrTitle"
+      style="width: 360px; max-width: 92vw;"
+      :mask-closable="false"
+      @after-leave="stopQrPoll"
+    >
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 8px 0;">
+        <img
+          v-if="qrImage"
+          :src="qrImage"
+          alt="扫码登录二维码"
+          style="width: 220px; height: 220px; border-radius: 8px; border: 1px solid #eee; background: #fff;"
+        />
+        <NAlert :type="qrStatusType" style="width: 100%;" :show-icon="true">
+          {{ qrStatusText }}
+        </NAlert>
+      </div>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="closeQrModal">关闭</NButton>
+        </NSpace>
+      </template>
+    </NModal>
   </div>
 </template>
 
